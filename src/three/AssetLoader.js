@@ -9,11 +9,11 @@ import { PROCEDURAL } from './procedural/index.js'
 
 /**
  * Resolves a root-relative asset path ("/assets/...") against the deploy base.
- * Vite sets BASE_URL to "/" in dev and to the configured `base` in a build, so
- * the same paths work locally and under a GitHub Pages subpath.
+ * Resolved against document.baseURI rather than import.meta.env.BASE_URL, which
+ * Vite emits as "/" even when `base` is relative. This keeps the same paths
+ * working at the site root locally and under a GitHub Pages subpath.
  */
-const BASE = import.meta.env?.BASE_URL ?? '/'
-const assetUrl = (path) => (path.startsWith('/') ? BASE.replace(/\/$/, '') + path : path)
+const assetUrl = (path) => new URL(path.replace(/^\//, ''), document.baseURI).href
 
 /**
  * Loads every asset once, normalises it (centre, ground, façade, scale),
