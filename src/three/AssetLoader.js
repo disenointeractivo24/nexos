@@ -8,6 +8,14 @@ import { houseMaterial } from './materials.js'
 import { PROCEDURAL } from './procedural/index.js'
 
 /**
+ * Resolves a root-relative asset path ("/assets/...") against the deploy base.
+ * Vite sets BASE_URL to "/" in dev and to the configured `base` in a build, so
+ * the same paths work locally and under a GitHub Pages subpath.
+ */
+const BASE = import.meta.env?.BASE_URL ?? '/'
+const assetUrl = (path) => (path.startsWith('/') ? BASE.replace(/\/$/, '') + path : path)
+
+/**
  * Loads every asset once, normalises it (centre, ground, façade, scale),
  * and hands out cheap clones that share geometry and materials.
  *
@@ -17,7 +25,7 @@ import { PROCEDURAL } from './procedural/index.js'
 export class AssetLoader {
     constructor() {
         const draco = new DRACOLoader()
-        draco.setDecoderPath('/draco/')
+        draco.setDecoderPath(assetUrl('/draco/'))
         this.gltf = new GLTFLoader()
         this.gltf.setDRACOLoader(draco)
         this.gltf.setMeshoptDecoder(MeshoptDecoder)
@@ -71,7 +79,7 @@ export class AssetLoader {
 
         if (def.model) {
             try {
-                const gltf = await this.gltf.loadAsync(def.model)
+                const gltf = await this.gltf.loadAsync(assetUrl(def.model))
                 root = gltf.scene
                 animations = gltf.animations ?? []
                 source = 'glb'
