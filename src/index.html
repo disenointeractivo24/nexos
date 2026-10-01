@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#EAF0F3">
+    <meta name="description" content="NEXOS — Red de ayuda en tiempo real. Explora los barrios de Cali y apoya donde más se necesita.">
+    <title>NEXOS · Red de ayuda</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <!-- 3D world -->
+    <canvas class="webgl" aria-hidden="true"></canvas>
+    <div class="vignette" aria-hidden="true"></div>
+
+    <!-- Interface -->
+    <div id="ui" class="ui" data-state="boot" data-role="">
+
+        <header class="topbar glass" aria-label="NEXOS">
+            <div class="brand">
+                <span class="brand-mark" aria-label="NEXOS">NE<span class="brand-x">X</span>OS</span>
+                <span class="brand-tag">Red de ayuda en tiempo real</span>
+            </div>
+            <span class="topbar-divider" aria-hidden="true"></span>
+            <div class="context">
+                <span class="context-icon" data-icon="map" aria-hidden="true"></span>
+                <span class="context-text">
+                    <strong class="context-title">Mapa de ayuda</strong>
+                    <span class="context-sub">Cali, Valle del Cauca</span>
+                </span>
+            </div>
+            <div class="session">
+                <span class="role-chip"></span>
+                <button class="link-btn js-exit" type="button">Salir</button>
+            </div>
+        </header>
+
+        <!-- Where am I? -->
+        <nav class="progress glass" aria-label="Progreso" hidden></nav>
+
+        <button class="back-btn glass" type="button" hidden>
+            <span data-icon="chevron-left" aria-hidden="true"></span>
+            <span class="back-label">Volver al mapa</span>
+        </button>
+
+        <!-- Step 0 · choose a role (over the aerial clouds) -->
+        <section class="role" aria-labelledby="role-title">
+            <div class="role-card glass">
+                <p class="theme-chip"><span data-icon="alert" aria-hidden="true"></span><span class="theme-chip-text"></span></p>
+                <h1 id="role-title" class="intro-logo">NE<span class="brand-x">X</span>OS</h1>
+                <p class="intro-tag">Red de ayuda en tiempo real</p>
+                <p class="intro-lead"></p>
+                <div class="role-options">
+                    <button class="role-btn role-donor" type="button" data-role="donor">
+                        <span class="role-icon" data-icon="heart" aria-hidden="true"></span>
+                        <span class="role-text"><strong>Quiero donar</strong><span>Elige un barrio y arma una cesta de apoyo.</span></span>
+                        <span class="role-go" data-icon="chevron-right" aria-hidden="true"></span>
+                    </button>
+                    <button class="role-btn role-point" type="button" data-role="collector">
+                        <span class="role-icon" data-icon="box" aria-hidden="true"></span>
+                        <span class="role-text"><strong>Soy punto de acopio</strong><span>Ingresa para revisar y alertar faltantes.</span></span>
+                        <span class="role-go" data-icon="chevron-right" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Collection point access -->
+        <section class="login" aria-labelledby="login-title" hidden>
+            <form class="login-card glass" novalidate>
+                <div class="panel-head">
+                    <div>
+                        <h2 id="login-title">Acceso para puntos de acopio</h2>
+                        <p class="sub">Usa el código de tu punto y tu clave.</p>
+                    </div>
+                </div>
+                <label class="field">
+                    <span class="field-label">Código del punto</span>
+                    <input name="code" type="text" autocomplete="username" autocapitalize="characters" spellcheck="false" required>
+                </label>
+                <label class="field">
+                    <span class="field-label">Clave</span>
+                    <input name="pin" type="password" autocomplete="current-password" inputmode="numeric" required>
+                </label>
+                <p class="form-error" role="alert" hidden></p>
+                <p class="demo-note"><span data-icon="info" aria-hidden="true"></span><span>Prototipo: usa <b>ACOPIO-CENTRO</b> y la clave <b>2024</b>.</span></p>
+                <div class="form-actions">
+                    <button class="btn btn-secondary js-login-back" type="button"><span data-icon="chevron-left" aria-hidden="true"></span> Volver</button>
+                    <button class="btn btn-primary js-login-submit" type="submit">Ingresar</button>
+                </div>
+            </form>
+        </section>
+
+        <!-- Soft caption during the descent -->
+        <p class="descent-caption glass" aria-live="polite">Llegando a Cali…</p>
+
+        <!-- Floating labels anchored to the 3D world -->
+        <div class="labels" aria-label="Lugares disponibles"></div>
+
+        <!-- Guide (city view: docked portrait) -->
+        <div class="guide-dock" hidden>
+            <div class="guide-portrait" aria-hidden="true"></div>
+            <div class="bubble bubble-dock glass" role="status" aria-live="polite"></div>
+        </div>
+
+        <!-- Guide (neighborhood: speech anchored to the character) -->
+        <div class="bubble bubble-world glass" role="status" aria-live="polite" hidden></div>
+
+        <!-- Map helper (limited orbit) -->
+        <button class="recenter glass" type="button" hidden>
+            <span data-icon="target" aria-hidden="true"></span>
+            <span>Centrar mapa</span>
+        </button>
+
+        <!-- Zone card -->
+        <aside class="zone-card glass" aria-labelledby="zone-title" hidden></aside>
+
+        <!-- Supply panel (donor or collection point) -->
+        <aside class="supply-panel glass" aria-labelledby="supply-title" hidden></aside>
+
+        <!-- Soft cloud veil used between city and neighborhood -->
+        <div class="veil" aria-hidden="true">
+            <span></span><span></span><span></span><span></span>
+        </div>
+
+        <!-- First paint -->
+        <div class="loader" role="status" aria-live="polite">
+            <div class="loader-logo">NE<span class="brand-x">X</span>OS</div>
+        </div>
+    </div>
+
+    <!-- 3D items drawn on top of the glass panels (supplies, guide portrait) -->
+    <canvas class="items" aria-hidden="true"></canvas>
+
+    <script type="module" src="./script.js"></script>
+</body>
+</html>
