@@ -41,7 +41,11 @@ la aplicación, así que las filas se pueden reordenar sin romper nada.
    Nueva versión → Implementar**. Así la URL `/exec` no cambia.
    (Si es la primera vez: Implementar → Nueva implementación → Aplicación web,
    *Ejecutar como*: Yo, *Quién tiene acceso*: Cualquier usuario.)
-4. La URL `/exec` va en `starter/.env`:
+4. La URL `/exec` va en dos archivos de `starter/`:
+
+   - `.env` — la usa `npm run dev` en tu computador (no se sube a GitHub).
+   - `.env.production` — la usa el sitio publicado en GitHub Pages. Este sí se
+     sube: sin él, la versión publicada no sabría dónde está la hoja.
 
    ```
    VITE_SHEETS_URL=https://script.google.com/macros/s/XXXXXXXX/exec
@@ -49,6 +53,9 @@ la aplicación, así que las filas se pueden reordenar sin romper nada.
 
    Reinicia `npm run dev` después de cambiarla. Para probar sin tocar el
    `.env`, abre la aplicación con `?hoja=<URL>` al final de la dirección.
+
+   Mientras actualices el script con «Administrar implementaciones → Nueva
+   versión», la URL no cambia y no hay que tocar nada más.
 
 ## Qué lee y escribe la aplicación
 
@@ -67,6 +74,19 @@ La aplicación consulta la hoja cada 7 segundos y envía cada cambio en cuanto s
 deja de pulsar. Dos personas en dispositivos distintos convergen en unos
 segundos. Apps Script pone en fila las escrituras con `LockService`, así que dos
 guardados al mismo tiempo no se pisan.
+
+Ningún cambio se pierde:
+
+- Si no hay conexión, el cambio se guarda en el navegador (como pendiente) y se
+  envía en cuanto la hoja responde, incluso si la pestaña se cerró y se abrió
+  otro día.
+- Al cerrar la pestaña con algo pendiente, se envía en ese momento
+  (`sendBeacon`).
+- Si mientras tanto alguien cambió ese insumo en la hoja o en otro dispositivo,
+  gana el cambio más reciente.
+- Con la pestaña en segundo plano la aplicación consulta la hoja cada minuto en
+  vez de cada 7 segundos (Apps Script tiene cuotas diarias), y se pone al día
+  al volver.
 
 Sin `VITE_SHEETS_URL` la aplicación funciona igual, guardando el inventario en
 el navegador. El tablero solo avisa si la conexión con la hoja falla dos veces
