@@ -40,9 +40,10 @@ export const ASSETS = {
         id: 'guide',
         category: 'characters',
         label: 'Guía humanitario',
-        // Set to '/assets/characters/guide.glb' once the character model is available.
-        // Clips named like "idle" / "walk" are picked up automatically.
-        model: null,
+        // The muñequito, rigged by tools/rig_guia.py (fuentes_3d/guia/): bones named body, head,
+        // armL/R and legL/R, which the app moves itself. Clips named like "idle" / "walk", if a
+        // later version brings them, are picked up automatically. The stand-in is the fallback.
+        model: '/assets/characters/guia.glb',
         procedural: 'guide',
         fit: { height: 1.6 },
     },

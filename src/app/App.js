@@ -93,6 +93,8 @@ const BARRIO_VIEW = {
 const COUNTER_VIEW = { dist: 15.5, lift: 1.0, rise: 0.46, offsets: [0, 0.18, -0.18, 0.45, -0.45] }
 /** After a donation: how far back toward the barrio view the camera goes (0 counter, 1 barrio), and how slowly. */
 const PULL_BACK = { reach: 0.6, seconds: 4.5 }
+/** While walking up to the stand, how much the camera's look leans toward the guide at mid-walk (0–1). */
+const APPROACH_LEAN = 0.5
 /**
  * A tall screen sees less of the barrio's width, so barrio views back off a little to make up for it;
  * only a little, or on a phone the guide and the families become specks.
@@ -289,6 +291,7 @@ export class App {
             this.hood.update(dt, t)
             if (this.guide.root.visible) {
                 this.guide.update(dt, t)
+                if (this.approach) this.#approachStep()
                 const p = this.guide.position
                 p.y = this.hood.heightAt(p.x, p.z)
             }
@@ -986,11 +989,42 @@ export class App {
         this.rig.flyTo(this.#camPos(), look.clone(), { duration: this.reducedMotion ? 0.3 : PULL_BACK.seconds, ease: 'sine.inOut' })
     }
 
-    /** About how long the guide takes to walk a route, ramps included. */
-    #walkSeconds(points, speed = 6.2) {
-        let length = 0
-        for (let i = 1; i < points.length; i++) length += points[i].distanceTo(points[i - 1])
-        return length / speed + 0.9
+    /** Start the move in on the counter that follows the guide's walk (see #approachStep). */
+    #approachCounter() {
+        const from = { pos: this.rig.pos.clone(), target: this.rig.target.clone() }
+        const v = this.hood.acopioViewpoint(COUNTER_VIEW)
+        this.#lookAt(v.look, { dir: v.dir, dist: v.dist })
+        this.rig.stopFollow()
+        // already standing there: nothing to follow, so an ordinary short move
+        if (!this.guide.path) return this.rig.flyTo(this.#camPos(), this.barrioCam.look.clone(), { duration: this.reducedMotion ? 0.3 : 1.3, ease: 'power2.inOut' })
+        this.rig.kill()
+        this.approach = { from, to: { pos: this.#camPos(), target: this.barrioCam.look.clone() } }
+        this._lean ??= new THREE.Vector3()
+    }
+
+    /**
+     * The walk itself moves the camera: how far along the route the guide is
+     * decides how far in the camera is. A slow phone that drops frames slows
+     * both together, so the guide is never left behind, off screen.
+     */
+    #approachStep() {
+        const a = this.approach
+        if (this.state !== 'walking') {
+            // the walk was cut short (back to the map, say): the camera stays where it is
+            this.approach = null
+            return
+        }
+        const path = this.guide.path
+        const u = path ? path.s / path.length : 1
+        const k = u * u * (3 - 2 * u)
+        this.rig.pos.lerpVectors(a.from.pos, a.to.pos, k)
+        this.rig.target.lerpVectors(a.from.target, a.to.target, k)
+        // halfway the guide is close to the camera and low in the frame: the look leans toward
+        // them, then lets go as they reach the counter
+        const g = this.guide.position
+        this.rig.target.lerp(this._lean.set(g.x, g.y + 1, g.z), APPROACH_LEAN * Math.sin(Math.PI * u))
+        this.rig.apply()
+        if (!path) this.approach = null
     }
 
     /* ================================================================
@@ -1012,9 +1046,10 @@ export class App {
         points[0] = this.guide.position.clone().setY(0)
         // the camera closes in on the stand as the guide walks to it, arriving together,
         // so the barrio and the counter read as one continuous place
-        this.#frameCounter(true, Math.max(1.6, this.#walkSeconds(points)))
-        const arrived = await this.guide.walk(points)
-        if (!arrived || this.state !== 'walking') return
+        const arrived = this.guide.walk(points)
+        this.#approachCounter()
+        if (!(await arrived)) return
+        if (this.state !== 'walking') return
         this.currentNode = 'acopio'
         // step aside so the counter stays in view while supplies are left on it
         const stand = this.hood.acopio

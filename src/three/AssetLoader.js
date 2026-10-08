@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { getAsset } from '../data/assets.js'
 import { houseMaterial } from './materials.js'
 import { stylize } from './stylize.js'
@@ -62,7 +63,8 @@ export class AssetLoader {
     }
 
     instanceSync(template, { scheme } = {}) {
-        const obj = template.object.clone(true)
+        // a rigged model needs its own skeleton per copy, or every copy would follow the first one's bones
+        const obj = template.skinned ? cloneSkinned(template.object) : template.object.clone(true)
         if (template.painted) {
             obj.traverse((o) => {
                 if (o.isMesh && o.userData.role) o.material = houseMaterial(o.userData.role, scheme)
@@ -123,7 +125,9 @@ export class AssetLoader {
 
         const size = new THREE.Box3().setFromObject(object).getSize(new THREE.Vector3())
         object.userData.assetId = id
-        return { id, object, size, animations, source, painted }
+        let skinned = false
+        object.traverse((o) => (skinned ||= !!o.isSkinnedMesh))
+        return { id, object, size, animations, source, painted, skinned }
     }
 }
 

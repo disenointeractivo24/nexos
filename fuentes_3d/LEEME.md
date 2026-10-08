@@ -16,6 +16,7 @@ de `static/` a propósito, para que no se copie al sitio publicado.
 | `casa-estrato-5/` | `Casa estrato 5.glb` | `static/assets/houses/casa-estrato-5.glb` |
 | `casa-techo-plano/` | `Casa4.glb` (sin texturas; ya no se usa en los barrios) | — |
 | `obstaculo/` | `Obstaculo.glb` | `static/assets/props/obstaculo.glb` |
+| `guia/` | `muñequito.blend` (y `muñequito.glb`, la exportación sin huesos) | `static/assets/characters/guia.glb` |
 
 ## Texturas
 
@@ -49,3 +50,32 @@ piezas que comparten material y escribe el GLB.
    (`MODELS` para las casas principales, `FILLER_MODELS` para las de contexto).
 5. Si el material de sus ventanas tiene otro nombre, agrégalo a `WINDOW_MATERIAL`
    en `src/three/nightWindows.js` para que se iluminen de noche.
+
+## El guía (muñequito)
+
+`guia/muñequito.blend` es el modelo tal como se hizo. La aplicación no lo usa
+directamente: `tools/rig_guia.py` lo prepara y escribe
+`static/assets/characters/guia.glb`. El script:
+
+- toma solo lo que está visible en el archivo (lo oculto son versiones viejas) y
+  aplica los modificadores (espejo, subdivisión, solidify);
+- quita las piezas que quedan completamente dentro de la cabeza;
+- le da a la piel un color crema y a los ojos y la boca un color oscuro;
+- le pone un esqueleto sencillo con los nombres que la aplicación anima: `body`,
+  `head`, `armL`, `armR`, `legL`, `legR` (caminar, respirar, asentir, señalar).
+
+El `.blend` original no se modifica. `guia/guia-rig.blend` es el resultado, por
+si se quiere revisar el esqueleto en Blender.
+
+Cuando el muñequito tenga casco y maletín, basta con agregarlos al mismo `.blend`
+(visibles) y volver a correr, desde `starter/`:
+
+```
+"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup "fuentes_3d/guia/muñequito.blend" --python tools/rig_guia.py -- static/assets/characters/guia.glb fuentes_3d/guia/guia-rig.blend
+```
+
+Lo que esté por encima del cuello (Z > 2,06 en las unidades del modelo, como el
+casco) se mueve con la cabeza; lo que esté en la espalda (el maletín), con el
+cuerpo. Si una pieza nueva trae su propio material (por ejemplo, el casco
+naranja), se respeta; las que no tienen material quedan crema (el cuerpo) u
+oscuras (ojos y boca).
