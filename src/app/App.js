@@ -65,6 +65,13 @@ const HOME_ZONE_TILT = 1.5
 /** Seconds the camera takes to move in from the whole city to the zone: slow on purpose. */
 const HOME_ZONE_FLIGHT = 5
 /**
+ * On a phone, how much of the screen's width a chosen zone takes (1 = its farthest corners at the
+ * edges; a little less lets the corners go so the zone reads larger), and how much more steeply
+ * the camera looks down on it so its depth fills the tall band above the card.
+ */
+const ZONE_FIT_PHONE = 0.92
+const ZONE_TILT_PHONE = 1.6
+/**
  * The barrio is watched from one fixed vantage point. The camera never follows
  * anybody; the only control a person has is how close they stand, which is why
  * the view is described as a direction and a distance rather than a position.
@@ -84,6 +91,13 @@ const BARRIO_VIEW = {
  */
 /** Close-up used while the stand's panel is open: the counter and what is left on it. */
 const COUNTER_VIEW = { dist: 15.5, lift: 1.0, rise: 0.46, offsets: [0, 0.18, -0.18, 0.45, -0.45] }
+/** After a donation: how far back toward the barrio view the camera goes (0 counter, 1 barrio), and how slowly. */
+const PULL_BACK = { reach: 0.6, seconds: 4.5 }
+/**
+ * A tall screen sees less of the barrio's width, so barrio views back off a little to make up for it;
+ * only a little, or on a phone the guide and the families become specks.
+ */
+const PORTRAIT_PULL_BACK = 1.15
 
 /**
  * Ink outlines per view: [strength, distance where they have faded out].
@@ -524,8 +538,8 @@ export class App {
         this.zoneCard.render(zone)
         this.zoneCard.show()
 
-        const focus = this.city.focusPoint(id)
-        this.#flyCity(focus.clone().addScaledVector(this.#cityDir(), 200 * this.#cityFrame().zoneK), focus, 1.4)
+        const view = this.#zoneView(id)
+        this.#flyCity(view.pos, view.target, 1.4)
         this.#frameForPanel(this.zoneCard, 420)
 
         this.dockBubble.say('Esta zona necesita apoyo.', 'Puedes entrar al barrio para ver las casas.')
@@ -626,7 +640,8 @@ export class App {
     #frameDepot() {
         const cam = this.stage.camera
         const { w, h } = this.stage.size
-        const top = (this.$('.topbar')?.getBoundingClientRect().bottom ?? 96) + 8
+        // phones also have the floating sound button up there
+        const top = (isNarrow() ? this.#chromeBottom() : this.$('.topbar')?.getBoundingClientRect().bottom ?? 96) + 8
         // offsetTop ignores the board's rise-in transform: frame where it comes to rest
         const panelTop = this.inventoryPanel.el.offsetTop || h * 0.6
         const free = Math.max(140, panelTop - top - 8)
@@ -640,6 +655,35 @@ export class App {
         this.stage.viewOffset.x = 0
         this.stage.viewOffset.y = h / 2 - (top + free / 2)
         this.stage.applyViewOffset()
+    }
+
+    /** Lowest edge of what sits at the top of the screen: top bar, back button, progress, the floating sound button. */
+    #chromeBottom() {
+        const bottoms = ['.topbar', '.back-btn', '.progress', '.js-sound']
+            .map((sel) => this.$(sel))
+            .filter((el) => el && !el.hidden && el.getClientRects().length && getComputedStyle(el).opacity !== '0')
+            .map((el) => el.getBoundingClientRect().bottom)
+        return Math.max(96, ...bottoms)
+    }
+
+    /**
+     * Where the camera goes for a chosen zone. On a phone the card covers the
+     * lower part of the screen, so the zone is brought in until it spans the
+     * width, and it is centred in the band between the top bar and the card.
+     */
+    #zoneView(id) {
+        const focus = this.city.focusPoint(id)
+        let dist = 200 * this.#cityFrame().zoneK
+        if (isNarrow()) {
+            const { center, radius } = this.city.zoneFrame(id)
+            const cam = this.stage.camera
+            const tanH = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2) * (this.stage.size.w / this.stage.size.h)
+            dist = Math.min(dist, (radius * ZONE_FIT_PHONE) / tanH)
+            focus.copy(center).setY(focus.y)
+        }
+        const dir = this.#cityDir()
+        if (isNarrow()) dir.y *= ZONE_TILT_PHONE
+        return { pos: focus.clone().addScaledVector(dir.normalize(), dist), target: focus }
     }
 
     deselectZone() {
@@ -693,7 +737,7 @@ export class App {
      */
     #lookAt(look, { dir = BARRIO_VIEW.dir, dist = BARRIO_VIEW.dist } = {}) {
         const a = this.stage.size.w / this.stage.size.h
-        this.barrioCam = { look: look.clone(), dir: dir.clone(), dist: dist * Math.min(1.5, Math.max(1, 0.9 / a)) }
+        this.barrioCam = { look: look.clone(), dir: dir.clone(), dist: dist * Math.min(PORTRAIT_PULL_BACK, Math.max(1, 0.9 / a)) }
         this.zoom.value = this.zoom.target = 1
         return this.#camPos()
     }
@@ -735,8 +779,10 @@ export class App {
         let x = 0, y = 0
         if (panel) {
             if (isNarrow()) {
-                const h = panel.footprint().h || window.innerHeight * 0.6
-                y = Math.min(h * 0.5, window.innerHeight * 0.32)
+                // centre the scene in the band left between the top of the screen and the sheet
+                const H = window.innerHeight
+                const sheetTop = H - (panel.footprint().h || H * 0.5) - 12
+                y = Math.max(0, H / 2 - (this.#chromeBottom() + sheetTop) / 2)
             } else {
                 // the supply panel sits on the left, so the scene moves right; the zone card is on the right
                 const shift = ((panel.footprint().w || fallbackW) + 24) * 0.5
@@ -905,8 +951,11 @@ export class App {
         acopioEl.style.setProperty('--delay', '0ms')
     }
 
-    /** Move in on the counter (panel open) or back to the barrio view (panel closed). */
-    #frameCounter(on) {
+    /**
+     * Move in on the counter (panel open) or back to the barrio view (panel closed).
+     * `duration` lets the move last as long as something else, like the guide's walk.
+     */
+    #frameCounter(on, duration = 1.3) {
         if (on) {
             const v = this.hood.acopioViewpoint(COUNTER_VIEW)
             this.#lookAt(v.look, { dir: v.dir, dist: v.dist })
@@ -914,7 +963,34 @@ export class App {
             this.barrioCam = { ...this.barrioHome, look: this.barrioHome.look.clone(), dir: this.barrioHome.dir.clone() }
             this.zoom.value = this.zoom.target = 1
         }
-        return this.rig.flyTo(this.#camPos(), this.barrioCam.look.clone(), { duration: this.reducedMotion ? 0.3 : 1.3, ease: 'power2.inOut' })
+        return this.rig.flyTo(this.#camPos(), this.barrioCam.look.clone(), {
+            duration: this.reducedMotion ? 0.3 : duration,
+            ease: duration > 2 ? 'sine.inOut' : 'power2.inOut',
+        })
+    }
+
+    /**
+     * After a donation the camera backs away from the counter, slowly, until the
+     * streets around the stand are in view and the families can be seen coming
+     * for their supplies. It stays on the stand: what changes is how much of the
+     * barrio around it fits.
+     */
+    #pullBackForFamilies() {
+        if (!this.barrioHome || !this.barrioCam) return
+        const home = this.barrioHome
+        const dist = THREE.MathUtils.lerp(this.barrioCam.dist, home.dist, PULL_BACK.reach)
+        const look = this.barrioCam.look.clone().lerp(home.look, PULL_BACK.reach)
+        const dir = this.barrioCam.dir.clone().lerp(home.dir, PULL_BACK.reach).normalize()
+        this.barrioCam = { look, dir, dist }
+        this.zoom.value = this.zoom.target = 1
+        this.rig.flyTo(this.#camPos(), look.clone(), { duration: this.reducedMotion ? 0.3 : PULL_BACK.seconds, ease: 'sine.inOut' })
+    }
+
+    /** About how long the guide takes to walk a route, ramps included. */
+    #walkSeconds(points, speed = 6.2) {
+        let length = 0
+        for (let i = 1; i < points.length; i++) length += points[i].distanceTo(points[i - 1])
+        return length / speed + 0.9
     }
 
     /* ================================================================
@@ -934,6 +1010,9 @@ export class App {
         this.say('', 'Vamos al punto de acopio.')
         const { points } = this.hood.route(this.currentNode, 'acopio')
         points[0] = this.guide.position.clone().setY(0)
+        // the camera closes in on the stand as the guide walks to it, arriving together,
+        // so the barrio and the counter read as one continuous place
+        this.#frameCounter(true, Math.max(1.6, this.#walkSeconds(points)))
         const arrived = await this.guide.walk(points)
         if (!arrived || this.state !== 'walking') return
         this.currentNode = 'acopio'
@@ -954,8 +1033,7 @@ export class App {
 
         this.say(session.urgentCount(this.barrio.id) ? 'Hay insumos marcados como urgentes.' : '', 'Elige qué dejar en el punto de acopio.')
 
-        // the panel opens on the left and the camera moves in on the stand, framed in the space to its right
-        this.#frameCounter(true)
+        // the panel opens on the left (on phones, below) and the stand is framed in the space it leaves
         // the needs on offer are the point's stock right now, whatever happened since the barrio was built
         refreshBarrioNeeds(this.barrio)
         await this.panel.openFor(this.barrio)
@@ -975,7 +1053,7 @@ export class App {
         this.labels.setAll('is-active', false)
         this.#showBack('Volver al mapa')
         this.#frameForPanel(null)
-        this.#frameCounter(false)
+        this.#frameCounter(false, 2.4)
         this.panel.close()
         if (barrioCovered(this.barrio)) this.say('El barrio quedó cubierto.', 'Gracias por tu apoyo.')
         else this.say('', 'Puedes dejar más suministros cuando quieras.')
@@ -1009,6 +1087,7 @@ export class App {
         // what was left stays on the counter, and the families come in line to take their share of it
         this.hood.commitDisplay()
         this.families.run(this.hood, served)
+        if (served.length) this.#pullBackForFamilies()
         console.info(
             `[NEXOS] Aporte ${record.code} (${record.mode === 'physical' ? 'entrega física' : 'dinero, demostración'}) · ${barrio.name} · ${money(record.value)} · ${served.length} ${served.length === 1 ? 'familia' : 'familias'}`,
             Object.fromEntries([...basket].map(([k, v]) => [SUPPLIES[k].label, v]))
@@ -1452,6 +1531,17 @@ export class App {
         })
 
         const soundBtn = this.$('.js-sound')
+        // a phone's top bar has no room for it: there it floats just under the exit button
+        const soundHome = soundBtn.parentElement
+        const soundNext = soundBtn.nextElementSibling
+        const narrowQuery = window.matchMedia('(max-width: 760px), (max-height: 560px) and (max-width: 1000px)')
+        const placeSound = () => {
+            if (narrowQuery.matches) this.$('.topbar').after(soundBtn)
+            else soundHome.insertBefore(soundBtn, soundNext)
+            soundBtn.classList.toggle('is-floating', narrowQuery.matches)
+        }
+        narrowQuery.addEventListener('change', placeSound)
+        placeSound()
         soundBtn.addEventListener('click', () => {
             const on = this.audio.toggle()
             if (on) this.audio.play('tap')

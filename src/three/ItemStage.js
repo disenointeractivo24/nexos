@@ -170,6 +170,41 @@ export class ItemStage {
         }
     }
 
+    /**
+     * A still picture of an item, framed as its tile would show it. Phones use
+     * these instead of the live overlay: a picture scrolls with the page, while
+     * the overlay is redrawn a frame late and seems to jump during a scroll.
+     * @returns {string} a PNG data URL
+     */
+    snapshot(object, px = 112) {
+        this.#resize()
+        const r = this.renderer
+        const dpr = r.getPixelRatio()
+        const pivot = new THREE.Group()
+        const box = new THREE.Box3().setFromObject(object)
+        object.position.y -= box.min.y + box.getSize(new THREE.Vector3()).y / 2
+        pivot.add(object)
+        pivot.rotation.set(0.1, -0.35, 0)
+        this.scene.add(pivot)
+        for (const v of this.views.values()) v.pivot.visible = false
+        this.#frameCamera({ kind: 'item' }, 1)
+        r.setScissorTest(true)
+        r.setViewport(0, 0, px, px)
+        r.setScissor(0, 0, px, px)
+        r.clear()
+        r.render(this.scene, this.camera)
+        const side = Math.round(px * dpr)
+        const out = document.createElement('canvas')
+        out.width = out.height = side
+        // read back in the same task as the render, before the canvas is presented
+        out.getContext('2d').drawImage(this.canvas, 0, this.canvas.height - side, side, side, 0, 0, side, side)
+        r.clear()
+        r.setScissorTest(false)
+        this.scene.remove(pivot)
+        this.wasEmpty = false
+        return out.toDataURL('image/png')
+    }
+
     #frameCamera(v, aspect) {
         const c = this.camera
         c.aspect = aspect

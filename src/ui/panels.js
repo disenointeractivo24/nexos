@@ -140,14 +140,43 @@ export class ZoneCard extends Panel {
 /* ================================================================= */
 
 /** Shared supply tile pieces */
+/** Still pictures of each supply, made once and shared by every panel. */
+const pictures = new Map()
+
 function tile3D(panel, tileEl, itemId, clipEl) {
     const stage = tileEl.querySelector('.tile-stage')
     const tpl = panel.loader.templates.get(SUPPLIES[itemId].asset)
     tpl?.then((t) => {
         if (!stage.isConnected) return
+        // on a phone the panel scrolls under a finger: a picture moves with it, a live overlay lags
+        if (isNarrow()) {
+            if (!pictures.has(itemId)) pictures.set(itemId, panel.items.snapshot(cloneMaterials(panel.loader.instanceSync(t))))
+            stage.style.backgroundImage = `url(${pictures.get(itemId)})`
+            stage.classList.add('is-picture')
+            return
+        }
         const obj = cloneMaterials(panel.loader.instanceSync(t))
         panel.items.add(`tile:${itemId}`, stage, obj, { clipEl, getAlpha: () => panel.state.alpha })
     })
+}
+
+/** Phones count with one pair of buttons: this switch says whether they move a unit or a box. */
+function stepToggle(byBox) {
+    return `
+        <div class="step-toggle" role="radiogroup" aria-label="Los botones suman o quitan">
+            <button type="button" role="radio" data-by="unit" aria-checked="${!byBox}">Unidad</button>
+            <button type="button" role="radio" data-by="box" aria-checked="${!!byBox}">Caja</button>
+        </div>`
+}
+
+function bindStepToggle(root, onChange) {
+    root.querySelectorAll('.step-toggle button').forEach((b) =>
+        b.addEventListener('click', () => {
+            const byBox = b.dataset.by === 'box'
+            root.querySelectorAll('.step-toggle button').forEach((o) => o.setAttribute('aria-checked', String(o === b)))
+            onChange(byBox)
+        })
+    )
 }
 
 function deliveryWindows(now = new Date()) {
@@ -367,7 +396,7 @@ export class DonorPanel extends Panel {
         this.el.innerHTML = `
             ${this.#head('Punto de acopio', `${this.barrio.name} · Elige qué dejar aquí.`)}
             <div class="supply-body step-enter">
-                ${this.#categoryStrip()}
+                <div class="cat-row">${this.#categoryStrip()}${stepToggle(this.byBox)}</div>
                 <div class="supply-grid" role="group" aria-label="Suministros que necesita el barrio">${tiles}</div>
                 <section class="basket-inline" aria-label="Tu cesta de apoyo" hidden>
                     <p class="section-title">Tu cesta de apoyo</p>
@@ -383,6 +412,10 @@ export class DonorPanel extends Panel {
             </div>`
 
         const body = this.el.querySelector('.supply-body')
+        bindStepToggle(this.el, (byBox) => {
+            this.byBox = byBox
+            this.audio.play('tap')
+        })
         this.el.querySelectorAll('.cat-tab').forEach((tab) =>
             tab.addEventListener('click', () => {
                 if (tab.dataset.cat === this.category) return
@@ -429,8 +462,10 @@ export class DonorPanel extends Panel {
     }
 
     #bindStepper(scope, id, max) {
-        scope.querySelector('.js-minus')?.addEventListener('click', () => this.#setQty(id, (this.basket.get(id) ?? 0) - 1, max))
-        scope.querySelector('.js-plus')?.addEventListener('click', () => this.#setQty(id, (this.basket.get(id) ?? 0) + 1, max))
+        // on a phone the same buttons move a whole box when the switch says so
+        const step = () => (this.byBox && isNarrow() && scope.classList.contains('tile') ? perBox(id) : 1)
+        scope.querySelector('.js-minus')?.addEventListener('click', () => this.#setQty(id, (this.basket.get(id) ?? 0) - step(), max))
+        scope.querySelector('.js-plus')?.addEventListener('click', () => this.#setQty(id, (this.basket.get(id) ?? 0) + step(), max))
     }
 
     #setQty(id, q, max) {
@@ -820,6 +855,7 @@ export class InventoryPanel extends Panel {
         Object.assign(this, { items, loader, onClose, onShortages })
         this.step = 'inventario'
         this.store = null
+        this.byBox = false
     }
 
     /** @param {object} point the logged-in collection point @param {InventoryStore} store */
@@ -898,9 +934,10 @@ export class InventoryPanel extends Panel {
             <div class="supply-head board-head">
                 <span class="wlabel-icon" style="background:${zone?.color ?? '#011E41'}">${icon('box')}</span>
                 <div class="board-title">
-                    <h2 id="supply-title">Inventario del punto</h2>
+                    <h2 id="supply-title">Inventario<span class="board-title-more"> del punto</span></h2>
                     <p class="sub">${esc(this.point.name)} · ${esc(zone?.name ?? '')}</p>
                 </div>
+                ${stepToggle(this.byBox)}
                 <button class="icon-btn js-close" type="button" aria-label="Cerrar el inventario">${icon('x')}</button>
             </div>
             <div class="supply-body step-enter">
@@ -924,10 +961,16 @@ export class InventoryPanel extends Panel {
             card.querySelector('.js-box-plus').addEventListener('click', () => this.#bump(id, per))
         })
         this.el.querySelector('.js-close').addEventListener('click', () => this.onClose())
+        bindStepToggle(this.el, (byBox) => {
+            this.byBox = byBox
+            this.audio.play('tap')
+        })
         this.#sync()
     }
 
     #bump(id, delta) {
+        // phones have one pair of buttons; the switch makes them count boxes
+        if (this.byBox && isNarrow() && Math.abs(delta) === 1) delta *= perBox(id)
         const before = this.store.get(id)
         const after = this.store.add(id, delta)
         if (after !== before) this.audio.play(after > before ? 'add' : 'remove')

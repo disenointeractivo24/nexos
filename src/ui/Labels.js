@@ -114,6 +114,9 @@ export class Labels {
         }
         for (const p of placed) {
             p.it.el.style.transform = `translate3d(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px, 0) translate(-50%, calc(-100% - 12px))`
+            // a marker's side bubble must stay on screen: near the right edge it goes on the left
+            const bubble = p.it.el.querySelector('.need-bubble')
+            if (bubble) p.it.el.classList.toggle('is-bubble-left', p.x + p.w / 2 + 14 + bubble.offsetWidth > width)
         }
     }
 }

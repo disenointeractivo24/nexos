@@ -1846,3 +1846,185 @@ canvas.items {
     .board-foot .summary { white-space: normal; }
     .stock-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 }
+
+/* ==========================================================
+   Phones — the header keeps only what it must, and the panels
+   show less so the 3D scene above them stays in view
+   ========================================================== */
+
+/* The unit / box switch only exists where the cards have one pair of buttons */
+.step-toggle { display: none; }
+.tile-stage.is-picture { background: center / contain no-repeat; }
+
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    /* Header: brand, clock and exit; the sound button floats under the exit */
+    .topbar { right: var(--gutter); max-width: none !important; gap: 10px; padding: 8px 8px 8px 16px; }
+    .ui:not(:is([data-state="city"], [data-state="zone"], [data-state="intro"])) .topbar { right: calc(var(--gutter) + 68px); }
+    .ui:is([data-state="barrio"], [data-state="walking"], [data-state="point"], [data-state="entering"], [data-state="leaving"]) .topbar { padding-right: 16px; }
+    .topbar .context,
+    .topbar .topbar-divider { display: none !important; }
+    .topbar .clock { margin-left: auto; }
+    .session { border-left: 0; padding-left: 0; }
+    .exit-btn { width: 44px; height: 44px; border-radius: 13px; }
+    .sound-btn.is-floating {
+        position: fixed;
+        top: calc(var(--gutter) + 72px);
+        right: var(--gutter);
+        z-index: 20;
+        width: 44px;
+        height: 44px;
+        margin: 0;
+        background: var(--glass-bg-strong);
+        box-shadow: var(--shadow-soft);
+        transition: opacity var(--dur) var(--ease-calm);
+    }
+    .ui:is([data-state="boot"], [data-state="role"], [data-state="login"], [data-state="exiting"]) .sound-btn.is-floating { opacity: 0; pointer-events: none; }
+    .progress { white-space: nowrap; }
+    /* at the stand the panel already says where you are */
+    .ui:is([data-state="inventory"], [data-state="point"]) .progress,
+    .ui[data-state="point"] .bubble-world { display: none !important; }
+    .recenter { top: calc(var(--gutter) + 126px); }
+
+    /* the unit / box switch */
+    .step-toggle {
+        display: inline-flex;
+        flex: none;
+        gap: 2px;
+        padding: 3px;
+        border-radius: var(--radius-pill);
+        background: rgba(1, 30, 65, 0.08);
+    }
+    .step-toggle button {
+        min-height: 34px;
+        padding: 0 12px;
+        border: 0;
+        border-radius: var(--radius-pill);
+        background: transparent;
+        color: var(--charcoal);
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+    }
+    .step-toggle button[aria-checked="true"] { background: #fff; color: var(--navy); box-shadow: 0 1px 4px rgba(1, 30, 65, 0.18); }
+
+    /* Collection point board: two columns of small cards, all eight without scrolling */
+    .supply-panel.is-board { max-height: calc(100% - 150px); }
+    .board-head.supply-head { margin: 8px 8px 0; padding: 6px 6px 6px 14px; gap: 8px; border-radius: 16px; }
+    .board-head .wlabel-icon,
+    .board-head .sub,
+    .board-title-more { display: none !important; }
+    .board-head h2 { font-size: 19px; }
+    .board-head .step-toggle { margin-left: auto; }
+    .board-head .icon-btn { width: 40px; height: 40px; margin-left: 0; }
+    .board-head .icon-btn [data-icon] { width: 22px; height: 22px; }
+    .supply-panel.is-board .supply-body { padding: 8px; }
+    .stock-grid { gap: 6px; }
+    .stock-card {
+        display: grid;
+        grid-template-columns: 30px minmax(0, 1fr);
+        grid-template-areas: "pic name" "pic meter" "step step";
+        column-gap: 8px;
+        row-gap: 4px;
+        padding: 6px 7px;
+        border-radius: 14px;
+    }
+    .stock-top { display: contents; }
+    .stock-top .tile-stage { grid-area: pic; width: 30px; height: 30px; align-self: center; }
+    .stock-name { grid-area: name; }
+    .stock-name b { font-size: 14px; -webkit-line-clamp: 1; }
+    .stock-unit,
+    .stock-line,
+    .stock-card .box-step { display: none; }
+    .stock-meter { grid-area: meter; height: 5px; align-self: center; }
+    .stepper-board { grid-area: step; }
+    .stepper-board button { width: 34px; height: 34px; border-radius: 10px; }
+    .stepper-board button [data-icon] { width: 16px; height: 16px; }
+    .stepper-board output { flex-direction: row; align-items: baseline; gap: 3px; }
+    .stepper-board output b { font-size: 18px; }
+    .stepper-board output small { margin: 0; font-size: 11px; }
+    .board-foot { padding: 0 12px 8px; }
+    .board-foot .summary { font-size: 13px; text-align: left; }
+    .board-foot .summary b { font-size: 13px; }
+
+    /* Donor at the stand: one line per supply */
+    .supply-panel:not(.is-board) { max-height: 58vh; border-radius: 22px; }
+    .supply-head { margin: 8px 8px 0; padding: 8px 8px 8px 12px; gap: 10px; border-radius: 16px; }
+    .supply-head > div { min-width: 0; }
+    .supply-head .wlabel-icon { width: 34px; height: 34px; flex: none; }
+    .supply-head .wlabel-icon [data-icon] { width: 20px; height: 20px; }
+    .supply-head h2 { font-size: 19px; }
+    .supply-head .sub { margin-top: 1px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .supply-head .icon-btn { width: 40px; height: 40px; flex: none; }
+    .supply-head .icon-btn [data-icon] { width: 22px; height: 22px; }
+    .supply-body { padding: 8px 10px; }
+    .cat-row { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid rgba(1, 30, 65, 0.08); }
+    .cat-row .cat-strip { flex: 1; min-width: 0; flex-wrap: nowrap; overflow-x: auto; gap: 4px; padding: 0; margin: 0; border: 0; scrollbar-width: none; }
+    .cat-tab { padding: 3px; border-radius: 14px; }
+    .cat-icon { width: 36px; height: 36px; border-radius: 11px; }
+    .cat-icon [data-icon] { width: 20px; height: 20px; }
+    .cat-dot { width: 11px; height: 11px; border-width: 2px; }
+    .supply-grid { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .tile {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas: "toggle step" "meta step";
+        align-items: center;
+        column-gap: 8px;
+        padding: 5px 6px;
+        border-radius: 14px;
+    }
+    .tile-toggle { grid-area: toggle; flex-direction: row; gap: 8px; padding: 0; border-radius: 10px; min-width: 0; }
+    .tile .tile-stage { width: 38px; height: 38px; aspect-ratio: auto; flex: none; }
+    .tile-name { display: block; min-height: 0; font-size: 16px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tile-meta { grid-area: meta; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 0 0 46px; font-size: 13px; text-align: left; }
+    .tile-meta b { font-size: 14px; }
+    .tile-value,
+    .tile-pack,
+    .tile .box-step { display: none; }
+    .tile-flag { order: 0; margin: 0; padding: 1px 7px 1px 2px; font-size: 11px; }
+    .tile-flag [data-icon] { width: 14px; height: 14px; }
+    .tile .stepper { grid-area: step; padding: 0; gap: 4px; }
+    .tile .stepper button { width: 38px; height: 38px; border-radius: 11px; }
+    .tile .stepper output { min-width: 26px; font-size: 18px; }
+    /* the basket bar below already sums it up; the full list comes at the summary step */
+    .supply-panel[data-step="supplies"] .basket-inline { display: none !important; }
+    .supply-panel[data-step="supplies"] .supply-foot { flex-direction: row; align-items: center; gap: 8px; padding: 8px 10px; }
+    .supply-panel[data-step="supplies"] .supply-foot .btn { width: auto; flex: none; min-height: 46px; padding: 0 16px; font-size: 17px; }
+    .basket-bar { gap: 8px; }
+    .basket-icon { width: 38px; height: 38px; border-radius: 12px; }
+    .basket-icon [data-icon] { width: 22px; height: 22px; }
+    .basket-text { font-size: 12px; line-height: 1.2; }
+    .basket-text b { font-size: 15px; }
+
+    /* the later steps (how to help, details, summary) at the same compact size */
+    .choice-list { gap: 8px; }
+    .choice { gap: 10px; padding: 10px 12px; border-radius: 16px; }
+    .choice-icon { width: 40px; height: 40px; border-radius: 12px; }
+    .choice-icon [data-icon] { width: 22px; height: 22px; }
+    .choice > [data-icon] { width: 20px; height: 20px; }
+    .choice-text { gap: 1px; }
+    .choice-text b { font-size: 16px; }
+    .choice-text span { font-size: 13px; line-height: 1.3; }
+    .supply-foot { padding: 8px 10px; gap: 8px; }
+    .supply-foot .btn { min-height: 46px; font-size: 17px; }
+
+    /* Zone card on the map: a short sheet, the map stays in view above it */
+    .zone-card { max-height: 50vh; padding: 14px 14px 0; border-radius: 22px; }
+    .zone-card .panel-head h2 { font-size: 22px; }
+    .zone-card .panel-head .sub { margin-top: 2px; font-size: 14px; }
+    .zone-card .panel-head .icon-btn { width: 40px; height: 40px; }
+    .zone-card .section-title { margin: 10px 0 6px; font-size: 14px; }
+    .zone-card .need-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+    .zone-card .need-row { gap: 6px; padding: 4px 8px 4px 4px; font-size: 14px; }
+    .zone-card .need-row .wlabel-icon { width: 28px; height: 28px; border-radius: 9px; }
+    .zone-card .need-row .wlabel-icon [data-icon] { width: 16px; height: 16px; }
+    .zone-card .need-level { font-size: 12px; }
+    .zone-card .barrio-line { margin: 10px 0 8px; font-size: 13px; }
+    .zone-card .barrio-line strong { font-size: 16px; }
+    .zone-card .js-enter { min-height: 50px; margin-bottom: 12px; font-size: 18px; }
+}
+
+/* Near the right edge of the screen the shortage bubble sits on the marker's left */
+.wlabel.is-bubble-left .need-bubble { left: auto; right: calc(100% + 8px); }
+.wlabel.is-bubble-left .need-bubble::before { left: auto; right: -5px; transform: translateY(-50%) rotate(-135deg); }
