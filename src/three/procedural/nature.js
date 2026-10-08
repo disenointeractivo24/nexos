@@ -31,60 +31,80 @@ function jitter(geo, amount, seed = 1) {
     return geo
 }
 
-/** Rounded canopy: three soft blobs. Base at y=0 (sits on the trunk top). */
-export function canopyGeometry(detail = 1) {
-    const parts = [
+/**
+ * The shapes below are described by these tables, which the FBX exporter
+ * (tools/export-models) reads too, so exported vegetation matches the scene.
+ *   blobs   [x, y, z, radius] soft spheres merged into one canopy or bush
+ *   jitter  how far each vertex is nudged, and the seed that drives it
+ */
+export const CANOPY = {
+    blobs: [
         [0, 0.95, 0, 1.0],
         [0.55, 0.7, 0.2, 0.72],
         [-0.45, 0.65, -0.25, 0.75],
         [0.05, 1.55, -0.05, 0.66],
-    ].map(([x, y, z, r]) => blob(r, detail).translate(x, y, z))
-    return jitter(mergeGeometries(parts), 0.12, 7)
+    ],
+    jitter: 0.12,
+    seed: 7,
+}
+export const TRUNK = { radiusTop: 0.11, radiusBottom: 0.16, height: 1.2, segments: 7 }
+export const BUSH = {
+    blobs: [
+        [0, 0.42, 0, 0.55],
+        [0.42, 0.32, 0.1, 0.4],
+        [-0.38, 0.3, -0.05, 0.42],
+    ],
+    jitter: 0.08,
+    seed: 3,
+}
+/** Palm: a slim curved trunk through `spine`, and fronds that droop by `droop` toward their tips. */
+export const PALM = {
+    spine: [[0, 0, 0], [0.08, 1.4, 0], [0.25, 2.8, 0], [0.4, 3.9, 0]],
+    trunk: { radius: 0.11, tubular: 8, radial: 6, color: '#8C7A64' },
+    frond: { count: 7, radius: 0.5, scale: [1.4, 0.12, 0.32], offset: 0.7, droop: 0.55, turn: 0.3, color: '#7E9F69' },
+}
+
+/** Rounded canopy: three soft blobs. Base at y=0 (sits on the trunk top). */
+export function canopyGeometry(detail = 1) {
+    const parts = CANOPY.blobs.map(([x, y, z, r]) => blob(r, detail).translate(x, y, z))
+    return jitter(mergeGeometries(parts), CANOPY.jitter, CANOPY.seed)
 }
 
 export function trunkGeometry() {
-    const g = new THREE.CylinderGeometry(0.11, 0.16, 1.2, 7)
-    g.translate(0, 0.6, 0)
+    const g = new THREE.CylinderGeometry(TRUNK.radiusTop, TRUNK.radiusBottom, TRUNK.height, TRUNK.segments)
+    g.translate(0, TRUNK.height / 2, 0)
     return g
 }
 
 export function bushGeometry(detail = 1) {
-    const parts = [
-        [0, 0.42, 0, 0.55],
-        [0.42, 0.32, 0.1, 0.4],
-        [-0.38, 0.3, -0.05, 0.42],
-    ].map(([x, y, z, r]) => blob(r, detail).translate(x, y, z))
-    return jitter(mergeGeometries(parts), 0.08, 3)
+    const parts = BUSH.blobs.map(([x, y, z, r]) => blob(r, detail).translate(x, y, z))
+    return jitter(mergeGeometries(parts), BUSH.jitter, BUSH.seed)
 }
 
 /** Palm (Cali streets): slim curved trunk + drooping fronds, one geometry with vertex colours. */
 export function palmGeometry() {
-    const trunkColor = new THREE.Color('#8C7A64')
-    const leafColor = new THREE.Color('#7E9F69')
+    const trunkColor = new THREE.Color(PALM.trunk.color)
+    const leafColor = new THREE.Color(PALM.frond.color)
     const parts = []
+    const F = PALM.frond
 
-    const curve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(0, 0, 0),
-        new THREE.Vector3(0.08, 1.4, 0),
-        new THREE.Vector3(0.25, 2.8, 0),
-        new THREE.Vector3(0.4, 3.9, 0),
-    ])
-    const trunk = new THREE.TubeGeometry(curve, 8, 0.11, 6, false)
+    const curve = new THREE.CatmullRomCurve3(PALM.spine.map((p) => new THREE.Vector3(...p)))
+    const trunk = new THREE.TubeGeometry(curve, PALM.trunk.tubular, PALM.trunk.radius, PALM.trunk.radial, false)
     paint(trunk, trunkColor)
     parts.push(trunk.toNonIndexed())
 
     const top = curve.getPoint(1)
-    for (let i = 0; i < 7; i++) {
-        const leaf = new THREE.SphereGeometry(0.5, 8, 4)
-        leaf.scale(1.4, 0.12, 0.32)
-        leaf.translate(0.7, 0, 0)
+    for (let i = 0; i < F.count; i++) {
+        const leaf = new THREE.SphereGeometry(F.radius, 8, 4)
+        leaf.scale(...F.scale)
+        leaf.translate(F.offset, 0, 0)
         // droop
         const p = leaf.attributes.position
         for (let k = 0; k < p.count; k++) {
             const x = p.getX(k)
-            p.setY(k, p.getY(k) - Math.pow(Math.max(x, 0) / 1.4, 2) * 0.55)
+            p.setY(k, p.getY(k) - Math.pow(Math.max(x, 0) / F.scale[0], 2) * F.droop)
         }
-        leaf.rotateY((i / 7) * Math.PI * 2 + 0.3)
+        leaf.rotateY((i / F.count) * Math.PI * 2 + F.turn)
         leaf.translate(top.x, top.y, top.z)
         leaf.computeVertexNormals()
         paint(leaf, leafColor)

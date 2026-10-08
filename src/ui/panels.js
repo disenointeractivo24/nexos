@@ -1,8 +1,9 @@
 import gsap from 'gsap'
 import { icon, hydrateIcons } from './icons.js'
-import { CATEGORIES, SUPPLIES, money } from '../data/catalog.js'
-import { zoneNeeds, zoneLevel, NEED_WORD } from '../data/zones.js'
-import { pointForZone } from '../data/collectionPoints.js'
+import { CATEGORIES, SUPPLIES, money, perBox, basketBoxes, BOX } from '../data/catalog.js'
+import { stockCap, stockState, stockRatio } from '../data/inventory.js'
+import { ZONES, zoneNeeds, zoneLevel, NEED_WORD, barrioNeeds } from '../data/zones.js'
+import { pointForZone, mapEmbedUrl, directionsUrl } from '../data/collectionPoints.js'
 import { session } from '../app/session.js'
 import { cloneMaterials } from '../three/GuideCharacter.js'
 
@@ -11,9 +12,10 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 
 /** Calm reveal for side panels; exposes `alpha` for the 3D item layer. */
 class Panel {
-    constructor(el, { reducedMotion }) {
+    constructor(el, { reducedMotion, audio }) {
         this.el = el
         this.reducedMotion = reducedMotion
+        this.audio = audio ?? { play() {} }
         this.state = { alpha: 0 }
         this.open = false
     }
@@ -53,7 +55,11 @@ class Panel {
         const a = this.state.alpha
         const d = (1 - a) * 18
         this.el.style.opacity = a
-        this.el.style.transform = narrow ? `translateY(${d}px)` : `translateX(${d}px) scale(${0.985 + 0.015 * a})`
+        // the zone card slides in from the right edge, the supply panel from the left,
+        // and the inventory board, docked along the bottom, rises from below
+        const side = this.el.classList.contains('supply-panel') ? -1 : 1
+        const rises = narrow || this.el.classList.contains('is-board')
+        this.el.style.transform = rises ? `translateY(${d}px)` : `translateX(${side * d}px) scale(${0.985 + 0.015 * a})`
     }
 
     /** Re-render with a smooth height change instead of a jump. */
@@ -158,33 +164,64 @@ function deliveryWindows(now = new Date()) {
     return list
 }
 
+/** "3 cajas y 2 sueltas": how a volunteer counts a shelf. */
+function boxesLabel(qty, per) {
+    const boxes = Math.floor(qty / per)
+    const loose = qty - boxes * per
+    if (!boxes) return loose ? `${loose} ${loose === 1 ? 'suelta' : 'sueltas'}` : 'Vacío'
+    return `${boxes} ${boxes === 1 ? 'caja' : 'cajas'}${loose ? ` + ${loose}` : ''}`
+}
+
 const refCode = () => `NX-${Math.floor(1000 + Math.random() * 9000)}`
 
 /**
- * Donor panel. Steps (one primary action each):
- *   supplies → basket → method → (details → summary) | (payment → gateway → paying) → done
+ * Donor panel, opened at the barrio's collection point.
+ *
+ * Aid is no longer chosen house by house. A person leaves supplies at the
+ * stand and the families come to collect them, so this panel works from the
+ * barrio's totals: every category at once, each shown by its icon alone, with
+ * the supplies of whichever category is open.
+ *
+ * Steps (one primary action each):
+ *   supplies → method → (details → summary) | (payment → paying) → done
  */
 export class DonorPanel extends Panel {
-    constructor(el, opts, { items, loader, onClose, onStep, onConfirm, onExitMap }) {
+    constructor(el, opts, { items, loader, onClose, onStep, onConfirm, onExitMap, onBasket }) {
         super(el, opts)
-        Object.assign(this, { items, loader, onClose, onStep, onConfirm, onExitMap })
+        Object.assign(this, { items, loader, onClose, onStep, onConfirm, onExitMap, onBasket })
         this.step = 'supplies'
         this.details = { name: '', phone: '', email: '', window: '', notes: '' }
     }
 
     get basket() {
-        return session.basket(this.house.id)
+        return session.basket(this.barrio.id)
     }
 
-    async openFor(house, barrio) {
-        this.house = house
+    /** How many of an item the whole barrio still needs. */
+    #max(item) {
+        return this.flat.get(item)?.qty ?? 0
+    }
+
+    async openFor(barrio) {
         this.barrio = barrio
         this.point = pointForZone(barrio.zone.id)
+        this.groups = barrioNeeds(barrio)
+        this.flat = new Map()
+        for (const g of this.groups) for (const it of g.items) this.flat.set(it.item, it)
+        this.category = this.groups[0]?.category ?? null
         this.step = 'supplies'
         this.mode = null
-        await Promise.all(house.needs.map((n) => this.loader.load(SUPPLIES[n.item].asset)))
+        // a basket kept from earlier never holds more than the families still need
+        for (const [id, q] of this.basket) {
+            const max = this.#max(id)
+            if (max <= 0) this.basket.delete(id)
+            else if (q > max) this.basket.set(id, max)
+        }
+        await Promise.all([...this.flat.keys()].map((id) => this.loader.load(SUPPLIES[id].asset)))
         this.render(false)
         this.show()
+        // a basket kept from an earlier visit is already waiting on the counter
+        this.onBasket?.(this.basket)
     }
 
     close() {
@@ -194,7 +231,28 @@ export class DonorPanel extends Panel {
         })
     }
 
+    /**
+     * The point's stock moved while the donor is choosing (another device, the
+     * sheet, another donation): show the new needs. The basket stays, but never
+     * above what is still needed.
+     */
+    refreshNeeds() {
+        if (!this.open || !this.barrio) return
+        this.groups = barrioNeeds(this.barrio)
+        this.flat = new Map()
+        for (const g of this.groups) for (const it of g.items) this.flat.set(it.item, it)
+        for (const [id, q] of this.basket) {
+            const max = this.#max(id)
+            if (max <= 0) this.basket.delete(id)
+            else if (q > max) this.basket.set(id, max)
+        }
+        if (!this.groups.some((g) => g.category === this.category)) this.category = this.groups[0]?.category ?? null
+        if (this.step === 'supplies') this.render(false)
+        this.onBasket?.(this.basket)
+    }
+
     go(step) {
+        this.audio.play(step === 'done' ? 'confirm' : 'step')
         this.step = step
         this.render(true)
         this.onStep?.(step)
@@ -209,12 +267,10 @@ export class DonorPanel extends Panel {
             this.el.dataset.step = this.step
             const fn = {
                 supplies: this.#supplies,
-                basket: this.#basket,
                 method: this.#method,
                 details: this.#detailsForm,
                 summary: this.#summary,
                 payment: this.#payment,
-                gateway: this.#gateway,
                 paying: this.#paying,
                 done: this.#done,
             }[this.step]
@@ -231,7 +287,7 @@ export class DonorPanel extends Panel {
     #head(title, sub) {
         return `
             <div class="supply-head">
-                ${catIcon(this.house.category)}
+                <span class="wlabel-icon" style="background:#011E41">${icon('box')}</span>
                 <div>
                     <h2 id="supply-title">${title}</h2>
                     <p class="sub">${sub}</p>
@@ -246,65 +302,121 @@ export class DonorPanel extends Panel {
             units += q
             value += q * SUPPLIES[id].value
         }
-        return { kinds: this.basket.size, units, value }
+        // how much of a real box this fills, from the size and weight of each thing
+        const fill = basketBoxes(this.basket)
+        return { kinds: this.basket.size, units, value, fill, boxes: Math.max(1, Math.ceil(fill)) }
     }
 
-    #sortedNeeds() {
-        return [...this.house.needs].sort((a, b) => session.isUrgent(this.house.id, b.item) - session.isUrgent(this.house.id, a.item))
+    /** "media caja" / "1 caja" / "3 cajas" — the space a basket actually takes. */
+    #boxWord(t) {
+        if (!t.kinds) return ''
+        if (t.fill < 0.18) return 'cabe de sobra en una caja'
+        if (t.fill < 0.62) return 'llena media caja'
+        if (t.fill <= 1) return 'llena una caja'
+        return `ocupa ${t.boxes} cajas`
     }
 
-    /* ---------- 1 · supplies ---------- */
+    /** Icon-only tabs, one per category the barrio still needs. */
+    #categoryStrip() {
+        const key = this.barrio.id
+        return `
+            <div class="cat-strip" role="tablist" aria-label="Tipos de ayuda">
+                ${this.groups
+                    .map((g) => {
+                        const c = CATEGORIES[g.category]
+                        const urgent = g.items.some((it) => session.isUrgent(key, it.item))
+                        const on = g.category === this.category
+                        return `
+                        <button class="cat-tab ${on ? 'is-on' : ''}" type="button" role="tab" aria-selected="${on}"
+                            data-cat="${g.category}" title="${c.label}" aria-label="${c.label}">
+                            <span class="cat-icon" style="background:${c.color}">${icon(c.icon)}</span>
+                            ${urgent ? '<span class="cat-dot"></span>' : ''}
+                        </button>`
+                    })
+                    .join('')}
+            </div>`
+    }
+
+    /* ---------- 1 · supplies, at the collection point ---------- */
     #supplies() {
-        const h = this.house
-        const tiles = this.#sortedNeeds()
+        const key = this.barrio.id
+        const group = this.groups.find((g) => g.category === this.category) ?? this.groups[0]
+        const tiles = [...(group?.items ?? [])]
+            .sort((a, b) => session.isUrgent(key, b.item) - session.isUrgent(key, a.item))
             .map((n) => {
                 const s = SUPPLIES[n.item]
                 const q = this.basket.get(n.item) ?? 0
-                const urgent = session.isUrgent(h.id, n.item)
-                const covered = n.qty <= 0
+                const urgent = session.isUrgent(key, n.item)
                 return `
-                <div class="tile ${q ? 'is-selected' : ''} ${urgent ? 'is-urgent' : ''} ${covered ? 'is-covered' : ''}" data-item="${n.item}">
-                    <button class="tile-toggle" type="button" ${covered ? 'disabled' : ''}
-                        aria-label="${s.label}. ${covered ? 'Ya está cubierto' : `Se necesitan ${n.qty}. Valor de referencia ${money(s.value)} cada uno. Agregar uno`}">
+                <div class="tile ${q ? 'is-selected' : ''} ${urgent ? 'is-urgent' : ''}" data-item="${n.item}">
+                    <button class="tile-toggle" type="button"
+                        aria-label="${s.label}. Se necesitan ${n.qty}. Valor de referencia ${money(s.value)} cada uno. Agregar uno">
                         <span class="tile-stage" aria-hidden="true"></span>
                         <span class="tile-name">${s.label}</span>
                     </button>
-                    <p class="tile-meta">${urgent ? `<span class="tile-flag">${icon('urgent')} Urgente</span>` : ''}<span>${covered ? 'Ya está cubierto' : `${n.qty === 1 ? 'Se necesita' : 'Se necesitan'} <b>${n.qty}</b>`}</span><span class="tile-value">${money(s.value)} c/u</span></p>
-                    ${covered ? '' : this.#stepper(n.item, q, n.qty)}
+                    <p class="tile-meta">${urgent ? `<span class="tile-flag">${icon('urgent')} Urgente</span>` : ''}<span>${n.qty === 1 ? 'Se necesita' : 'Se necesitan'} <b>${n.qty}</b></span><span class="tile-value">${money(s.value)} c/u</span><span class="tile-pack">${icon('box')} ${perBox(n.item)} por caja</span></p>
+                    ${this.#stepper(n.item, q, n.qty)}
+                    <div class="box-step">
+                        <button type="button" class="js-box-minus" aria-label="Quitar una caja de ${s.label}" ${q <= 0 ? 'disabled' : ''}>${icon('minus')} caja</button>
+                        <button type="button" class="js-box-plus" aria-label="Agregar una caja de ${s.label} (${perBox(n.item)} unidades)" ${q >= n.qty ? 'disabled' : ''}>${icon('plus')} caja</button>
+                    </div>
                 </div>`
             })
             .join('')
 
         this.el.innerHTML = `
-            ${this.#head('Suministros necesarios', `Casa ${h.number} · Elige qué y cuánto aportar.`)}
+            ${this.#head('Punto de acopio', `${this.barrio.name} · Elige qué dejar aquí.`)}
             <div class="supply-body step-enter">
-                <div class="supply-grid" role="group" aria-label="Suministros que necesita esta casa">${tiles}</div>
+                ${this.#categoryStrip()}
+                <div class="supply-grid" role="group" aria-label="Suministros que necesita el barrio">${tiles}</div>
+                <section class="basket-inline" aria-label="Tu cesta de apoyo" hidden>
+                    <p class="section-title">Tu cesta de apoyo</p>
+                    <ul class="basket-list js-basket-list"></ul>
+                    <div class="total-line"><span>Valor equivalente</span><b class="js-total"></b></div>
+                    <p class="hint js-pack-hint">${icon('box')} <span></span></p>
+                    <p class="hint">${icon('info')} Es un valor de referencia: así sabes cuánto representa tu aporte.</p>
+                </section>
             </div>
             <div class="supply-foot">
                 <div class="basket-bar" aria-live="polite"></div>
-                <button class="btn btn-primary js-primary js-next" type="button">Ver mi cesta ${icon('chevron-right')}</button>
+                <button class="btn btn-primary js-primary js-next" type="button">Continuar ${icon('chevron-right')}</button>
             </div>`
 
         const body = this.el.querySelector('.supply-body')
+        this.el.querySelectorAll('.cat-tab').forEach((tab) =>
+            tab.addEventListener('click', () => {
+                if (tab.dataset.cat === this.category) return
+                this.category = tab.dataset.cat
+                this.audio.play('tap')
+                this.render(true)
+            })
+        )
         this.el.querySelectorAll('.tile').forEach((tile) => {
             const id = tile.dataset.item
-            const need = h.needs.find((n) => n.item === id)
+            const max = this.#max(id)
             tile3D(this, tile, id, body)
             tile.querySelector('.tile-toggle').addEventListener('click', () => {
                 const q = this.basket.get(id) ?? 0
-                if (q < need.qty) this.#setQty(id, q + 1, need.qty)
+                if (q < max) this.#setQty(id, q + 1, max)
             })
-            this.#bindStepper(tile, id, need.qty)
+            this.#bindStepper(tile, id, max)
+            // a whole box at a time; the last one only fills up to what is still needed
+            const per = perBox(id)
+            tile.querySelector('.js-box-minus')?.addEventListener('click', () => this.#setQty(id, (this.basket.get(id) ?? 0) - per, max))
+            tile.querySelector('.js-box-plus')?.addEventListener('click', () => this.#setQty(id, (this.basket.get(id) ?? 0) + per, max))
         })
+        this.#syncBasketRows()
         this.el.querySelector('.js-next').addEventListener('click', () => {
             if (!this.basket.size) {
-                this.el.querySelector('.tile:not(.is-covered) .tile-toggle')?.focus()
+                this.el.querySelector('.tile .tile-toggle')?.focus()
+                this.audio.play('error')
                 this.#nudge()
                 return
             }
-            this.go('basket')
+            this.go('method')
         })
         this.#syncBasketBar()
+        this.#syncTotal()
     }
 
     #stepper(id, q, max, label = SUPPLIES[id].label) {
@@ -323,23 +435,43 @@ export class DonorPanel extends Panel {
 
     #setQty(id, q, max) {
         q = Math.max(0, Math.min(max, q))
+        const before = this.basket.get(id) ?? 0
+        if (q !== before) this.audio.play(q > before ? 'add' : 'remove')
         if (q) this.basket.set(id, q)
         else this.basket.delete(id)
-        // update every view of this item in place (tile or basket row)
         this.el.querySelectorAll(`[data-item="${id}"]`).forEach((scope) => {
             scope.classList.toggle('is-selected', q > 0)
             const out = scope.querySelector('output')
             if (out) out.textContent = q
-            const minus = scope.querySelector('.js-minus')
-            const plus = scope.querySelector('.js-plus')
-            if (minus) minus.disabled = q <= 0
-            if (plus) plus.disabled = q >= max
+            for (const b of scope.querySelectorAll('.js-minus, .js-box-minus')) b.disabled = q <= 0
+            for (const b of scope.querySelectorAll('.js-plus, .js-box-plus')) b.disabled = q >= max
             const sub = scope.querySelector('.row-subtotal')
             if (sub) sub.textContent = money(q * SUPPLIES[id].value)
         })
         this.items.setSelected(`tile:${id}`, q > 0)
+        if (q !== before) this.onBasket?.(this.basket)
+        if (this.step === 'supplies' && (before === 0 || q === 0)) this.#syncBasketRows()
         this.#syncBasketBar()
         this.#syncTotal()
+    }
+
+    /** Rows inside the in-place basket review, rebuilt whenever an item joins or leaves. */
+    #syncBasketRows() {
+        const list = this.el.querySelector('.js-basket-list')
+        if (!list) return
+        list.innerHTML = [...this.basket]
+            .map(([id, q]) => {
+                const sup = SUPPLIES[id]
+                return `
+                <li class="basket-row" data-item="${id}">
+                    <span class="row-name"><b>${sup.label}</b><span>${money(sup.value)} por ${sup.unit}</span></span>
+                    ${this.#stepper(id, q, this.#max(id))}
+                    <span class="row-subtotal">${money(q * sup.value)}</span>
+                </li>`
+            })
+            .join('')
+        hydrateIcons(list)
+        list.querySelectorAll('.basket-row').forEach((row) => this.#bindStepper(row, row.dataset.item, this.#max(row.dataset.item)))
     }
 
     #syncBasketBar() {
@@ -348,9 +480,11 @@ export class DonorPanel extends Panel {
         if (!bar) return
         const t = this.#totals()
         bar.innerHTML = t.kinds
-            ? `<span class="basket-icon">${icon('basket')}</span><span class="basket-text"><b>Cesta de apoyo</b><span>${t.units} ${t.units === 1 ? 'unidad' : 'unidades'} · ${money(t.value)}</span></span>`
+            ? `<span class="basket-icon">${icon('basket')}</span><span class="basket-text"><b>Cesta de apoyo</b><span>${t.units} ${t.units === 1 ? 'unidad' : 'unidades'} · ${money(t.value)} · ${this.#boxWord(t)}</span></span>`
             : `<span class="basket-icon is-empty">${icon('basket')}</span><span class="basket-text"><b>Tu cesta está vacía</b><span>Toca un suministro para agregarlo.</span></span>`
         hydrateIcons(bar)
+        const inline = this.el.querySelector('.basket-inline')
+        if (inline) inline.hidden = !t.kinds
         next?.setAttribute('aria-disabled', String(!t.kinds))
     }
 
@@ -360,58 +494,26 @@ export class DonorPanel extends Panel {
         gsap.fromTo(bar, { x: -6 }, { x: 0, duration: 0.45, ease: 'sine.out' })
     }
 
-    /* ---------- 2 · basket ---------- */
-    #basket() {
-        const rows = [...this.basket]
-            .map(([id, q]) => {
-                const s = SUPPLIES[id]
-                const need = this.house.needs.find((n) => n.item === id)
-                return `
-                <li class="basket-row" data-item="${id}">
-                    <span class="row-name"><b>${s.label}</b><span>${money(s.value)} por ${s.unit}</span></span>
-                    ${this.#stepper(id, q, need.qty)}
-                    <span class="row-subtotal">${money(q * s.value)}</span>
-                </li>`
-            })
-            .join('')
-        this.el.innerHTML = `
-            ${this.#head('Tu cesta de apoyo', `Casa ${this.house.number} · ${this.barrio.name}`)}
-            <div class="supply-body step-enter">
-                <ul class="basket-list">${rows}</ul>
-                <div class="total-line"><span>Valor equivalente</span><b class="js-total"></b></div>
-                <p class="hint">${icon('info')} Es un valor de referencia: así sabes cuánto representa tu aporte.</p>
-            </div>
-            <div class="supply-foot">
-                <button class="btn btn-secondary js-more" type="button">${icon('chevron-left')} Agregar más</button>
-                <span class="foot-spacer"></span>
-                <button class="btn btn-primary js-primary js-next" type="button">Continuar ${icon('chevron-right')}</button>
-            </div>`
-        this.el.querySelectorAll('.basket-row').forEach((row) => {
-            const id = row.dataset.item
-            this.#bindStepper(row, id, this.house.needs.find((n) => n.item === id).qty)
-        })
-        this.el.querySelector('.js-more').addEventListener('click', () => this.go('supplies'))
-        this.el.querySelector('.js-next').addEventListener('click', () => (this.basket.size ? this.go('method') : this.go('supplies')))
-        this.#syncTotal()
-    }
-
     #syncTotal() {
+        const t = this.#totals()
         const el = this.el.querySelector('.js-total')
-        if (el) el.textContent = money(this.#totals().value)
-        const next = this.step === 'basket' && this.el.querySelector('.js-next')
+        if (el) el.textContent = money(t.value)
+        const pack = this.el.querySelector('.js-pack-hint span')
+        if (pack) pack.textContent = t.kinds ? `Por tamaño y peso, lo que llevas ${this.#boxWord(t)} (${BOX.label}).` : ''
+        const next = this.step === 'supplies' && this.el.querySelector('.js-next')
         if (next) next.setAttribute('aria-disabled', String(!this.basket.size))
     }
 
-    /* ---------- 3 · method ---------- */
+    /* ---------- 2 · method ---------- */
     #method() {
         const t = this.#totals()
         this.el.innerHTML = `
-            ${this.#head('¿Cómo quieres aportar?', `Tu cesta: ${t.units} ${t.units === 1 ? 'unidad' : 'unidades'} · ${money(t.value)}`)}
+            ${this.#head('¿Cómo quieres aportar?', `Tu cesta: ${t.units} ${t.units === 1 ? 'unidad' : 'unidades'} · ${money(t.value)} · ${this.#boxWord(t)}`)}
             <div class="supply-body step-enter">
                 <div class="choice-list">
                     <button class="choice js-physical" type="button" data-autofocus>
                         <span class="choice-icon">${icon('box')}</span>
-                        <span class="choice-text"><b>Entregar los suministros</b><span>Llevas los productos a un punto de acopio cercano.</span></span>
+                        <span class="choice-text"><b>Entregar los suministros</b><span>Llevas los productos al punto de acopio del barrio.</span></span>
                         ${icon('chevron-right')}
                     </button>
                     <button class="choice js-money" type="button">
@@ -422,7 +524,7 @@ export class DonorPanel extends Panel {
                 </div>
             </div>
             <div class="supply-foot">
-                <button class="btn btn-secondary js-back" type="button">${icon('chevron-left')} Volver a la cesta</button>
+                <button class="btn btn-secondary js-back" type="button">${icon('chevron-left')} Cambiar suministros</button>
             </div>`
         this.el.querySelector('.js-physical').addEventListener('click', () => {
             this.mode = 'physical'
@@ -432,10 +534,10 @@ export class DonorPanel extends Panel {
             this.mode = 'money'
             this.go('payment')
         })
-        this.el.querySelector('.js-back').addEventListener('click', () => this.go('basket'))
+        this.el.querySelector('.js-back').addEventListener('click', () => this.go('supplies'))
     }
 
-    /* ---------- 4a · physical: details ---------- */
+    /* ---------- 3a · physical: details ---------- */
     #detailsForm() {
         const d = this.details
         const windows = deliveryWindows()
@@ -505,6 +607,7 @@ export class DonorPanel extends Panel {
             form.querySelectorAll('[aria-invalid]').forEach((i) => i.removeAttribute('aria-invalid'))
             form.querySelectorAll('.field-error').forEach((e) => (e.hidden = true))
             if (problems.length) {
+                this.audio.play('error')
                 for (const [n, msg] of problems) {
                     form.querySelectorAll(`[name="${n}"]`).forEach((i) => {
                         i.setAttribute('aria-invalid', 'true')
@@ -549,9 +652,16 @@ export class DonorPanel extends Panel {
             ${this.#head('Resumen del aporte', 'Revisa los datos y confirma.')}
             <div class="supply-body step-enter">
                 ${this.#itemsSummary()}
-                <div class="info-block">${icon('pin')}<div><span class="info-label">Dónde entregar</span><b>${esc(p.name)}</b><span>${esc(p.address)}</span><span>Atención ${esc(p.hours)}</span></div></div>
+                <div class="info-block">${icon('pin')}<div><span class="info-label">Dónde entregar</span><b>${esc(p.name)}</b><span>${esc(p.address)}, Cali</span><span>Atención ${esc(p.hours)}</span></div></div>
+                <figure class="place-map">
+                    <iframe title="Mapa: ${esc(p.name)}" src="${mapEmbedUrl(p)}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+                    <figcaption>
+                        <span>${icon('pin')} ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}</span>
+                        <a href="${directionsUrl(p)}" target="_blank" rel="noopener">Cómo llegar ${icon('chevron-right')}</a>
+                    </figcaption>
+                </figure>
                 <div class="info-block">${icon('calendar')}<div><span class="info-label">Cuándo</span><b>${esc(w?.label ?? '')}</b><span>${esc(w?.detail ?? '')}</span></div></div>
-                <div class="info-block">${icon('home')}<div><span class="info-label">Para quién</span><b>Casa ${this.house.number} · ${this.barrio.name}</b><span>Llegará a la familia entre 24 y 48 horas después de tu entrega.</span></div></div>
+                <div class="info-block">${icon('home')}<div><span class="info-label">Para quién</span><b>Familias del ${esc(this.barrio.name)}</b><span>Las familias recogen los insumos en el punto de acopio del barrio.</span></div></div>
                 <div class="steps-block">
                     <span class="info-label">Siguientes pasos</span>
                     <ol>
@@ -570,26 +680,8 @@ export class DonorPanel extends Panel {
         this.el.querySelector('.js-confirm').addEventListener('click', () => this.#finish())
     }
 
-    /* ---------- 4b · money ---------- */
+    /* ---------- 3b · money ---------- */
     #payment() {
-        const t = this.#totals()
-        this.el.innerHTML = `
-            ${this.#head('Aporte en dinero', `Casa ${this.house.number} · ${this.barrio.name}`)}
-            <div class="supply-body step-enter">
-                ${this.#itemsSummary()}
-                <p class="hint">${icon('info')} Con este valor, la Cruz Roja compra y entrega estos suministros a esta casa.</p>
-            </div>
-            <div class="supply-foot">
-                <button class="btn btn-secondary js-back" type="button">${icon('chevron-left')} Volver</button>
-                <span class="foot-spacer"></span>
-                <button class="btn btn-primary js-primary js-pay" type="button">${icon('lock')} Ir a pagar ${money(t.value)}</button>
-            </div>`
-        this.el.querySelector('.js-back').addEventListener('click', () => this.go('method'))
-        this.el.querySelector('.js-pay').addEventListener('click', () => this.go('gateway'))
-    }
-
-    /** Prototype payment gateway — clearly labelled, collects no payment data. */
-    #gateway() {
         const t = this.#totals()
         const methods = [
             ['pse', 'bank', 'PSE', 'Débito desde tu cuenta bancaria'],
@@ -597,7 +689,7 @@ export class DonorPanel extends Panel {
             ['wallet', 'phone', 'Nequi o Daviplata', 'Desde tu celular'],
         ]
         this.el.innerHTML = `
-            ${this.#head('Pasarela de pago', 'Conexión segura')}
+            ${this.#head('Aporte en dinero', `${this.barrio.name} · Punto de acopio`)}
             <div class="supply-body step-enter">
                 <div class="gateway">
                     <div class="gateway-bar">${icon('lock')}<span>Pago seguro · Demostración</span></div>
@@ -616,11 +708,16 @@ export class DonorPanel extends Panel {
                             .join('')}
                     </fieldset>
                 </div>
+                <details class="basket-peek">
+                    <summary class="basket-bar"><span class="basket-icon">${icon('basket')}</span><span class="basket-text"><b>Qué compra tu aporte</b><span>${t.units} ${t.units === 1 ? 'unidad' : 'unidades'} para este barrio</span></span></summary>
+                    ${this.#itemsSummary()}
+                </details>
+                <p class="hint">${icon('info')} Con este valor, la Cruz Roja compra y deja estos suministros en el punto de acopio.</p>
             </div>
             <div class="supply-foot">
-                <button class="btn btn-secondary js-back" type="button">Cancelar</button>
+                <button class="btn btn-secondary js-back" type="button">${icon('chevron-left')} Volver</button>
                 <span class="foot-spacer"></span>
-                <button class="btn btn-primary js-primary js-pay" type="button" aria-disabled="true">Pagar ${money(t.value)}</button>
+                <button class="btn btn-primary js-primary js-pay" type="button" aria-disabled="true">${icon('lock')} Aportar ${money(t.value)}</button>
             </div>`
         const pay = this.el.querySelector('.js-pay')
         this.el.querySelectorAll('input[name="pay"]').forEach((r) => r.addEventListener('change', () => pay.setAttribute('aria-disabled', 'false')))
@@ -628,12 +725,13 @@ export class DonorPanel extends Panel {
             const m = this.el.querySelector('input[name="pay"]:checked')
             if (!m) {
                 this.el.querySelector('input[name="pay"]')?.focus()
+                this.audio.play('error')
                 return
             }
             this.payMethod = m.value
             this.go('paying')
         })
-        this.el.querySelector('.js-back').addEventListener('click', () => this.go('payment'))
+        this.el.querySelector('.js-back').addEventListener('click', () => this.go('method'))
     }
 
     #paying() {
@@ -646,7 +744,7 @@ export class DonorPanel extends Panel {
                 </div>
             </div>`
         const bar = this.el.querySelector('.processing-bar span')
-        gsap.fromTo(bar, { width: '0%' }, { width: '100%', duration: this.reducedMotion ? 0.3 : 1.8, ease: 'power1.inOut', onComplete: () => this.#finish() })
+        gsap.fromTo(bar, { width: '0%' }, { width: '100%', duration: this.reducedMotion ? 0.3 : 1.0, ease: 'power1.inOut', onComplete: () => this.#finish() })
     }
 
     #finish() {
@@ -654,15 +752,15 @@ export class DonorPanel extends Panel {
         const record = {
             code: this.code,
             mode: this.mode,
-            house: this.house.id,
+            barrio: this.barrio.id,
             items: Object.fromEntries(this.basket),
             value: this.#totals().value,
             window: this.details.window,
             at: new Date().toISOString(),
         }
-        this.onConfirm?.(this.house, new Map(this.basket), record)
         this.lastRecord = { ...record, totals: this.#totals(), lines: [...this.basket] }
-        session.clearBasket(this.house.id)
+        this.onConfirm?.(this.barrio, new Map(this.basket), record)
+        session.clearBasket(this.barrio.id)
         this.go('done')
     }
 
@@ -672,12 +770,13 @@ export class DonorPanel extends Panel {
         const physical = r.mode === 'physical'
         const w = deliveryWindows().find((x) => x.id === r.window)
         this.el.innerHTML = `
-            ${this.#head(physical ? 'Entrega programada' : 'Aporte recibido', `Casa ${this.house.number} · ${this.barrio.name}`)}
+            ${this.#head(physical ? 'Entrega programada' : 'Aporte recibido', `${this.barrio.name} · Punto de acopio`)}
             <div class="supply-body step-enter">
                 <div class="done">
                     <span class="done-mark">${icon('check')}</span>
                     <h3>Gracias por tu apoyo</h3>
-                    <p>${physical ? `Te esperamos en <b>${esc(this.point.name)}</b>, ${esc((w?.detail ?? '').replace(/\.$/, ''))}.` : 'Con tu aporte, el equipo comprará y entregará estos suministros a esta casa.'}</p>
+                    <p>${physical ? `Te esperamos en <b>${esc(this.point.name)}</b>, ${esc((w?.detail ?? '').replace(/\.$/, ''))}.` : 'Con tu aporte, el equipo comprará y dejará estos suministros en el punto de acopio.'}</p>
+                    <p class="done-note">Las familias ya salieron a recogerlos.</p>
                     <p class="done-code">${physical ? 'Código de entrega' : 'Referencia'}<b>${r.code}</b></p>
                     <p class="done-small">Valor equivalente: ${money(r.totals.value)}${physical ? '' : ' · Pago de demostración'}</p>
                 </div>
@@ -685,7 +784,7 @@ export class DonorPanel extends Panel {
             <div class="supply-foot">
                 <button class="btn btn-secondary js-map" type="button">${icon('map')} Volver al mapa</button>
                 <span class="foot-spacer"></span>
-                <button class="btn btn-primary js-primary js-done" type="button">Ver otras casas</button>
+                <button class="btn btn-primary js-primary js-done" type="button">Seguir en el barrio</button>
             </div>`
         this.code = null
         this.el.querySelector('.js-done').addEventListener('click', () => this.onClose())
@@ -696,99 +795,182 @@ export class DonorPanel extends Panel {
 /* ================================================================= */
 
 /**
- * Collection point view of an aid point: the same tiles, with one extra
- * permission — marking an item as an urgent shortage.
+ * Collection point view, docked on the left like the donor panel so the stand
+ * stays in view beside it.
+ *
+ * The people who work the stand do not walk the barrio and do not donate. They
+ * stand at the counter and keep the list honest, so their panel is a single
+ * fixed screen: the categories as icons, the supplies underneath, and one
+ * action per item — flag it as urgently missing.
  */
-export class CollectorPanel extends Panel {
-    constructor(el, opts, { items, loader, onClose, onAlert }) {
+/**
+ * The collection point's own board.
+ *
+ * A point does not walk its barrio and does not hand anything out here: it
+ * keeps a count of what is on its shelves. Every supply shows what it holds
+ * against the cap it aims for, and reads as crítico, estable or abastecido.
+ *
+ * Numbers live in a Google Sheet through InventoryStore, so two volunteers on
+ * two devices see the same board. Whatever falls under the critical line is
+ * what donors are shown first, which is what used to be marked by hand.
+ */
+export class InventoryPanel extends Panel {
+    constructor(el, opts, { items, loader, onClose, onShortages }) {
         super(el, opts)
-        Object.assign(this, { items, loader, onClose, onAlert })
-        this.step = 'review'
+        Object.assign(this, { items, loader, onClose, onShortages })
+        this.step = 'inventario'
+        this.store = null
     }
 
-    async openFor(house, barrio) {
-        this.house = house
-        this.barrio = barrio
-        await Promise.all(house.needs.map((n) => this.loader.load(SUPPLIES[n.item].asset)))
+    /** @param {object} point the logged-in collection point @param {InventoryStore} store */
+    async openFor(point, store) {
+        this.point = point
+        this.store = store
+        this.el.classList.add('is-board')
+        await Promise.all(Object.keys(SUPPLIES).map((id) => this.loader.load(SUPPLIES[id].asset)))
         this.render()
         this.show()
+        this.unsubscribe = this.store.on(() => this.#sync())
+        this.store.start()
     }
 
     close() {
+        this.unsubscribe?.()
+        this.unsubscribe = null
+        this.store.stop()
         this.items.removeWhere('tile:')
+        this.el.classList.remove('is-board')
         return this.hide().then(() => {
             if (!this.open) this.el.innerHTML = ''
         })
     }
 
+    /**
+     * Every supply on one board, ordered by category so related things sit
+     * together. A point counts its whole stock in one pass; hiding half of it
+     * behind tabs would only make that harder.
+     */
+    get supplies() {
+        const order = Object.keys(CATEGORIES)
+        return Object.values(SUPPLIES).sort(
+            (a, b) => order.indexOf(a.category) - order.indexOf(b.category) || a.label.localeCompare(b.label, 'es')
+        )
+    }
+
+    #card(s) {
+        const qty = this.store.get(s.id)
+        const cap = stockCap(s.id)
+        const st = stockState(s.id, qty)
+        const per = perBox(s.id)
+        return `
+        <div class="stock-card is-${st.id}" data-item="${s.id}">
+            <div class="stock-top">
+                <span class="tile-stage" aria-hidden="true"></span>
+                <span class="stock-name">
+                    <b>${esc(s.label)}</b>
+                    <span class="stock-unit">${per} por caja</span>
+                </span>
+            </div>
+            <div class="stock-line">
+                <span class="stock-state" data-state="${st.id}">${st.label}</span>
+                <span class="stock-boxes js-boxes">${boxesLabel(qty, per)}</span>
+            </div>
+            <div class="stock-meter" role="img" aria-label="${qty} de ${cap} ${esc(s.units)}. ${st.label}.">
+                <span class="stock-fill" style="width:${Math.round(stockRatio(s.id, qty) * 100)}%"></span>
+            </div>
+            <div class="stepper stepper-board" role="group" aria-label="Unidades de ${esc(s.label)}">
+                <button type="button" class="js-minus" aria-label="Quitar una unidad de ${esc(s.label)}" ${qty <= 0 ? 'disabled' : ''}>${icon('minus')}</button>
+                <output aria-live="polite"><b class="js-qty">${qty}</b><small>de ${cap}</small></output>
+                <button type="button" class="js-plus" aria-label="Agregar una unidad de ${esc(s.label)}" ${qty >= cap ? 'disabled' : ''}>${icon('plus')}</button>
+            </div>
+            <div class="box-step">
+                <button type="button" class="js-box-minus" aria-label="Quitar una caja de ${esc(s.label)}" ${qty <= 0 ? 'disabled' : ''}>${icon('minus')} caja</button>
+                <button type="button" class="js-box-plus" aria-label="Agregar una caja de ${esc(s.label)}" ${qty >= cap ? 'disabled' : ''}>${icon('plus')} caja</button>
+            </div>
+        </div>`
+    }
+
     render() {
         this.items.removeWhere('tile:')
-        const h = this.house
-        this.el.dataset.step = 'review'
-        const tiles = h.needs
-            .map((n) => {
-                const s = SUPPLIES[n.item]
-                const on = session.isUrgent(h.id, n.item)
-                return `
-                <div class="tile ${on ? 'is-urgent is-selected' : ''}" data-item="${n.item}">
-                    <div class="tile-toggle is-static">
-                        <span class="tile-stage" aria-hidden="true"></span>
-                        <span class="tile-name">${s.label}</span>
-                    </div>
-                    <p class="tile-meta"><span>${n.qty === 1 ? 'Se necesita' : 'Se necesitan'} <b>${n.qty}</b></span></p>
-                    <button class="alert-btn ${on ? 'is-on' : ''}" type="button" aria-pressed="${on}">
-                        ${icon('urgent')}<span>${on ? 'Faltante urgente' : 'Alertar faltante'}</span>
-                    </button>
-                </div>`
-            })
-            .join('')
+        const zone = ZONES.find((z) => z.id === this.point.zone)
+        this.el.dataset.step = 'inventario'
         this.el.innerHTML = `
-            <div class="supply-head">
-                ${catIcon(h.category)}
-                <div>
-                    <h2 id="supply-title">Revisión · Casa ${h.number}</h2>
-                    <p class="sub">${CATEGORIES[h.category].label} · Marca lo que falta con urgencia.</p>
+            <div class="supply-head board-head">
+                <span class="wlabel-icon" style="background:${zone?.color ?? '#011E41'}">${icon('box')}</span>
+                <div class="board-title">
+                    <h2 id="supply-title">Inventario del punto</h2>
+                    <p class="sub">${esc(this.point.name)} · ${esc(zone?.name ?? '')}</p>
                 </div>
-                <button class="icon-btn js-close" type="button" aria-label="Cerrar y volver al barrio">${icon('x')}</button>
+                <button class="icon-btn js-close" type="button" aria-label="Cerrar el inventario">${icon('x')}</button>
             </div>
             <div class="supply-body step-enter">
-                <div class="supply-grid" role="group" aria-label="Suministros de esta casa">${tiles}</div>
+                <div class="stock-grid" role="group" aria-label="Inventario del punto de acopio">
+                    ${this.supplies.map((s) => this.#card(s)).join('')}
+                </div>
             </div>
-            <div class="supply-foot">
-                <p class="summary" aria-live="polite"></p>
-                <button class="btn btn-primary js-primary js-done" type="button">Listo</button>
+            <div class="board-foot">
+                <p class="source-line js-source" hidden></p>
+                <p class="summary js-summary" aria-live="polite"></p>
             </div>`
         hydrateIcons(this.el)
         const body = this.el.querySelector('.supply-body')
-        this.el.querySelectorAll('.tile').forEach((tile) => {
-            const id = tile.dataset.item
-            tile3D(this, tile, id, body)
-            tile.querySelector('.alert-btn').addEventListener('click', () => this.#toggle(tile, id))
+        this.el.querySelectorAll('.stock-card').forEach((card) => {
+            const id = card.dataset.item
+            tile3D(this, card, id, body)
+            const per = perBox(id)
+            card.querySelector('.js-minus').addEventListener('click', () => this.#bump(id, -1))
+            card.querySelector('.js-plus').addEventListener('click', () => this.#bump(id, 1))
+            card.querySelector('.js-box-minus').addEventListener('click', () => this.#bump(id, -per))
+            card.querySelector('.js-box-plus').addEventListener('click', () => this.#bump(id, per))
         })
         this.el.querySelector('.js-close').addEventListener('click', () => this.onClose())
-        this.el.querySelector('.js-done').addEventListener('click', () => this.onClose())
-        this.#summary()
+        this.#sync()
     }
 
-    #toggle(tile, id) {
-        const on = !session.isUrgent(this.house.id, id)
-        session.setUrgent(this.house.id, id, on)
-        tile.classList.toggle('is-urgent', on)
-        tile.classList.toggle('is-selected', on)
-        const b = tile.querySelector('.alert-btn')
-        b.classList.toggle('is-on', on)
-        b.setAttribute('aria-pressed', String(on))
-        b.querySelector('span:last-child').textContent = on ? 'Faltante urgente' : 'Alertar faltante'
-        this.items.setSelected(`tile:${id}`, on)
-        this.#summary()
-        this.onAlert?.(this.house, id, on)
+    #bump(id, delta) {
+        const before = this.store.get(id)
+        const after = this.store.add(id, delta)
+        if (after !== before) this.audio.play(after > before ? 'add' : 'remove')
+        else this.audio.play('error')
     }
 
-    #summary() {
-        const n = session.urgentCount(this.house.id)
-        this.el.querySelector('.summary').innerHTML = n
-            ? `<b>${n} ${n === 1 ? 'alerta activa' : 'alertas activas'}</b> Los donantes verán estos insumos primero.`
-            : 'Sin alertas. Toca “Alertar faltante” si algo se necesita con urgencia.'
+    /** Redraw the numbers in place — the sheet may also have moved them. */
+    #sync() {
+        if (!this.el.isConnected || !this.point) return
+        for (const card of this.el.querySelectorAll('.stock-card')) {
+            const id = card.dataset.item
+            const qty = this.store.get(id)
+            const cap = stockCap(id)
+            const st = stockState(id, qty)
+            card.className = `stock-card is-${st.id}`
+            card.querySelector('.js-qty').textContent = qty
+            card.querySelector('.js-boxes').textContent = boxesLabel(qty, perBox(id))
+            card.querySelector('.stock-fill').style.width = `${Math.round(stockRatio(id, qty) * 100)}%`
+            const chip = card.querySelector('.stock-state')
+            chip.textContent = st.label
+            chip.dataset.state = st.id
+            card.querySelector('.stock-meter').setAttribute('aria-label', `${qty} de ${cap} ${SUPPLIES[id].units}. ${st.label}.`)
+            for (const b of card.querySelectorAll('.js-minus, .js-box-minus')) b.disabled = qty <= 0
+            for (const b of card.querySelectorAll('.js-plus, .js-box-plus')) b.disabled = qty >= cap
+            this.items.setSelected(`tile:${id}`, st.id === 'critico')
+        }
+        const short = this.store.shortages()
+        const sum = this.el.querySelector('.js-summary')
+        if (sum) {
+            sum.classList.toggle('is-critical', short.length > 0)
+            sum.innerHTML = short.length
+                ? `<b>${short.length} ${short.length === 1 ? 'insumo crítico' : 'insumos críticos'}:</b> ${short.map((id) => esc(SUPPLIES[id].label)).join(', ')}`
+                : '<b>Sin faltantes críticos</b>'
+        }
+        // the connection only speaks up when something is really wrong with it:
+        // a single failed call is retried quietly a few seconds later
+        const src = this.el.querySelector('.js-source')
+        if (src) {
+            src.hidden = !(this.store.status === 'error' && this.store.failures >= 2)
+            src.textContent = src.hidden ? '' : this.store.sourceLine()
+            src.dataset.status = this.store.status
+        }
+        this.onShortages?.(short)
     }
 }
 

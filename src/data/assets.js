@@ -15,7 +15,24 @@
  *   scale    explicit uniform scale (applied after recentering)
  *   paint    for untextured GLBs: map mesh names → material roles. Painted
  *            models are merged per role so a house costs a handful of draw calls.
+ *   drop     a RegExp: meshes whose name or material matches are removed before
+ *            the model is measured (stray parts left in the file)
  */
+
+/**
+ * Every house is scaled so its front door is 2.1 m tall, the height of a real
+ * door next to the 1.6 m guide. The models came at different scales (doors from
+ * 1.8 to 2.6 m), which is what made some houses look huge and others like toys.
+ * Each `scale` below is 2.1 ÷ the door height measured in that model.
+ */
+const DOOR = 2.1
+
+/**
+ * Every house is a GLB with its Substance textures embedded, made from the
+ * model and textures kept in fuentes_3d/<casa>/ with tools/fbx_to_glb.py (see
+ * fuentes_3d/LEEME.md). The app only ever loads these finished files.
+ */
+const stylized = { ao: 0.28, aoHeight: 3.2, rim: 0.1 } // keeps the textures; adds the world's shading
 
 export const ASSETS = {
     /* ---------------- characters ---------------- */
@@ -27,94 +44,95 @@ export const ASSETS = {
         // Clips named like "idle" / "walk" are picked up automatically.
         model: null,
         procedural: 'guide',
-        fit: { height: 1.75 },
+        fit: { height: 1.6 },
     },
 
-    /* ---------------- houses (provided GLBs) ---------------- */
+    /* ---------------- houses ---------------- */
     'house-tile': {
         id: 'house-tile',
         category: 'houses',
         label: 'Casa de un piso con teja',
-        model: '/assets/houses/Casa1.glb',
+        model: '/assets/houses/casa-teja.glb',
         front: '-z',
-        paint: {
-            default: 'wall',
-            rules: [
-                [/^Plane/, 'roofTile'],
-                [/^Cube009$/, 'base'],
-                [/^Cube011$/, 'roofBase'],
-                [/^Cube003$/, 'door'],
-                [/^Cube005$/, 'trim'],
-                [/^Cube004$/, 'planter'],
-                [/^Cube006$/, 'trim'],
-                [/^Cube00[78]$/, 'glass'],
-                [/^Cube(010)?$/, 'base'],
-            ],
-        },
+        scale: DOOR / 2.36, // "Puerta"
+        stylize: stylized,
     },
     'house-two-story': {
         id: 'house-two-story',
         category: 'houses',
         label: 'Casa de dos pisos',
-        model: '/assets/houses/Casa2.glb',
+        model: '/assets/houses/casa-dos-pisos.glb',
         front: '-z',
-        paint: {
-            default: 'wall',
-            rules: [
-                [/^Cube01[27]$|^Cube046$/, 'base'],
-                [/^Cube019$|^Cube02[135]$/, 'trim'],
-                [/^Cube02[24]$|^Cube015$/, 'glass'],
-                [/^Cube027$/, 'roofFlat'],
-                [/^Cube013$/, 'wallAlt'],
-                [/^Cube01[46]$/, 'metal'],
-                [/^Cube018$/, 'door'],
-            ],
-        },
+        scale: DOOR / 2.6, // "Puerta 2"
+        stylize: stylized,
     },
     'house-zinc': {
         id: 'house-zinc',
         category: 'houses',
         label: 'Casa con techo ondulado',
-        model: '/assets/houses/Casa3.glb',
+        model: '/assets/houses/casa-techo-ondulado.glb',
         front: '-z',
-        paint: {
-            default: 'wall',
-            rules: [
-                [/zierCurve/, 'roofSheet'],
-                [/^Cube029$|^Cube049$/, 'trim'],
-                [/^Cube026$|^Cube03[23]$/, 'base'],
-                [/^Cube030$/, 'planter'],
-                [/^Cube037$/, 'door'],
-                [/^Cube03[89]$/, 'metal'],
-                [/^Cube04[07]$/, 'glass'],
-            ],
-        },
+        scale: DOOR / 2.16, // "Puerta.001"
+        stylize: stylized,
     },
-    'house-flat': {
-        id: 'house-flat',
+    'house-estrato2': {
+        id: 'house-estrato2',
         category: 'houses',
-        label: 'Casa de techo plano',
-        model: '/assets/houses/Casa4.glb',
+        label: 'Casa de estrato 2',
+        model: '/assets/houses/casa-estrato-2.glb',
+        // door, porch and planter are on the model's +X side
+        front: '+x',
+        scale: DOOR / 1.72, // the door leaves in "Madera 3"
+        stylize: stylized,
+    },
+    'house-estrato3': {
+        id: 'house-estrato3',
+        category: 'houses',
+        label: 'Casa de estrato 3',
+        model: '/assets/houses/casa-estrato-3.glb',
+        // its door and windows are on the model's +X side, unlike the other houses
+        front: '+x',
+        scale: DOOR / 1.79, // "Madera 2"
+        stylize: stylized,
+    },
+    'house-estrato4': {
+        id: 'house-estrato4',
+        category: 'houses',
+        label: 'Casa de estrato 4 con balcón',
+        model: '/assets/houses/casa-estrato-4.glb',
+        // door, windows and balcony are on the model's +X side
+        front: '+x',
+        scale: DOOR / 1.51, // the door frame in "Madera 4"
+        stylize: stylized,
+    },
+    'house-estrato5': {
+        id: 'house-estrato5',
+        category: 'houses',
+        label: 'Casa de estrato 5 con garaje',
+        model: '/assets/houses/casa-estrato-5.glb',
         front: '-z',
-        paint: {
-            default: 'wall',
-            rules: [
-                [/^Cube034$/, 'base'],
-                [/^Cube036$/, 'roofFlat'],
-                [/^Cube041$/, 'metal'],
-                [/^Cube04[28]$/, 'glass'],
-                [/^Cube043$/, 'door'],
-                [/^Cube04[45]$/, 'planter'],
-            ],
-        },
+        scale: DOOR / 1.96, // "Madera 1"
+        // the file carries a flat logo plane six metres to the side; without it the house is ~6.4 m wide
+        drop: /^SVGMat/,
+        stylize: stylized,
     },
 
     /* ---------------- props (provided GLB) ---------------- */
+    obstacle: {
+        id: 'obstacle',
+        category: 'props',
+        label: 'Barrera vial (obstáculo)',
+        model: '/assets/props/obstaculo.glb',
+        procedural: null,
+        front: '+x', // the long side runs along X, like the procedural barrier it replaces
+        fit: { size: 2.6 },
+        stylize: { ao: 0.25, aoHeight: 0.6, rim: 0.1 },
+    },
     'lamp-post': {
         id: 'lamp-post',
         category: 'props',
         label: 'Poste de luz',
-        model: '/assets/props/PosteDeLuz.glb',
+        model: '/assets/props/poste-de-luz.glb',
         fit: { height: 3.7 },
         paint: {
             default: 'lampPole',
@@ -133,7 +151,7 @@ export const ASSETS = {
     'hygiene-kit': { id: 'hygiene-kit', category: 'supplies', label: 'Kit de higiene', model: null, procedural: 'hygieneKit', fit: { size: 1.7 } },
 }
 
-export const HOUSE_MODELS = ['house-tile', 'house-two-story', 'house-zinc', 'house-flat']
+export const HOUSE_MODELS = ['house-tile', 'house-two-story', 'house-zinc', 'house-estrato2', 'house-estrato3', 'house-estrato4', 'house-estrato5']
 
 export function getAsset(id) {
     const def = ASSETS[id]

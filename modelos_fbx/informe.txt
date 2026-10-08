@@ -1,0 +1,49 @@
+Informe de exportación FBX — NEXOS
+
+categoría/modelo: mallas, quads, triángulos, n-gonos
+
+personajes/guia: 32 mallas, 12650 quads, 0 triángulos, 0 n-gonos
+personajes/vecino: 14 mallas, 2989 quads, 0 triángulos, 0 n-gonos
+insumos/agua: 5 mallas, 1526 quads, 0 triángulos, 0 n-gonos
+insumos/alimentos_enlatados: 12 mallas, 2538 quads, 0 triángulos, 0 n-gonos
+insumos/arroz: 3 mallas, 904 quads, 0 triángulos, 0 n-gonos
+insumos/cobija: 4 mallas, 1568 quads, 0 triángulos, 0 n-gonos
+insumos/jabon: 2 mallas, 727 quads, 0 triángulos, 0 n-gonos
+insumos/kit_de_higiene: 10 mallas, 2002 quads, 0 triángulos, 0 n-gonos
+insumos/leche: 3 mallas, 24 quads, 0 triángulos, 0 n-gonos
+insumos/medicinas: 10 mallas, 1708 quads, 0 triángulos, 0 n-gonos
+punto_de_acopio/caja_de_insumos: 2 mallas, 156 quads, 0 triángulos, 0 n-gonos
+punto_de_acopio/punto_de_acopio: 24 mallas, 1539 quads, 0 triángulos, 0 n-gonos
+vegetacion/arbol: 2 mallas, 416 quads, 0 triángulos, 0 n-gonos
+vegetacion/arbusto: 1 mallas, 288 quads, 0 triángulos, 0 n-gonos
+vegetacion/palmera: 2 mallas, 344 quads, 0 triángulos, 0 n-gonos
+barrio/arco_cancha: 3 mallas, 18 quads, 0 triángulos, 0 n-gonos
+barrio/banca: 4 mallas, 312 quads, 0 triángulos, 0 n-gonos
+barrio/bicicleta: 6 mallas, 598 quads, 0 triángulos, 0 n-gonos
+barrio/caneca: 3 mallas, 164 quads, 0 triángulos, 0 n-gonos
+barrio/capilla: 9 mallas, 200 quads, 0 triángulos, 0 n-gonos
+barrio/escalon_capilla: 1 mallas, 150 quads, 0 triángulos, 0 n-gonos
+barrio/matera: 7 mallas, 382 quads, 0 triángulos, 0 n-gonos
+barrio/muro_bajo: 2 mallas, 12 quads, 0 triángulos, 0 n-gonos
+barrio/puente_peatonal: 27 mallas, 306 quads, 0 triángulos, 0 n-gonos
+barrio/quiosco: 11 mallas, 406 quads, 0 triángulos, 0 n-gonos
+ciudad/casa_mapa: 2 mallas, 18 quads, 0 triángulos, 0 n-gonos
+ciudad/cristo_rey: 5 mallas, 272 quads, 0 triángulos, 0 n-gonos
+ciudad/estadio: 3 mallas, 212 quads, 0 triángulos, 0 n-gonos
+ciudad/la_ermita: 6 mallas, 36 quads, 0 triángulos, 0 n-gonos
+ciudad/punto_de_ayuda_mapa: 3 mallas, 35 quads, 0 triángulos, 0 n-gonos
+ciudad/torre_de_cali: 3 mallas, 34 quads, 0 triángulos, 0 n-gonos
+ciudad/torre_mapa: 1 mallas, 6 quads, 0 triángulos, 0 n-gonos
+ciudad/tres_cruces: 10 mallas, 164 quads, 0 triángulos, 0 n-gonos
+emergencias/barrera_revision: 6 mallas, 31 quads, 0 triángulos, 0 n-gonos
+emergencias/carpa_de_socorro: 13 mallas, 995 quads, 0 triángulos, 0 n-gonos
+emergencias/conos: 9 mallas, 630 quads, 0 triángulos, 0 n-gonos
+emergencias/estibas: 9 mallas, 1201 quads, 0 triángulos, 0 n-gonos
+emergencias/punto_de_agua: 12 mallas, 745 quads, 0 triángulos, 0 n-gonos
+emergencias/punto_de_encuentro: 3 mallas, 87 quads, 0 triángulos, 0 n-gonos
+emergencias/sacos_de_arena: 7 mallas, 2058 quads, 0 triángulos, 0 n-gonos
+emergencias/tanques_de_agua: 4 mallas, 380 quads, 0 triángulos, 0 n-gonos
+emergencias/tendedero: 8 mallas, 96 quads, 0 triángulos, 0 n-gonos
+
+Modelos: 42
+Polígonos que no son quads: 0

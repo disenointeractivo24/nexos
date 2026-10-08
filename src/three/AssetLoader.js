@@ -5,6 +5,7 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { getAsset } from '../data/assets.js'
 import { houseMaterial } from './materials.js'
+import { stylize } from './stylize.js'
 import { PROCEDURAL } from './procedural/index.js'
 
 /**
@@ -94,6 +95,16 @@ export class AssetLoader {
             source = build ? 'procedural' : 'placeholder'
         }
 
+        // stray parts left in the file (a logo plane, a reference object) would throw off
+        // the centring and the size, so they go before anything is measured
+        if (source === 'glb' && def.drop) {
+            const gone = []
+            root.traverse((o) => {
+                if (o.isMesh && (def.drop.test(o.name) || [o.material].flat().some((m) => def.drop.test(m?.name ?? '')))) gone.push(o)
+            })
+            for (const o of gone) o.removeFromParent()
+        }
+
         const painted = source === 'glb' && !!def.paint && animations.length === 0
         const object = painted ? mergeByRole(root, def.paint) : root
         normalise(object, def)
@@ -102,6 +113,11 @@ export class AssetLoader {
             if (o.isMesh) {
                 o.castShadow = true
                 o.receiveShadow = true
+                // a textured model keeps its own materials, but gets the same stylized
+                // shading as the rest of the world (cel bands, base occlusion, rim)
+                if (def.stylize && source === 'glb' && !painted) {
+                    for (const m of Array.isArray(o.material) ? o.material : [o.material]) stylize(m, def.stylize)
+                }
             }
         })
 

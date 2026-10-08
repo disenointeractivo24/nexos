@@ -6,10 +6,11 @@ import { canopyGeometry, trunkGeometry, palmGeometry } from './procedural/nature
 import { canvasTexture, crossTexture } from './procedural/textures.js'
 import { stylize, stylizeWater } from './stylize.js'
 import { buildCityCues } from './ThemeCues.js'
+import * as props from './props.js'
 
 /**
  * An abstracted, readable Cali: Farallones hills to the west with Cristo Rey
- * and Tres Cruces, the Río Cali crossing the centre toward the Río Cauca,
+ * and Tres Cruces on their summits, the Río Cauca to the east,
  * a few main avenues, low-rise blocks, and five territorial zones.
  * Not a digital twin — a calm miniature.
  */
@@ -72,19 +73,11 @@ export function heightAt(x, z) {
     return Math.max(0, h)
 }
 
+/**
+ * Only the Río Cauca, along the eastern edge. The rivers that used to cross
+ * the city did not follow their real courses and made the map harder to read.
+ */
 const RIVERS = [
-    {
-        id: 'cali',
-        width: 4.2,
-        clear: 5.5,
-        points: [[-190, 10], [-150, 7], [-118, 2], [-96, -2], [-74, -6], [-50, -4], [-26, -9], [-4, -15], [16, -21], [36, -26], [60, -33], [88, -40], [116, -49], [140, -55], [158, -58]],
-    },
-    {
-        id: 'melendez',
-        width: 2.6,
-        clear: 4,
-        points: [[-170, 104], [-120, 96], [-84, 90], [-50, 95], [-14, 104], [24, 106], [62, 98], [100, 90], [132, 84], [160, 80]],
-    },
     {
         id: 'cauca',
         width: 10,
@@ -92,6 +85,36 @@ const RIVERS = [
         points: [[150, -460], [160, -300], [150, -170], [162, -70], [152, 30], [166, 130], [152, 250], [162, 460]],
     },
 ]
+
+/** The highest ground within `radius` of (x0, z0): where a landmark on a hill belongs. */
+function summit(x0, z0, radius) {
+    let best = { x: x0, z: z0, y: heightAt(x0, z0) }
+    for (let dx = -radius; dx <= radius; dx += 1) {
+        for (let dz = -radius; dz <= radius; dz += 1) {
+            if (dx * dx + dz * dz > radius * radius) continue
+            const y = heightAt(x0 + dx, z0 + dz)
+            if (y > best.y) best = { x: x0 + dx, z: z0 + dz, y }
+        }
+    }
+    return best
+}
+const CRISTO_REY = summit(-132, 10, 20)
+const TRES_CRUCES = summit(-116, -72, 20)
+
+/**
+ * The focus mask around a zone in play: how far past its outline it keeps its
+ * full colour (so the glowing border itself is never dimmed), and how many
+ * metres the shade takes to fade in. Only the rest of the city is shaded;
+ * hills, river and fields stay as they are.
+ */
+const FOCUS_EDGE = 5
+const FOCUS_FEATHER = 6
+
+/**
+ * The light the zone in play gives off along its border: a low band in the
+ * zone's own marker colour, so the border and the marker read as one thing.
+ */
+const BORDER_LIGHT_HEIGHT = 1.2
 
 const ROADS = [
     [[-86, 44], [-50, 38], [-10, 32], [30, 34], [70, 44], [128, 62]], // Calle 5 / Autopista Sur
@@ -101,6 +124,119 @@ const ROADS = [
     [[-30, 10], [12, 4], [52, -2], [118, -18]], // Calle 25
 ]
 
+/** Open green squares on the map. */
+const PARKS = [
+    { x: 52, z: 72, r: 12 },
+    { x: -46, z: 20, r: 8 },
+    { x: 40, z: -70, r: 9 },
+    { x: 100, z: 40, r: 9 },
+    { x: 6, z: -2, r: 5 }, // plaza
+]
+/** Landmarks with the ground they stand on: La Ermita, Torre de Cali, Estadio Pascual Guerrero. */
+const LANDMARK_GROUNDS = [
+    { x: -8, z: -6, r: 9 },
+    { x: 24, z: -12, r: 7 },
+    { x: -26, z: 58, r: 17 },
+]
+/**
+ * What an avenue must go round and never cross: the parks, the landmarks and
+ * each zone's aid point.
+ */
+const ROAD_HALF_WIDTH = 1.3
+const ROAD_KEEP_OUT = mergeKeepOut([...PARKS, ...LANDMARK_GROUNDS, ...ZONES.map((z) => ({ x: z.label[0], z: z.label[1], r: 7 }))])
+
+/**
+ * Places too close for a road to pass between them (the plaza and the centre's
+ * aid point) become one circle round both, so the road goes round the pair
+ * instead of being pushed from one into the other.
+ */
+function mergeKeepOut(list) {
+    const out = list.map((c) => ({ ...c }))
+    for (let merged = true; merged; ) {
+        merged = false
+        for (let i = 0; i < out.length && !merged; i++) {
+            for (let j = i + 1; j < out.length && !merged; j++) {
+                const a = out[i], b = out[j]
+                const d = Math.hypot(b.x - a.x, b.z - a.z)
+                if (d >= a.r + b.r + 2 * (ROAD_HALF_WIDTH + 1) + 2) continue
+                // the smallest circle holding both
+                const r = Math.max(a.r, b.r, (d + a.r + b.r) / 2)
+                const k = d > 1e-6 ? (r - a.r) / d : 0
+                out[i] = r === a.r ? a : r === b.r ? b : { x: a.x + (b.x - a.x) * k, z: a.z + (b.z - a.z) * k, r }
+                out.splice(j, 1)
+                merged = true
+            }
+        }
+    }
+    return out
+}
+
+/**
+ * Bend a road round the places it must not cross. Where it would enter one,
+ * the stretch inside is laid on a half circle round its edge (on the side the
+ * road already passes), with a metre to spare; then the line is relaxed so the
+ * detour reads as a gentle curve, and laid out again at even spacing.
+ */
+function detour(samples, keepOut = ROAD_KEEP_OUT) {
+    let pts = samples.map((p) => new THREE.Vector3(p.x, 0, p.z))
+    const clearOf = (o) => o.r + ROAD_HALF_WIDTH + 1
+    const bend = () => {
+        for (const o of keepOut) {
+            const R = clearOf(o)
+            let bi = -1
+            let bd = Infinity
+            pts.forEach((p, i) => {
+                const d = Math.hypot(p.x - o.x, p.z - o.z)
+                if (d < bd) {
+                    bd = d
+                    bi = i
+                }
+            })
+            if (bd >= R) continue
+            const a = pts[Math.max(bi - 2, 0)]
+            const b = pts[Math.min(bi + 2, pts.length - 1)]
+            let ux = b.x - a.x, uz = b.z - a.z
+            const l = Math.hypot(ux, uz) || 1
+            ux /= l
+            uz /= l
+            let vx = -uz, vz = ux
+            if ((pts[bi].x - o.x) * vx + (pts[bi].z - o.z) * vz < 0) {
+                vx = -vx
+                vz = -vz
+            }
+            for (const p of pts) {
+                const dx = p.x - o.x, dz = p.z - o.z
+                if (Math.hypot(dx, dz) >= R) continue
+                const along = Math.max(-R, Math.min(R, dx * ux + dz * uz))
+                const side = Math.sqrt(Math.max(0, R * R - along * along))
+                p.x = o.x + ux * along + vx * side
+                p.z = o.z + uz * along + vz * side
+            }
+        }
+    }
+    const push = () => {
+        for (const p of pts) {
+            for (const o of keepOut) {
+                const R = clearOf(o)
+                const dx = p.x - o.x, dz = p.z - o.z
+                const d = Math.hypot(dx, dz)
+                if (d < R && d > 1e-4) {
+                    p.x = o.x + (dx / d) * R
+                    p.z = o.z + (dz / d) * R
+                }
+            }
+        }
+    }
+    bend()
+    for (let k = 0; k < 6; k++) {
+        pts = pts.map((p, i) =>
+            i === 0 || i === pts.length - 1 ? p.clone() : new THREE.Vector3((pts[i - 1].x + p.x * 2 + pts[i + 1].x) / 4, 0, (pts[i - 1].z + p.z * 2 + pts[i + 1].z) / 4)
+        )
+        push()
+    }
+    return sampleCurve(new THREE.CatmullRomCurve3(pts, false, 'centripetal'), 2)
+}
+
 function curveFrom(points, y = 0) {
     return new THREE.CatmullRomCurve3(points.map(([x, z]) => new THREE.Vector3(x, y, z)), false, 'centripetal')
 }
@@ -108,6 +244,46 @@ function curveFrom(points, y = 0) {
 function sampleCurve(curve, spacing) {
     const n = Math.max(2, Math.ceil(curve.getLength() / spacing))
     return curve.getSpacedPoints(n)
+}
+
+/** One pass of a box blur over a square grid of size S, along rows or columns. */
+function boxBlur(src, S, r, horizontal) {
+    const out = new Float32Array(src.length)
+    const n = 2 * r + 1
+    for (let line = 0; line < S; line++) {
+        const at = horizontal ? (i) => line * S + i : (i) => i * S + line
+        let sum = 0
+        for (let i = -r; i <= r; i++) sum += src[at(Math.min(S - 1, Math.max(0, i)))]
+        for (let i = 0; i < S; i++) {
+            out[at(i)] = sum / n
+            sum += src[at(Math.min(S - 1, i + r + 1))] - src[at(Math.max(0, i - r))]
+        }
+    }
+    return out
+}
+
+/** Upright band standing on a closed outline: v runs from the ground (0) to the top (1). */
+function wallGeometry(points, height, y = 0) {
+    const pos = []
+    const uv = []
+    const idx = []
+    const n = points.length
+    let acc = 0
+    for (let i = 0; i < n; i++) {
+        const p = points[i]
+        if (i > 0) acc += p.distanceTo(points[i - 1])
+        pos.push(p.x, y, p.z, p.x, y + height, p.z)
+        uv.push(acc, 0, acc, 1)
+    }
+    for (let i = 0; i < n; i++) {
+        const a = i * 2, b = ((i + 1) % n) * 2
+        idx.push(a, b, a + 1, b, b + 1, a + 1)
+    }
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+    g.setIndex(idx)
+    return g
 }
 
 /** Flat ribbon (river / road / outline) along sampled points on the XZ plane. */
@@ -162,12 +338,17 @@ export class CityOverview {
         this.zones = new Map()
         this.hovered = null
         this.selected = null
+        this.focusZone = null
+        this.focusAmount = 0
+        this.focusMask = null
+        this.masks = new Map()
         this.exclusions = []
         this.aidRings = []
         this.ready = false
         this.riverScale = theme?.cues.city.includes('highRiver') ? 1.3 : 1
         this.riverSamples = RIVERS.map((r) => ({ ...r, width: r.width * this.riverScale, samples: sampleCurve(curveFrom(r.points), 2) }))
-        this.roadSamples = ROADS.map((pts) => sampleCurve(curveFrom(pts), 2))
+        // the avenues bend round parks, landmarks and aid points instead of running over them
+        this.roadSamples = ROADS.map((pts) => detour(sampleCurve(curveFrom(pts), 2)))
     }
 
     /**
@@ -230,6 +411,21 @@ export class CityOverview {
         return out.set(z.label[0], 0, z.label[1])
     }
 
+    /** Where a zone sits and how far it reaches on the ground, for framing it. */
+    zoneFrame(zoneId) {
+        const z = this.zones.get(zoneId)
+        if (!z) return { center: this.focusPoint(zoneId), radius: 60 }
+        if (!z.frame) {
+            const center = new THREE.Vector3()
+            for (const p of z.pts) center.add(p)
+            center.divideScalar(z.pts.length)
+            let radius = 0
+            for (const p of z.pts) radius = Math.max(radius, p.distanceTo(center))
+            z.frame = { center, radius }
+        }
+        return z.frame
+    }
+
     /** Ground-plane pick (the city is flat, no need to raycast thousands of triangles). */
     pick(raycaster) {
         const hit = new THREE.Vector3()
@@ -245,20 +441,56 @@ export class CityOverview {
         this.selected = id
     }
 
+    /**
+     * A collection point only answers for its own zone. That zone keeps its
+     * colour and its light; the rest of the city goes out of focus so there is
+     * no question about where the work is. The shade itself is drawn by the
+     * stage, from `focusMask` and `focusAmount`.
+     */
+    setFocusZone(id) {
+        this.focusZone = id ?? null
+    }
+
     update(dt, t) {
+        const focus = this.focusZone
+        const k = 1 - Math.exp(-dt * 5)
+        if (focus && this.focusMask?.id !== focus && this.zones.has(focus)) this.focusMask = this.#focusMask(focus)
+        // the last mask stays while the shade eases out, so it never snaps away
+        this.focusAmount = lerp(this.focusAmount, focus && this.focusMask ? 1 : 0, k)
         for (const [id, z] of this.zones) {
             const isSel = id === this.selected
             const isHover = id === this.hovered && !isSel
-            const fillTarget = isSel ? 0.26 : isHover ? 0.14 : 0
-            const lineTarget = isSel ? 1 : this.selected ? 0.12 : isHover ? 0.5 : 0.26
-            const glowTarget = isSel ? 0.55 : 0
-            const k = 1 - Math.exp(-dt * 5)
+            const veiled = focus && id !== focus
+            const lit = focus && id === focus
+
+            let fillTarget = isSel ? 0.26 : isHover ? 0.14 : 0
+            let lineTarget = isSel ? 1 : this.selected ? 0.12 : isHover ? 0.5 : 0.26
+            let glowTarget = isSel ? 0.55 : 0
+            if (veiled) {
+                fillTarget = 0
+                lineTarget = 0.06
+                glowTarget = 0
+            } else if (lit) {
+                fillTarget = 0.1
+                lineTarget = 1
+                glowTarget = 0.7
+            }
+
             z.fill.material.opacity = lerp(z.fill.material.opacity, fillTarget, k)
             z.line.material.opacity = lerp(z.line.material.opacity, lineTarget, k)
             z.glow.material.opacity = lerp(z.glow.material.opacity, glowTarget, k)
-            z.line.material.color.lerp(isSel ? this._red : this._navy, k)
+            z.line.material.color.lerp(lit ? z.colour : isSel ? this._red : this._navy, k)
+            if (lit) z.glow.material.color.lerp(z.colour, k)
             z.fill.visible = z.fill.material.opacity > 0.005
             z.glow.visible = z.glow.material.opacity > 0.005
+
+            // the zone in play gives off light: a band rising from its border and a
+            // wide halo on the ground, both breathing very slowly
+            const pulse = 0.85 + 0.15 * Math.sin(t * 1.6)
+            z.light = lerp(z.light, lit ? 1 : 0, k)
+            z.wall.material.opacity = z.light * 0.75 * pulse
+            z.halo.material.opacity = z.light * 0.35 * pulse
+            z.wall.visible = z.halo.visible = z.light > 0.005
         }
         this.cueUpdate?.(dt)
         // Aid points breathe very slowly
@@ -268,9 +500,81 @@ export class CityOverview {
         }
     }
 
+    /**
+     * A top-down picture of where the focus shade goes: 1 over the rest of the
+     * city, 0 over the zone in play and over everything outside the city, with
+     * edges that soften over a few metres so the shade fades in, not cuts in.
+     */
+    #focusMask(id) {
+        if (this.masks.has(id)) return this.masks.get(id)
+        const pad = FOCUS_EDGE + FOCUS_FEATHER * 3
+        let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity
+        for (const { pts } of this.zones.values()) {
+            for (const p of pts) {
+                minX = Math.min(minX, p.x)
+                maxX = Math.max(maxX, p.x)
+                minZ = Math.min(minZ, p.z)
+                maxZ = Math.max(maxZ, p.z)
+            }
+        }
+        minX -= pad
+        minZ -= pad
+        const sizeX = maxX + pad - minX
+        const sizeZ = maxZ + pad - minZ
+        const S = 384
+        const sx = S / sizeX, sz = S / sizeZ
+        const ppm = Math.min(sx, sz)
+
+        const canvas = document.createElement('canvas')
+        canvas.width = canvas.height = S
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })
+        ctx.fillStyle = ctx.strokeStyle = '#FFFFFF'
+        ctx.lineJoin = 'round'
+        const outline = (pts) => {
+            ctx.beginPath()
+            pts.forEach((p, i) => ctx[i ? 'lineTo' : 'moveTo']((p.x - minX) * sx, (p.z - minZ) * sz))
+            ctx.closePath()
+            ctx.fill()
+            ctx.stroke()
+        }
+        // the other zones, slightly overdrawn so the seams between them close up
+        ctx.lineWidth = 3 * ppm
+        for (const [zid, { pts }] of this.zones) if (zid !== id) outline(pts)
+        // then the zone in play is cut out, a little wider than its outline
+        ctx.globalCompositeOperation = 'destination-out'
+        ctx.lineWidth = FOCUS_EDGE * 2 * ppm
+        outline(this.zones.get(id).pts)
+
+        const px = ctx.getImageData(0, 0, S, S).data
+        let a = new Float32Array(S * S)
+        for (let i = 0; i < a.length; i++) a[i] = px[i * 4 + 3] / 255
+        // three box passes each way come out close to a gaussian
+        const r = Math.max(1, Math.round((FOCUS_FEATHER / 2) * ppm))
+        for (let i = 0; i < 3; i++) a = boxBlur(boxBlur(a, S, r, true), S, r, false)
+        const data = new Uint8Array(S * S)
+        for (let i = 0; i < a.length; i++) data[i] = Math.round(a[i] * 255)
+
+        const texture = new THREE.DataTexture(data, S, S, THREE.RedFormat)
+        texture.minFilter = texture.magFilter = THREE.LinearFilter
+        texture.needsUpdate = true
+        const mask = { id, texture, bounds: new THREE.Vector4(minX, minZ, sizeX, sizeZ) }
+        this.masks.set(id, mask)
+        return mask
+    }
+
     #zones() {
         this._red = new THREE.Color('#F5333F')
         this._navy = new THREE.Color('#011E41')
+        this._white = new THREE.Color('#FFFFFF')
+        // bright at the ground, gone by the top
+        const riseTex = canvasTexture(4, 64, (ctx, w, h) => {
+            const g = ctx.createLinearGradient(0, h, 0, 0)
+            g.addColorStop(0, 'rgba(255,255,255,1)')
+            g.addColorStop(0.25, 'rgba(255,255,255,0.55)')
+            g.addColorStop(1, 'rgba(255,255,255,0)')
+            ctx.fillStyle = g
+            ctx.fillRect(0, 0, w, h)
+        })
         const glowTex = canvasTexture(4, 64, (ctx, w, h) => {
             const g = ctx.createLinearGradient(0, 0, 0, h)
             g.addColorStop(0, 'rgba(255,255,255,0)')
@@ -300,6 +604,7 @@ export class CityOverview {
 
             const shape = new THREE.Shape(pts.map((p) => new THREE.Vector2(p.x, -p.z)))
             const fillGeo = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2)
+
             const fill = new THREE.Mesh(
                 fillGeo,
                 new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 })
@@ -308,18 +613,31 @@ export class CityOverview {
             fill.renderOrder = 2
 
             const line = new THREE.Mesh(
-                ribbonGeometry(pts, 0.9, 0.7, true),
+                ribbonGeometry(pts, 0.5, 0.7, true),
                 new THREE.MeshBasicMaterial({ color: '#011E41', transparent: true, opacity: 0.26, depthWrite: false })
             )
             line.renderOrder = 3
             const glow = new THREE.Mesh(
-                ribbonGeometry(pts, 7, 0.65, true),
+                ribbonGeometry(pts, 2.6, 0.65, true),
                 new THREE.MeshBasicMaterial({ color: '#F5333F', alphaMap: glowTex, transparent: true, opacity: 0, depthWrite: false })
             )
             glow.renderOrder = 3
 
-            this.group.add(fill, glow, line)
-            this.zones.set(zone.id, { zone, fill, line, glow, pts })
+            // plain (not additive) blending: added onto the pale ground the colour
+            // washed out to a light yellow that no longer matched the marker
+            const light = { color: zone.color, transparent: true, opacity: 0, depthWrite: false, fog: false }
+            const wall = new THREE.Mesh(
+                wallGeometry(pts, BORDER_LIGHT_HEIGHT, 0.6),
+                new THREE.MeshBasicMaterial({ ...light, alphaMap: riseTex, side: THREE.DoubleSide })
+            )
+            wall.renderOrder = 5
+            wall.visible = false
+            const halo = new THREE.Mesh(ribbonGeometry(pts, 5, 0.62, true), new THREE.MeshBasicMaterial({ ...light, alphaMap: glowTex }))
+            halo.renderOrder = 3
+            halo.visible = false
+
+            this.group.add(fill, glow, line, halo, wall)
+            this.zones.set(zone.id, { zone, fill, line, glow, halo, wall, light: 0, pts, colour: new THREE.Color(zone.color) })
         }
     }
 
@@ -339,7 +657,6 @@ export class CityOverview {
         const cMount = new THREE.Color(WORLD.mountain)
         const cMountHigh = new THREE.Color(WORLD.mountainHigh)
         const c = new THREE.Color()
-        const caliSamples = this.riverSamples[0].samples
 
         for (let i = 0; i < pos.count; i++) {
             const x = pos.getX(i), z = pos.getZ(i)
@@ -358,12 +675,6 @@ export class CityOverview {
             if (m > 0) {
                 c.lerp(cMount, Math.min(1, m * 1.3))
                 c.lerp(cMountHigh, smooth(h, 30, 70) * 0.6)
-            }
-
-            // greener river banks
-            if (Math.abs(x) < 200 && Math.abs(z) < 140) {
-                const d = distToSamples(x, z, caliSamples)
-                if (d < 12) c.lerp(cGrassDark, (1 - d / 12) * 0.75)
             }
             c.toArray(colors, i * 3)
         }
@@ -405,64 +716,26 @@ export class CityOverview {
     /* ---------------- landmarks ---------------- */
 
     #landmarks() {
-        const white = sharedMaterial('lm:white', { color: '#F2EFE9', roughness: 0.7 })
-        const slate = sharedMaterial('lm:slate', { color: '#7C8896', roughness: 0.7 })
-        const glass = sharedMaterial('lm:glass', { color: '#8197AA', roughness: 0.3, metalness: 0.25 })
-        const stone = sharedMaterial('lm:stone', { color: '#CFC6B5', roughness: 0.9 })
-        const pitch = sharedMaterial('lm:pitch', { color: '#8FB07A', roughness: 1 })
-
-        // Cristo Rey on its hill
+        // Cristo Rey on the summit of its hill, arms open toward the city
         {
-            const g = new THREE.Group()
-            const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.2, 3, 8), stone)
-            pedestal.position.y = 1.5
-            const robe = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.35, 7.5, 12), white)
-            robe.position.y = 6.75
-            const arms = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.9, 0.9), white)
-            arms.position.y = 9.4
-            const head = new THREE.Mesh(new THREE.SphereGeometry(0.75, 12, 10), white)
-            head.position.y = 11.2
-            g.add(pedestal, robe, arms, head)
-            g.position.set(-132, heightAt(-132, 10) - 0.5, 10)
-            g.rotation.y = -0.5
-            g.scale.setScalar(1.15)
+            const { x, z, y } = CRISTO_REY
+            const g = props.cristoRey()
+            g.position.set(x, y - 0.4, z)
+            g.rotation.y = Math.atan2(CITY_C.x - x, CITY_C.y - z)
+            g.scale.setScalar(1.6)
             this.group.add(g)
         }
-        // Tres Cruces
+        // Tres Cruces on the summit, turned so the row is seen front-on from the map
         {
-            for (const [dx, dz, s] of [[-4, 0, 0.8], [0, -1, 1], [4, 0, 0.8]]) {
-                const x = -116 + dx, z = -72 + dz
-                const cross = new THREE.Group()
-                const v = new THREE.Mesh(new THREE.BoxGeometry(0.6, 7, 0.6), white)
-                v.position.y = 3.5
-                const h = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.6, 0.6), white)
-                h.position.y = 5
-                cross.add(v, h)
-                cross.scale.setScalar(s)
-                cross.position.set(x, heightAt(x, z) - 0.3, z)
-                cross.rotation.y = 0.3
-                this.group.add(cross)
-            }
+            const { x, z, y } = TRES_CRUCES
+            const g = props.tresCruces()
+            g.position.set(x, y - 0.3, z)
+            g.rotation.y = Math.atan2(CITY_C.x + 40 - x, CITY_C.y + 250 - z)
+            this.group.add(g)
         }
-        // La Ermita — small white gothic church by the river
+        // La Ermita — small white gothic church
         {
-            const g = new THREE.Group()
-            const nave = new THREE.Mesh(new THREE.BoxGeometry(5, 5, 9), white)
-            nave.position.y = 2.5
-            const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 3.4, 2.6, 4, 1), slate)
-            roof.rotation.y = Math.PI / 4
-            roof.scale.set(1, 1, 1.8)
-            roof.position.y = 6.3
-            const tower = new THREE.Mesh(new THREE.BoxGeometry(2.6, 9, 2.6), white)
-            tower.position.set(0, 4.5, 4.8)
-            const spire = new THREE.Mesh(new THREE.ConeGeometry(1.7, 6.5, 8), slate)
-            spire.position.set(0, 12.2, 4.8)
-            g.add(nave, roof, tower, spire)
-            for (const sx of [-1.9, 1.9]) {
-                const p = new THREE.Mesh(new THREE.ConeGeometry(0.5, 3.4, 6), slate)
-                p.position.set(sx, 6.6, 4.8)
-                g.add(p)
-            }
+            const g = props.ermita()
             g.position.set(-8, 0, -6)
             g.rotation.y = 0.35
             this.group.add(g)
@@ -470,14 +743,7 @@ export class CityOverview {
         }
         // Torre de Cali
         {
-            const g = new THREE.Group()
-            const body = new THREE.Mesh(new THREE.BoxGeometry(6.5, 38, 6.5), glass)
-            body.position.y = 19
-            const crown = new THREE.Mesh(new THREE.BoxGeometry(7, 2.4, 7), white)
-            crown.position.y = 39.2
-            const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 5, 6), white)
-            mast.position.y = 43
-            g.add(body, crown, mast)
+            const g = props.torreDeCali()
             g.position.set(24, 0, -12)
             g.rotation.y = 0.22
             this.group.add(g)
@@ -485,19 +751,7 @@ export class CityOverview {
         }
         // Estadio Pascual Guerrero
         {
-            const g = new THREE.Group()
-            const ring = new THREE.Mesh(new THREE.CylinderGeometry(15, 13, 3.6, 40, 1, true), white)
-            ring.material = sharedMaterial('lm:stadium', { color: '#E8E4DC', roughness: 0.8, side: THREE.DoubleSide })
-            ring.position.y = 1.8
-            const field = new THREE.Mesh(new THREE.CircleGeometry(12.8, 40).rotateX(-Math.PI / 2), pitch)
-            field.position.y = 0.3
-            const lines = new THREE.Mesh(
-                new THREE.RingGeometry(3, 3.3, 32).rotateX(-Math.PI / 2),
-                new THREE.MeshBasicMaterial({ color: '#E9F0E2' })
-            )
-            lines.position.y = 0.35
-            g.add(ring, field, lines)
-            g.scale.set(1, 1, 0.72)
+            const g = props.estadio()
             g.position.set(-26, 0, 58)
             g.rotation.y = 0.3
             this.group.add(g)
@@ -507,13 +761,7 @@ export class CityOverview {
         for (const zone of ZONES) this.exclusions.push({ x: zone.label[0], z: zone.label[1], r: 7 })
 
         // Parks (open green squares)
-        this.parks = [
-            { x: 52, z: 72, r: 12 },
-            { x: -46, z: 20, r: 8 },
-            { x: 40, z: -70, r: 9 },
-            { x: 100, z: 40, r: 9 },
-            { x: 6, z: -2, r: 5 }, // plaza
-        ]
+        this.parks = PARKS.map((p) => ({ ...p }))
         for (const p of this.parks) {
             const disc = new THREE.Mesh(new THREE.CircleGeometry(p.r, 28).rotateX(-Math.PI / 2), sharedMaterial('city:park', { color: '#9FB98A', roughness: 1 }))
             disc.position.set(p.x, 0.09, p.z)
@@ -530,6 +778,11 @@ export class CityOverview {
         for (const r of this.riverSamples) if (distToSamples(x, z, r.samples) < r.clear + clearance) return false
         for (const s of this.roadSamples) if (distToSamples(x, z, s) < 3 + clearance) return false
         return true
+    }
+
+    /** True when (x, z) is within `margin` metres of an avenue's centre line. */
+    #onRoad(x, z, margin) {
+        return this.roadSamples.some((s) => distToSamples(x, z, s) < margin)
     }
 
     #blocks() {
@@ -562,14 +815,7 @@ export class CityOverview {
         }
 
         // Houses: body + pitched roof (or flat roof) — two instanced meshes
-        const body = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)
-        const roofShape = new THREE.Shape()
-        roofShape.moveTo(-0.5, 0)
-        roofShape.lineTo(0.5, 0)
-        roofShape.lineTo(0, 1)
-        roofShape.closePath()
-        const roofGeo = new THREE.ExtrudeGeometry(roofShape, { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5)
-        roofGeo.computeVertexNormals()
+        const { body, roof: roofGeo } = props.cityBlockGeometries()
 
         const bodyMesh = new THREE.InstancedMesh(body, stylize(sharedMaterial('city:body', { color: '#FFFFFF', roughness: 0.95 }), { ao: 0.35, aoHeight: 2.2, rim: 0.1 }), houses.length)
         const pitched = houses.filter(() => rnd() < 0.72)
@@ -652,32 +898,21 @@ export class CityOverview {
         const trees = []
         const palms = []
 
-        // Forest on the western hills
-        for (let i = 0; i < 2600 && trees.length < 760; i++) {
-            const x = -250 + rnd() * 165
-            const z = -260 + rnd() * 520
+        // Forest on the western hills. This is where Cali's green belongs, so the
+        // Farallones carry most of the vegetation in the whole map.
+        const FOREST = 3400
+        for (let i = 0; i < 26000 && trees.length < FOREST; i++) {
+            const x = -235 + rnd() * 162
+            const z = -300 + rnd() * 600
             const mf = mountainFactor(x, z)
-            if (mf < 0.15 || rnd() > mf * 0.95) continue
-            if (Math.hypot(x + 132, z - 10) < 7 || Math.hypot(x + 116, z + 72) < 7) continue
-            trees.push({ x, z, y: heightAt(x, z), s: 2.1 + rnd() * 1.4, dark: true })
+            if (mf < 0.035) continue
+            if (rnd() > 0.52 + mf * 0.48) continue
+            if (Math.hypot(x - CRISTO_REY.x, z - CRISTO_REY.z) < 10 || Math.hypot(x - TRES_CRUCES.x, z - TRES_CRUCES.z) < 16) continue
+            if (this.#onRoad(x, z, 3.2)) continue
+            trees.push({ x, z, y: heightAt(x, z), s: 1.8 + rnd() * 1.7, dark: true })
         }
-        // River banks
-        for (const r of this.riverSamples.slice(0, 2)) {
-            r.samples.forEach((p, i) => {
-                if (i % 2) return
-                const next = r.samples[Math.min(i + 1, r.samples.length - 1)]
-                const dx = next.x - p.x, dz = next.z - p.z
-                const l = Math.hypot(dx, dz) || 1
-                for (const side of [-1, 1]) {
-                    if (rnd() < 0.35) continue
-                    const off = r.clear + 0.8 + rnd() * 1.5
-                    const x = p.x + (-dz / l) * off * side
-                    const z = p.z + (dx / l) * off * side
-                    if (mountainFactor(x, z) > 0.1) continue
-                    trees.push({ x, z, y: heightAt(x, z), s: 1.3 + rnd() * 0.7 })
-                }
-            })
-        }
+        // The river keeps its own banks clear: open water reads better from above
+        const forestCount = trees.length
         // Parks
         for (const p of this.parks) {
             const n = Math.round(p.r * 1.4)
@@ -687,15 +922,17 @@ export class CityOverview {
                 trees.push({ x: p.x + Math.cos(a) * rr, z: p.z + Math.sin(a) * rr, y: 0, s: 1.3 + rnd() * 0.8 })
             }
         }
-        // Scattered street trees + countryside
-        for (let i = 0; i < 4000 && trees.length < 1450; i++) {
+        // Scattered street trees + countryside, a thin layer on top of the forest
+        for (let i = 0; i < 4000 && trees.length < forestCount + 620; i++) {
             const x = -90 + rnd() * 330
             const z = -200 + rnd() * 400
             const u = urbanMask(x, z)
             if (mountainFactor(x, z) > 0.05) continue
+            if (this.riverSamples.some((r) => distToSamples(x, z, r.samples) < r.clear + 6)) continue
             if (u > 0.5 && rnd() > 0.32) continue
             if (u > 0.2 && !this.#isFree(x, z, -1.2)) continue
             if (u <= 0.2 && rnd() > 0.5) continue
+            if (this.#onRoad(x, z, 2.8)) continue
             trees.push({ x, z, y: 0, s: 1.2 + rnd() * 0.9 })
         }
         // Palms along the avenues (a Cali signature)
@@ -711,8 +948,8 @@ export class CityOverview {
             })
         })
 
-        const canopy = new THREE.InstancedMesh(canopyGeometry(0), stylize(sharedMaterial('city:leaf', { color: '#FFFFFF', roughness: 0.95 }), { ao: 0.4, aoHeight: 2.4, rim: 0.18, sway: 0.12 }), trees.length)
-        const trunk = new THREE.InstancedMesh(trunkGeometry(), sharedMaterial('city:trunk', { color: WORLD.trunk, roughness: 1 }), trees.length)
+        const leafMat = () => stylize(sharedMaterial('city:leaf', { color: '#FFFFFF', roughness: 0.95 }), { ao: 0.4, aoHeight: 2.4, rim: 0.18, sway: 0.12 })
+        const trunkMat = () => sharedMaterial('city:trunk', { color: WORLD.trunk, roughness: 1 })
         const leafColors = WORLD.leaf.map((c) => new THREE.Color(c))
         const darkLeaf = ['#6B8A5C', '#62805A', '#75925F'].map((c) => new THREE.Color(c))
         const m = new THREE.Matrix4()
@@ -720,14 +957,31 @@ export class CityOverview {
         const sc = new THREE.Vector3()
         const p = new THREE.Vector3()
         const e = new THREE.Euler()
-        trees.forEach((t, i) => {
-            q.setFromEuler(e.set(0, rnd() * Math.PI * 2, 0))
-            m.compose(p.set(t.x, t.y + t.s * 0.9, t.z), q, sc.set(t.s, t.s * (0.9 + rnd() * 0.25), t.s))
-            canopy.setMatrixAt(i, m)
-            canopy.setColorAt(i, pick(t.dark ? darkLeaf : leafColors))
-            m.compose(p.set(t.x, t.y - 0.2, t.z), q, sc.set(t.s, t.s * 0.95, t.s))
-            trunk.setMatrixAt(i, m)
-        })
+
+        /**
+         * The same tree in two batches. The hillside forest is scenery on the
+         * horizon and skips the shadow pass, which is what lets the Farallones
+         * carry a forest several times denser than the city's own trees.
+         */
+        const batch = (list, shadows) => {
+            if (!list.length) return []
+            const canopy = new THREE.InstancedMesh(canopyGeometry(0), leafMat(), list.length)
+            const trunk = new THREE.InstancedMesh(trunkGeometry(), trunkMat(), list.length)
+            list.forEach((t, i) => {
+                q.setFromEuler(e.set(0, rnd() * Math.PI * 2, 0))
+                m.compose(p.set(t.x, t.y + t.s * 0.9, t.z), q, sc.set(t.s, t.s * (0.9 + rnd() * 0.25), t.s))
+                canopy.setMatrixAt(i, m)
+                canopy.setColorAt(i, pick(t.dark ? darkLeaf : leafColors))
+                m.compose(p.set(t.x, t.y - 0.2, t.z), q, sc.set(t.s, t.s * 0.95, t.s))
+                trunk.setMatrixAt(i, m)
+            })
+            canopy.castShadow = shadows
+            trunk.castShadow = shadows
+            trunk.receiveShadow = shadows
+            return [canopy, trunk]
+        }
+
+        const meshes = [...batch(trees.slice(0, forestCount), false), ...batch(trees.slice(forestCount), true)]
 
         const palmMesh = new THREE.InstancedMesh(palmGeometry(), stylize(sharedMaterial('city:palm', { vertexColors: true, roughness: 0.95 }), { sway: 0.06 }), palms.length)
         palms.forEach((t, i) => {
@@ -735,10 +989,11 @@ export class CityOverview {
             m.compose(p.set(t.x, 0, t.z), q, sc.set(t.s, t.s * 1.15, t.s))
             palmMesh.setMatrixAt(i, m)
         })
+        palmMesh.castShadow = true
+        palmMesh.receiveShadow = true
+        meshes.push(palmMesh)
 
-        for (const im of [canopy, trunk, palmMesh]) {
-            im.castShadow = true
-            im.receiveShadow = im !== canopy
+        for (const im of meshes) {
             im.computeBoundingSphere()
             this.group.add(im)
         }
@@ -764,32 +1019,15 @@ export class CityOverview {
                 ctx.fillRect(0, 0, w, w)
             }, { srgb: false }),
         })
-        const canvas = sharedMaterial('aid:tent', { color: '#F7F6F2', roughness: 0.8 })
-        const flagMat = new THREE.MeshStandardMaterial({ map: crossTexture({ scale: 0.6 }), roughness: 0.8, side: THREE.DoubleSide })
-        const tentShape = new THREE.Shape()
-        tentShape.moveTo(-1.6, 0)
-        tentShape.lineTo(1.6, 0)
-        tentShape.lineTo(0, 2.2)
-        tentShape.closePath()
-        const tentGeo = new THREE.ExtrudeGeometry(tentShape, { depth: 3.4, bevelEnabled: false }).translate(0, 0, -1.7)
-
         for (const zone of ZONES) {
             const [x, z] = zone.label
-            const g = new THREE.Group()
+            const g = props.aidPoint()
             const ring = new THREE.Mesh(new THREE.PlaneGeometry(12, 12).rotateX(-Math.PI / 2), ringMat)
             ring.position.y = 0.8
             ring.renderOrder = 4
             ring.userData.phase = rnd() * 6
             this.aidRings.push(ring)
-            const tent = new THREE.Mesh(tentGeo, canvas)
-            tent.castShadow = true
-            tent.position.set(-1.2, 0.2, 0)
-            tent.rotation.y = 0.4
-            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 4.6, 6), sharedMaterial('aid:pole', { color: '#3B4552' }))
-            pole.position.set(2.2, 2.3, 0.6)
-            const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.8), flagMat)
-            flag.position.set(3.1, 3.9, 0.6)
-            g.add(ring, tent, pole, flag)
+            g.add(ring)
             g.position.set(x, 0, z)
             this.group.add(g)
         }

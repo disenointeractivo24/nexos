@@ -2,8 +2,8 @@ import { icon } from './icons.js'
 
 /** Steps for each role. Short words; the line answers "where am I?" */
 export const STEPS = {
-    donor: ['Ciudad', 'Barrio', 'Punto', 'Cesta', 'Método', 'Confirmación'],
-    collector: ['Acceso', 'Ciudad', 'Barrio', 'Revisión'],
+    donor: ['Ciudad', 'Barrio', 'Aporte', 'Método', 'Confirmación'],
+    collector: ['Acceso', 'Ciudad', 'Inventario'],
 }
 
 /**

@@ -44,6 +44,9 @@ export class GuideCharacter {
         for (const n of ['body', 'head', 'armL', 'armR', 'legL', 'legR']) this.parts[n] = this.model.getObjectByName(n)
         this.procedural = !!this.parts.body
         this.armRest = { L: this.parts.armL?.rotation.z ?? 0, R: this.parts.armR?.rotation.z ?? 0 }
+        // The asset loader bakes the model's size into `body`; every pose is applied on top of
+        // this, never in place of it, or the character would jump back to its raw build size.
+        this.bodyBase = this.parts.body && { scale: this.parts.body.scale.clone(), y: this.parts.body.position.y }
 
         this.mixer = null
         if (animations.length) {
@@ -68,7 +71,9 @@ export class GuideCharacter {
         this.walkAmt = 0
         this.phase = 0
         this.speed = 0
-        this.gesture = { arm: 0 }
+        this.gesture = { arm: 0, nod: 0 }
+        // each character idles slightly out of step with the others
+        this.idleSeed = Math.random() * 100
         this.path = null
         this.root.visible = false
     }
@@ -126,8 +131,8 @@ export class GuideCharacter {
         this.blob.material.opacity = 1
     }
 
-    /** Walk along waypoints at a calm pace. Resolves on arrival. */
-    walk(points, { speed = 3.3 } = {}) {
+    /** Walk along waypoints at a brisk pace. Resolves on arrival. */
+    walk(points, { speed = 6.2 } = {}) {
         this.path?.resolve?.(false)
         const pts = points.map((p) => p.clone().setY(0))
         if (pts.length < 2 || pts[0].distanceTo(pts[pts.length - 1]) < 0.05) return Promise.resolve(true)
@@ -162,11 +167,11 @@ export class GuideCharacter {
 
     /** Small acknowledgement on arrival. */
     nod() {
-        const head = this.parts.head
-        if (!head || this.reducedMotion) return
+        if (!this.parts.head || this.reducedMotion) return
+        gsap.killTweensOf(this.gesture, 'nod')
         gsap.timeline()
-            .to(head.rotation, { x: 0.16, duration: 0.35, ease: 'sine.out' })
-            .to(head.rotation, { x: 0, duration: 0.5, ease: 'sine.inOut' })
+            .to(this.gesture, { nod: 1, duration: 0.3, ease: 'sine.out' })
+            .to(this.gesture, { nod: 0, duration: 0.45, ease: 'sine.inOut' })
     }
 
     update(dt, t) {
@@ -196,10 +201,11 @@ export class GuideCharacter {
 
         // Turn smoothly (never snap)
         const diff = wrapAngle(this.targetYaw - this.yaw)
-        this.yaw += diff * (1 - Math.exp(-dt * 7))
+        this.yaw += diff * (1 - Math.exp(-dt * 8))
         this.root.rotation.y = this.yaw
 
-        const k = 1 - Math.exp(-dt * 8)
+        // blend between idle and walk over ~0.2 s so starts and stops never pop
+        const k = 1 - Math.exp(-dt * 6)
         this.walkAmt += ((moving ? 1 : 0) - this.walkAmt) * k
 
         if (this.mixer) {
@@ -209,20 +215,35 @@ export class GuideCharacter {
         }
 
         const P = this.parts
-        this.phase += dt * (2.2 + this.speed * 3.1)
+        // the stride follows the distance covered, so feet do not slide at any speed
+        this.phase += dt * (1.5 + this.speed * 2.3)
         const w = this.walkAmt
         const sw = Math.sin(this.phase)
-        P.legL.rotation.x = sw * 0.55 * w
-        P.legR.rotation.x = -sw * 0.55 * w
-        P.armL.rotation.x = -sw * 0.38 * w
-        P.armR.rotation.x = sw * 0.38 * w - this.gesture.arm * 1.35
-        P.armL.rotation.z = this.armRest.L * (1 - 0.35 * w)
-        P.armR.rotation.z = this.armRest.R * (1 - 0.35 * w) - this.gesture.arm * 0.2
-        const breathe = this.reducedMotion ? 0 : Math.sin(t * 1.7) * 0.012 * (1 - w)
-        P.body.position.y = Math.abs(sw) * 0.05 * w + breathe
-        P.body.rotation.z = Math.sin(this.phase) * 0.03 * w
-        P.body.rotation.x = 0.06 * w
-        if (!this.reducedMotion) P.head.rotation.y = Math.sin(t * 0.45) * 0.1 * (1 - w)
+        const bob = (1 - Math.cos(this.phase * 2)) * 0.5
+
+        // idle: breathing, a slow weight shift, loose arms, a look around now and then
+        const amb = this.reducedMotion ? 0 : 1 - w
+        const ti = t + this.idleSeed
+        const breath = Math.sin(ti * 1.9)
+        const shift = Math.sin(ti * 0.55)
+        const look = Math.sin(ti * 0.37) * 0.22 + Math.sin(ti * 0.91 + 1.3) * 0.08
+
+        P.legL.rotation.x = sw * 0.6 * w
+        P.legR.rotation.x = -sw * 0.6 * w
+        P.legL.rotation.z = shift * 0.035 * amb
+        P.legR.rotation.z = shift * 0.035 * amb
+        P.armL.rotation.x = -sw * 0.45 * w + Math.sin(ti * 1.9 + 0.5) * 0.06 * amb
+        P.armR.rotation.x = sw * 0.45 * w + Math.sin(ti * 1.9 + 0.9) * 0.06 * amb - this.gesture.arm * 1.35
+        P.armL.rotation.z = this.armRest.L * (1 - 0.35 * w) + (breath * 0.035 - shift * 0.03) * amb
+        P.armR.rotation.z = this.armRest.R * (1 - 0.35 * w) - (breath * 0.035 + shift * 0.03) * amb - this.gesture.arm * 0.2
+        const B = this.bodyBase
+        P.body.position.y = B.y + bob * 0.06 * w + (breath * 0.5 + 0.5) * 0.022 * amb
+        P.body.scale.set(B.scale.x * (1 - breath * 0.008 * amb), B.scale.y * (1 + breath * 0.012 * amb), B.scale.z * (1 - breath * 0.008 * amb))
+        P.body.rotation.z = sw * 0.035 * w + shift * 0.03 * amb
+        P.body.rotation.x = (0.05 + Math.min(this.speed, 7) * 0.012) * w
+        P.head.rotation.y = look * amb
+        P.head.rotation.x = this.gesture.nod * 0.18 + Math.sin(ti * 0.7) * 0.035 * amb - bob * 0.03 * w
+        P.head.rotation.z = -shift * 0.04 * amb
     }
 
     #blendClips(moving) {

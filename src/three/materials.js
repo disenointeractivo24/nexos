@@ -59,6 +59,7 @@ export function sharedMaterial(key, params) {
     let m = cache.get(key)
     if (!m) {
         m = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, ...params })
+        m.name = key // readable in exports and in the inspector
         cache.set(key, m)
     }
     return m

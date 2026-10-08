@@ -35,20 +35,28 @@ export class CloudLayer {
             const r = Math.sqrt(this.rnd()) * 210
             this.#add(new THREE.Vector3(Math.cos(a) * r + 10, 540 + this.rnd() * 90, Math.sin(a) * r + 80), 190 + this.rnd() * 140, 0.92, { near: 50, far: 150 })
         }
-        // Framing ring around the city edges
-        for (let i = 0; i < 42; i++) {
-            const a = (i / 42) * Math.PI * 2 + this.rnd() * 0.12
-            const r = 205 + this.rnd() * 90
+        // Far horizon clouds. They sit well beyond the city, high enough to read as
+        // clouds instead of fog, and never over the Farallones to the west — low
+        // cloud on the hills looks like haze and hides the forest.
+        for (let i = 0; i < 46; i++) {
+            const a = (i / 46) * Math.PI * 2 + this.rnd() * 0.1
+            const r = 470 + this.rnd() * 170
+            const x = Math.cos(a) * r + 25
+            const z = Math.sin(a) * r * 0.95 + 15
+            if (x < 30) continue // the western half holds the hills: keep that sky clear
             this.#add(
-                new THREE.Vector3(Math.cos(a) * r + 25, 18 + this.rnd() * 50, Math.sin(a) * r * 0.9 + 15),
-                130 + this.rnd() * 120,
-                0.82,
-                { near: 40, far: 110 }
+                new THREE.Vector3(x, 150 + this.rnd() * 110, z),
+                110 + this.rnd() * 80,
+                0.95,
+                { near: 110, far: 300 },
+                true
             )
         }
+        this._toCloud = new THREE.Vector2()
+        this._toCam = new THREE.Vector2()
     }
 
-    #add(position, size, opacity, fade) {
+    #add(position, size, opacity, fade, ring = false) {
         const mat = new THREE.SpriteMaterial({
             map: this.textures[Math.floor(this.rnd() * this.textures.length)],
             transparent: true,
@@ -69,15 +77,24 @@ export class CloudLayer {
             origin: position.x,
             phase: this.rnd() * Math.PI * 2,
             size,
+            ring,
         }
         this.group.add(s)
         this.items.push(s)
     }
 
-    /** `presence` (0..1) lets the scene thin the clouds out after landing. */
+    /**
+     * `presence` (0..1) thins out the clouds the camera descends through.
+     * The far horizon clouds keep their own life: they are scenery, not a veil.
+     */
     update(dt, camera, presence = 1) {
         const cp = camera.position
         this.t = (this.t ?? 0) + dt
+        // The ring frames the city from above. When the view is tilted down toward the
+        // horizon (to look at the hills) it would sit right in front of the camera, so it
+        // thins out as the camera gets lower, and clears completely on the camera's side.
+        const low = 1 - THREE.MathUtils.smoothstep(cp.y, 40, 130)
+        const toCam = this._toCam.set(cp.x - 25, cp.z - 15).normalize()
         for (const s of this.items) {
             const u = s.userData
             let life = 1
@@ -93,8 +110,12 @@ export class CloudLayer {
                 s.material.rotation += dt * 0.004 * (u.phase > Math.PI ? 1 : -1)
             }
             const d = s.position.distanceTo(cp)
-            const k = THREE.MathUtils.smoothstep(d, u.fade.near, u.fade.far)
-            s.material.opacity = u.base * k * presence * life
+            let k = THREE.MathUtils.smoothstep(d, u.fade.near, u.fade.far)
+            if (u.ring && low > 0) {
+                const facing = this._toCloud.set(s.position.x - 25, s.position.z - 15).normalize().dot(toCam)
+                k *= 1 - low * (facing > -0.2 ? 1 : 0.8)
+            }
+            s.material.opacity = u.base * k * (u.ring ? 1 : presence) * life
             s.visible = s.material.opacity > 0.01
         }
     }

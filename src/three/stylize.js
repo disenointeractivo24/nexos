@@ -1,16 +1,29 @@
 import * as THREE from 'three'
 
 /**
- * Stylized shading on top of MeshStandardMaterial (lighting and shadows stay intact):
+ * Stylized shading on top of MeshStandardMaterial (shadows and the rest of the lighting stay intact):
+ *  - soft cel bands: sunlight falls on a surface in two or three soft steps
+ *    instead of a continuous gradient, the way a painted miniature is lit
  *  - soft height-based occlusion: objects darken gently toward their base → grounded,
  *    "miniature" contact shading without screen-space AO
  *  - warm rim light: a soft halo on silhouettes for a crafted, friendly look
  *  - wind sway for foliage (instanced or not)
  *  - animated water shimmer (stylizeWater)
+ * The ink outlines and colour grade are a screen pass in Stage.
  */
 
 /** Shared clock for all stylized shaders (advanced by the Stage). */
 export const shaderTime = { value: 0 }
+
+/** How strongly sunlight is banded: 0 = smooth PBR, 1 = full cel. Shared by every stylized material. */
+export const toonAmount = { value: 0.8 }
+
+/** The physical lighting chunk with the sun's falloff passed through the band function. */
+const BANDED_LIGHTS = THREE.ShaderChunk.lights_physical_pars_fragment.replace(
+    'vec3 irradiance = dotNL * directLight.color;',
+    'vec3 irradiance = nxBand( dotNL ) * directLight.color;'
+)
+if (!BANDED_LIGHTS.includes('nxBand')) console.warn('[stylize] three.js lighting chunk changed: cel bands are off')
 
 const COMMON_VERT = /* glsl */ `
 uniform float uTime;
@@ -24,8 +37,14 @@ uniform float uAo;
 uniform float uAoHeight;
 uniform float uRim;
 uniform vec3 uRimColor;
+uniform float uToon;
 varying vec3 vNxWorld;
 varying float vNxBaseY;
+// lit side, mid tone and shade, with soft edges between them (never hard, aliased steps)
+float nxBand(float x) {
+    float cel = smoothstep(0.0, 0.1, x) * 0.58 + smoothstep(0.38, 0.52, x) * 0.42;
+    return mix(x, cel, uToon);
+}
 `
 
 function patchVertex(src) {
@@ -71,6 +90,7 @@ export function stylize(material, { ao = 0.32, aoHeight = 2.4, rim = 0.14, rimCo
         uRim: { value: rim },
         uRimColor: { value: new THREE.Color(rimColor) },
         uSway: { value: sway },
+        uToon: toonAmount,
     }
     material.userData.nx = u
     material.onBeforeCompile = (shader) => {
@@ -78,6 +98,7 @@ export function stylize(material, { ao = 0.32, aoHeight = 2.4, rim = 0.14, rimCo
         shader.vertexShader = patchVertex(shader.vertexShader)
         shader.fragmentShader = shader.fragmentShader
             .replace('#include <common>', `#include <common>\n${COMMON_FRAG}`)
+            .replace('#include <lights_physical_pars_fragment>', BANDED_LIGHTS)
             .replace(
                 '#include <opaque_fragment>',
                 /* glsl */ `
@@ -89,7 +110,7 @@ export function stylize(material, { ao = 0.32, aoHeight = 2.4, rim = 0.14, rimCo
                 #include <opaque_fragment>`
             )
     }
-    material.customProgramCacheKey = () => `nx-stylize-${sway > 0 ? 'sway' : 'still'}`
+    material.customProgramCacheKey = () => `nx-stylize-toon-${sway > 0 ? 'sway' : 'still'}`
     material.needsUpdate = true
     return material
 }

@@ -10,20 +10,39 @@ import { NeighborhoodScene } from '../three/NeighborhoodScene.js'
 import { GuideCharacter } from '../three/GuideCharacter.js'
 import { ItemStage } from '../three/ItemStage.js'
 import { Rain } from '../three/ThemeCues.js'
+import { Families } from '../three/Families.js'
+import { Depot, DEPOT_BOUNDS } from '../three/Depot.js'
 import { HOUSE_MODELS, ASSETS } from '../data/assets.js'
-import { ZONES, NEED_WORD, buildBarrio, zoneLevel } from '../data/zones.js'
+import { ZONES, NEED_WORD, buildBarrio, zoneLevel, zoneNeeds, applyDonation, barrioCovered, useStock, refreshBarrioNeeds } from '../data/zones.js'
 import { CATEGORIES, SUPPLIES, money } from '../data/catalog.js'
 import { validateCredentials, pointForZone } from '../data/collectionPoints.js'
 import { Labels, Bubble } from '../ui/Labels.js'
-import { ZoneCard, DonorPanel, CollectorPanel, isNarrow } from '../ui/panels.js'
+import { ZoneCard, DonorPanel, InventoryPanel, isNarrow } from '../ui/panels.js'
+import { InventoryStore } from './inventoryStore.js'
+import { StockBoard } from './stockBoard.js'
+import { CaliSky, skyMood } from './caliSky.js'
+import { SkyDebug, skyDebugEnabled } from '../ui/SkyDebug.js'
+import { WINDOW_MATERIAL, makeNightWindow, setWindowGlow } from '../three/nightWindows.js'
+import { stockState } from '../data/inventory.js'
 import { Progress, STEPS } from '../ui/Progress.js'
 import { icon, hydrateIcons } from '../ui/icons.js'
 import { session } from './session.js'
+import { Audio } from './audio.js'
 
 /**
  * Flow
- *   role ─┬─ donor ─────────── intro (descent) → city → zone → entering → barrio ⇄ walking → house (panel steps)
- *         └─ collector → login ┘
+ *   role ─┬─ donor ───────── intro (descent) → city → zone → entering → barrio
+ *         │                   → walking (to the collection point) → point (panel steps)
+ *         └─ collector → login → intro (descent) → city → inventory
+ *
+ * The two roles part company at the map. A donor goes down into a barrio, where
+ * there is exactly one place to act: the collection point. They leave supplies
+ * at the counter and the families come out to collect them.
+ *
+ * A collection point never goes down. It answers for one zone — every other zone
+ * is veiled on the map — and its work is the board: what is on the shelves, what
+ * is running out. Whatever that board calls critical is what donors see first.
+ *
  * Only what the current step needs is on screen. The 3D world loads behind the
  * clouds while the person chooses a role, so there is no dead pause after it.
  */
@@ -36,8 +55,41 @@ const INTRO_CURVE = new THREE.CatmullRomCurve3([
     CITY_VIEW.pos.clone(),
 ])
 const INTRO_TARGET_FROM = new THREE.Vector3(12, 0, -10)
-const FOLLOW_OFFSET = new THREE.Vector3(0, 15, 18.5)
-const FOLLOW_LOOK = new THREE.Vector3(0, 0.8, -9.5)
+/**
+ * A collection point's view of its own zone: camera distance, in zone radii,
+ * and how much steeper than the city view it looks down, so the towers of the
+ * centre do not stand in front of a zone behind them.
+ */
+const HOME_ZONE_FIT = 2.6
+const HOME_ZONE_TILT = 1.5
+/** Seconds the camera takes to move in from the whole city to the zone: slow on purpose. */
+const HOME_ZONE_FLIGHT = 5
+/**
+ * The barrio is watched from one fixed vantage point. The camera never follows
+ * anybody; the only control a person has is how close they stand, which is why
+ * the view is described as a direction and a distance rather than a position.
+ */
+const BARRIO_VIEW = {
+    look: new THREE.Vector3(0, 1, -9),
+    dir: new THREE.Vector3(0, 0.62, 1).normalize(),
+    dist: 56,
+    zoom: { min: 0.42, max: 1.5 },
+    /** Distance at which the whole barrio fits in view; the zoom-out limit for close views. */
+    wholeBarrio: 74,
+}
+/**
+ * Standing at the counter, which is where a collection point works from.
+ * The angle is taken from the stand itself so the view is always of its front,
+ * whichever way the barrio has it turned.
+ */
+/** Close-up used while the stand's panel is open: the counter and what is left on it. */
+const COUNTER_VIEW = { dist: 15.5, lift: 1.0, rise: 0.46, offsets: [0, 0.18, -0.18, 0.45, -0.45] }
+
+/**
+ * Ink outlines per view: [strength, distance where they have faded out].
+ * None while descending through the clouds (lines would show through them).
+ */
+const INK = { city: [0.45, 950], barrio: [0.78, 130] }
 
 const wait = (s) => new Promise((r) => setTimeout(r, s * 1000))
 
@@ -47,6 +99,8 @@ export class App {
         this.ui = document.getElementById('ui')
         this.$ = (sel) => this.ui.querySelector(sel)
         this.theme = session.theme
+        this.audio = new Audio({ reducedMotion: this.reducedMotion })
+        this.audio.setTheme(this.theme)
         hydrateIcons(document)
 
         this.stage = new Stage(document.querySelector('canvas.webgl'))
@@ -60,7 +114,7 @@ export class App {
         this.worldBubble = new Bubble(this.$('.bubble-world'))
         this.progress = new Progress(this.$('.progress'))
 
-        const opts = { reducedMotion: this.reducedMotion }
+        const opts = { reducedMotion: this.reducedMotion, audio: this.audio }
         const panelEl = this.$('.supply-panel')
         this.zoneCard = new ZoneCard(this.$('.zone-card'), opts, {
             onEnter: (zone) => this.enterBarrio(zone),
@@ -69,24 +123,38 @@ export class App {
         this.donorPanel = new DonorPanel(panelEl, opts, {
             items: this.items,
             loader: this.loader,
-            onClose: () => this.closeHouse(),
+            onClose: () => this.closePoint(),
             onStep: (step) => this.#onDonorStep(step),
-            onConfirm: (house, basket, record) => this.registerSupport(house, basket, record),
+            onConfirm: (barrio, basket, record) => this.registerSupport(barrio, basket, record),
             onExitMap: () => this.returnToMap(),
+            // whatever goes into the basket appears on the stand's counter
+            onBasket: (basket) => this.hood?.setDisplay(basket),
         })
-        this.collectorPanel = new CollectorPanel(panelEl, opts, {
+        // the collection point's board; its store is created at login, when the point is known
+        this.inventory = null
+        this.inventoryPanel = new InventoryPanel(panelEl, opts, {
             items: this.items,
             loader: this.loader,
-            onClose: () => this.closeHouse(),
-            onAlert: (house, item, on) => this.#onAlert(house, item, on),
+            onClose: () => this.closeInventory(),
+            onShortages: (ids) => this.#onShortages(ids),
         })
+
+        // What donors see of every collection point, read from the same sheet the points keep:
+        // the map, the zone card and the stand's panel all follow it.
+        this.board = new StockBoard()
+        useStock(this.board)
+        session.stock = this.board
+        this.board.on(() => this.#onStock())
+        this.board.start()
 
         this.state = 'boot'
         this.intro = { p: 0, target: 0, auto: false }
         this.zone = null
         this.barrio = null
-        this.houseId = null
+        this.atPoint = false
         this.currentNode = null
+        this.barrioCam = null
+        this.zoom = { value: 1, target: 1 }
         this.cloudPresence = 1
         this.worldReady = false
 
@@ -95,7 +163,23 @@ export class App {
         this.stage.scene.add(this.clouds.group)
         this.rig.set(INTRO_CURVE.getPoint(0), INTRO_TARGET_FROM)
         this.#setupOrbit()
-        this.#setupRain()
+        this.rainOn = !!this.theme.mood.rain
+        if (this.rainOn) this.#setupRain()
+        // Cali's real time and weather: the clock in the top bar, and the light, rain and lamps of the world
+        this.sky = new CaliSky()
+        this.sky.on((s) => this.#onSky(s))
+        this.sky.start()
+        // the time and weather test panel: click the clock, or Shift + D (dev server or ?debug only)
+        if (skyDebugEnabled()) {
+            this.skyDebug = new SkyDebug(this.ui, this.sky)
+            const clock = this.$('.clock')
+            clock.classList.add('is-debug')
+            clock.title = 'Probar otra hora o clima'
+            clock.addEventListener('click', () => this.skyDebug.toggle())
+            window.addEventListener('keydown', (e) => {
+                if (e.shiftKey && e.key.toLowerCase() === 'd' && !e.target.closest?.('input, textarea, select')) this.skyDebug.toggle()
+            })
+        }
         this.stage.onTick((dt, t) => this.#tick(dt, t))
         this.#bindInput()
         this.#fillRoleCard()
@@ -112,6 +196,7 @@ export class App {
 
     setState(s) {
         this.state = s
+        this.audio.setScene(['barrio', 'walking', 'leaving', 'entering'].includes(s) ? 'barrio' : s === 'point' ? 'house' : ['role', 'login', 'boot', 'intro', 'exiting'].includes(s) ? 'intro' : 'city')
         this.ui.dataset.state = s
         this.ui.dataset.role = session.role ?? ''
         this.#syncProgress()
@@ -119,7 +204,7 @@ export class App {
     }
 
     get panel() {
-        return session.role === 'collector' ? this.collectorPanel : this.donorPanel
+        return session.role === 'collector' ? this.inventoryPanel : this.donorPanel
     }
 
     /* ================================================================
@@ -140,10 +225,14 @@ export class App {
         await this.hood.build()
         this.hood.group.visible = false
         this.stage.scene.add(this.hood.group)
+        // the collection point's own stand, seen from the front while its inventory is open
+        this.depot = new Depot({ supplies: this.inventoryPanel.supplies, reducedMotion: this.reducedMotion })
+        this.stage.scene.add(this.depot.group)
 
         const guideT = await this.loader.load('guide')
         this.guide = new GuideCharacter(this.loader.instanceSync(guideT), guideT.animations, { reducedMotion: this.reducedMotion })
         this.hood.group.add(this.guide.root)
+        this.families = new Families({ parent: this.hood.group, reducedMotion: this.reducedMotion })
         this.portrait = new GuideCharacter(this.loader.instanceSync(guideT), guideT.animations, { reducedMotion: this.reducedMotion })
         this.portrait.place(new THREE.Vector3(), 0.32)
         this.portrait.blob.visible = false
@@ -151,6 +240,7 @@ export class App {
         // Compile shaders now (not on first view) to avoid hitches later
         await this.stage.renderer.compileAsync?.(this.stage.scene, this.stage.camera).catch(() => {})
         this.worldReady = true
+        this.#nightLights()
 
         // Quietly prepare the most likely first barrio
         const idle = window.requestIdleCallback ?? ((fn) => setTimeout(fn, 400))
@@ -165,6 +255,7 @@ export class App {
     #barrioLighting() {
         this.stage.setShadowFrame(new THREE.Vector3(0, 0, -10), 38, { mapSize: 2048, normalBias: 0.05 })
         this.stage.setFog(70, 260)
+        this.stage.setInk(INK.barrio[0], INK.barrio[1])
     }
 
     /* ================================================================
@@ -177,21 +268,34 @@ export class App {
         else this.rig.update(dt)
 
         if (this.city?.group.visible) this.city.update(dt, t)
+        const focus = this.city?.focusMask
+        this.stage.setFocus(this.city?.group.visible ? this.city.focusAmount : 0, focus?.texture, focus?.bounds)
         if (this.clouds.group.visible) this.clouds.update(dt, this.stage.camera, this.cloudPresence)
         if (this.hood?.group.visible) {
             this.hood.update(dt, t)
-            this.guide.update(dt, t)
-            const p = this.guide.position
-            p.y = this.hood.heightAt(p.x, p.z)
+            if (this.guide.root.visible) {
+                this.guide.update(dt, t)
+                const p = this.guide.position
+                p.y = this.hood.heightAt(p.x, p.z)
+            }
+            this.families.update(dt, t, (x, z) => this.hood.heightAt(x, z))
+            this.#zoomStep(dt)
         }
         if (this.portraitShown) this.portrait.update(dt, t)
+        if (this.lightning) {
+            this.nextFlash ??= t + 2 + Math.random() * 5
+            if (t > this.nextFlash) {
+                this.stage.flash(0.55 + Math.random() * 0.45)
+                this.nextFlash = t + 4 + Math.random() * 9
+            }
+        }
         if (this.rain) {
             const inBarrio = this.hood?.group.visible
             const r = inBarrio ? this.rain.near : this.rain.far
             const other = inBarrio ? this.rain.far : this.rain.near
             other.mesh.visible = false
-            r.mesh.visible = ['city', 'zone', 'barrio', 'walking', 'house', 'entering', 'leaving'].includes(this.state)
-            r.update(dt, inBarrio ? this.guide.position : this.rig.target)
+            r.mesh.visible = this.rainOn && ['city', 'zone', 'barrio', 'walking', 'point', 'entering', 'leaving'].includes(this.state)
+            r.update(dt, inBarrio ? (this.guide.root.visible ? this.guide.position : this.rig.target) : this.rig.target)
         }
 
         const { w, h } = this.stage.size
@@ -215,6 +319,8 @@ export class App {
 
     chooseRole(role) {
         if (this.state !== 'role') return
+        this.audio.unlock()
+        this.audio.play('tap')
         session.role = role
         if (role === 'collector') return this.showLogin()
         this.startDescent()
@@ -244,6 +350,10 @@ export class App {
             return
         }
         session.point = point
+        // the board is live from this moment: the sheet is read while the camera descends
+        this.inventory?.stop()
+        this.inventory = new InventoryStore({ pointId: point.id })
+        this.inventory.start()
         form.querySelectorAll('input').forEach((i) => i.removeAttribute('aria-invalid'))
         gsap.to(form, {
             opacity: 0,
@@ -268,6 +378,9 @@ export class App {
         this.intro.target = 1
         this.intro.auto = true
         this.setState('intro')
+        // a collection point's focus is in place while the clouds still cover the
+        // city, so the first look at it is already the focused one
+        this.#syncZoneFocus()
     }
 
     #introStep(dt) {
@@ -275,7 +388,7 @@ export class App {
         // Hold softly inside the clouds until the city is ready — never a frozen frame
         const limit = this.worldReady ? 1 : 0.3
         const target = Math.min(it.target, limit)
-        const rate = this.reducedMotion ? 10 : it.auto ? 0.95 : 2.0
+        const rate = this.reducedMotion ? 10 : it.auto ? 1.7 : 2.6
         it.p += (target - it.p) * (1 - Math.exp(-dt * rate))
         const e = it.p * it.p * (3 - 2 * it.p)
         INTRO_CURVE.points[3].copy(this.#cityFrame().pos)
@@ -283,6 +396,8 @@ export class App {
         this.rig.target.lerpVectors(INTRO_TARGET_FROM, CITY_VIEW.target, e)
         this.rig.apply()
         this.$('.descent-caption').classList.toggle('is-waiting', !this.worldReady && it.p > 0.25)
+        this.$('.skip-intro').hidden = false
+        this.$('.skip-intro').classList.toggle('is-ready', this.worldReady && it.p > 0.12)
         if (it.target >= 1 && this.worldReady && it.p > 0.992) this.enterCity()
     }
 
@@ -296,37 +411,83 @@ export class App {
        ================================================================ */
 
     enterCity() {
+        const skip = this.$('.skip-intro')
+        skip.classList.remove('is-ready')
+        skip.hidden = true
         this.setState('city')
         this.rig.set(this.#cityFrame().pos, CITY_VIEW.target)
+        this.stage.setInk(INK.city[0], INK.city[1], this.reducedMotion ? 0 : 1.2)
         this.#setContext('map', 'Mapa de ayuda', 'Cali, Valle del Cauca')
+        this.#syncZoneFocus()
         this.#showZoneLabels()
-        if (session.role === 'collector') this.#showGuideDock(`Hola, equipo de ${session.point.name.replace('Punto de acopio ', '')}.`, 'Elige una zona para revisar sus casas.')
-        else this.#showGuideDock('Hola, te ayudo a encontrar dónde apoyar.', 'Selecciona una zona de la ciudad.')
-        gsap.to(this, { cloudPresence: 0.85, duration: 2 })
-        this.#enableOrbit()
+        if (session.role === 'collector') {
+            const zone = ZONES.find((z) => z.id === session.point.zone)
+            this.#showGuideDock(`Hola, equipo de ${session.point.name.replace('Punto de acopio ', '')}.`, `Toca ${zone?.name ?? 'tu zona'} para actualizar el inventario.`)
+        } else this.#showGuideDock('Hola, te ayudo a encontrar dónde apoyar.', 'Selecciona una zona de la ciudad.')
+        // once the city is reached the descent clouds clear completely: nothing hazes the map
+        gsap.to(this, { cloudPresence: 0, duration: 2 })
+        // a collection point is then carried, slowly, in to its own zone
+        if (session.role === 'collector') {
+            const home = this.#homeFrame()
+            this.#flyCity(home.pos, home.target, HOME_ZONE_FLIGHT, 'sine.inOut')
+        } else this.#enableOrbit()
     }
 
+    /**
+     * Zones are marked by their icon alone; the words live in aria-label.
+     * Beside each one, a bubble shows what is missing there: one icon per
+     * supply category, each with an alert mark.
+     */
     #zoneLabelHtml(zone) {
         const level = zoneLevel(zone, this.theme)
         const urgent = session.zoneHasUrgent(zone.id)
         const high = level === 'alta' || urgent
-        const status = urgent ? 'Faltantes urgentes' : NEED_WORD[level]
+        // the shortage bubble is for donors: it answers "where is my help needed?".
+        // A collection point is looking at its own shelves, not shopping the city.
+        const missing = session.role === 'collector' ? [] : this.#zoneMissing(zone)
+        const bubble = missing.length
+            ? `<span class="need-bubble" aria-hidden="true">${missing
+                  .map(
+                      ([cat, lvl]) => `
+                <span class="need-chip" style="background:${CATEGORIES[cat].color}">
+                    ${icon(CATEGORIES[cat].icon)}
+                    <span class="need-alert ${lvl === 'alta' ? 'is-high' : ''}">!</span>
+                </span>`
+                  )
+                  .join('')}</span>`
+            : ''
+        // the house is drawn in the zone's own colour; urgency is carried by the dot
         return `
-            <span class="wlabel-icon" style="background:${high ? '#F5333F' : '#011E41'}">${icon('home')}</span>
-            <span class="wlabel-text">${zone.name}<span class="wlabel-status ${high ? 'is-high' : ''}">${status}</span></span>
-            <span class="wlabel-chevron" data-icon="chevron-right"></span>`
+            <span class="wlabel-icon" style="background:${zone.color}">
+                ${icon('home')}
+                <span class="wlabel-dot ${urgent ? 'is-urgent' : high ? 'is-high' : ''}"></span>
+            </span>
+            ${bubble}`
+    }
+
+    /** The categories a zone is short of, most pressing first (at most three). */
+    #zoneMissing(zone) {
+        return zoneNeeds(zone, this.theme).filter(([, lvl]) => lvl !== 'baja')
+    }
+
+    #zoneAria(zone) {
+        const missing = this.#zoneMissing(zone).map(([cat]) => CATEGORIES[cat].label.toLowerCase())
+        return `${zone.name}. ${NEED_WORD[zoneLevel(zone, this.theme)]}${missing.length ? `. Faltan: ${missing.join(', ')}` : ''}. Ver detalles`
     }
 
     #showZoneLabels() {
         this.labels.clear()
+        const own = session.role === 'collector' ? session.point?.zone : null
         ZONES.forEach((zone, i) => {
             const el = this.labels.add(`zone:${zone.id}`, {
+                className: 'is-compact has-needs',
                 html: this.#zoneLabelHtml(zone),
-                ariaLabel: `${zone.name}. ${NEED_WORD[zoneLevel(zone, this.theme)]}. Ver detalles`,
+                ariaLabel: this.#zoneAria(zone),
                 anchor: () => this.city.labelAnchor(zone.id, this._anchor ?? (this._anchor = new THREE.Vector3())),
                 onClick: () => this.selectZone(zone.id),
             })
             el.style.setProperty('--delay', `${i * 70}ms`)
+            if (own) this.labels.setClass(`zone:${zone.id}`, 'is-dim', zone.id !== own)
         })
     }
 
@@ -349,6 +510,7 @@ export class App {
     }
 
     selectZone(id) {
+        if (session.role === 'collector') return this.openInventory(id)
         if (!['city', 'zone'].includes(this.state)) return
         const zone = ZONES.find((z) => z.id === id)
         this.zone = zone
@@ -358,21 +520,126 @@ export class App {
             this.labels.setClass(`zone:${z.id}`, 'is-active', z.id === id)
             this.labels.setClass(`zone:${z.id}`, 'is-dim', z.id !== id)
         }
+        this.audio.play('tap')
         this.zoneCard.render(zone)
         this.zoneCard.show()
 
         const focus = this.city.focusPoint(id)
-        this.#flyCity(focus.clone().addScaledVector(this.#cityDir(), 200 * this.#cityFrame().zoneK), focus, 2.0)
+        this.#flyCity(focus.clone().addScaledVector(this.#cityDir(), 200 * this.#cityFrame().zoneK), focus, 1.4)
         this.#frameForPanel(this.zoneCard, 420)
 
-        if (session.role === 'collector') this.dockBubble.say('Revisa las casas de este barrio.', 'Puedes marcar lo que falta con urgencia.')
-        else this.dockBubble.say('Esta zona necesita apoyo.', 'Puedes entrar al barrio para ver las casas.')
+        this.dockBubble.say('Esta zona necesita apoyo.', 'Puedes entrar al barrio para ver las casas.')
         if (isNarrow()) this.$('.guide-dock').hidden = true
         requestAnimationFrame(() => this.zoneCard.focusPrimary())
 
         // Build this barrio ahead of time so entering is instant
         this.pendingBarrio = buildBarrio(zone, this.theme)
         this.hood.prepare(this.pendingBarrio)
+    }
+
+    /** Shade every zone but the one this collection point answers for. */
+    #syncZoneFocus() {
+        this.city?.setFocusZone(session.role === 'collector' ? session.point?.zone ?? null : null)
+    }
+
+    /* ================================================================
+       The collection point's board — it never enters a barrio
+       ================================================================ */
+
+    /**
+     * A collection point taps its own zone and the board is simply there. There
+     * is no barrio to walk and nothing to hand over: the work is keeping the
+     * count on the shelves honest.
+     */
+    async openInventory(id) {
+        if (!['city', 'inventory'].includes(this.state)) return
+        const own = session.point?.zone
+        if (id && id !== own) {
+            // another zone belongs to another point; say so instead of ignoring the tap
+            this.audio.play('error')
+            const zone = ZONES.find((z) => z.id === own)
+            this.dockBubble.say('Ese barrio lo atiende otro punto de acopio.', `Tu punto responde por ${zone?.name ?? 'tu zona'}.`)
+            return
+        }
+        if (this.state === 'inventory') return
+        this.audio.play('open')
+        this.setState('inventory')
+        this.zone = ZONES.find((z) => z.id === own) ?? null
+        this.#disableOrbit()
+        this.city.setSelected(own)
+        this.labels.setAll('is-hidden', true)
+        this.$('.guide-dock').hidden = true
+        this.#showBack('Volver al mapa')
+        // the board comes with the stand itself above it, its shelves showing the same stock
+        await this.#veil(true)
+        this.#showDepot()
+        await this.inventoryPanel.openFor(session.point, this.inventory)
+        this.#frameDepot()
+        this.#veil(false)
+        this.#syncProgress()
+    }
+
+    async closeInventory() {
+        if (this.state !== 'inventory') return
+        this.setState('city')
+        this.city.setSelected(null)
+        this.#hideBack()
+        await this.#veil(true)
+        await this.inventoryPanel.close()
+        this.#showCity()
+        const home = this.#homeFrame()
+        this.rig.set(home.pos, home.target)
+        this.labels.setAll('is-hidden', false)
+        this.#veil(false)
+        const zone = ZONES.find((z) => z.id === session.point?.zone)
+        this.#showGuideDock('Tu inventario quedó guardado.', `Toca ${zone?.name ?? 'tu zona'} cuando quieras actualizarlo.`)
+        this.#enableOrbit()
+    }
+
+    /** Swap the map for the stand. Its shelves follow the store live, wherever the change came from. */
+    #showDepot() {
+        this.city.group.visible = false
+        this.clouds.group.visible = false
+        this.depot.setPoint(session.point)
+        this.depot.reset()
+        this.depot.sync(this.inventory, { instant: true })
+        this.depotSync?.()
+        const store = this.inventory
+        this.depotSync = store.on(() => this.depot.sync(store))
+        this.depot.group.visible = true
+        this.stage.setShadowFrame(new THREE.Vector3(0, 1.5, -0.6), 11, { mapSize: 2048, normalBias: 0.05 })
+        this.stage.setFog(40, 160)
+        this.stage.setInk(INK.barrio[0], INK.barrio[1])
+    }
+
+    #hideDepot() {
+        this.depotSync?.()
+        this.depotSync = null
+        if (this.depot) this.depot.group.visible = false
+    }
+
+    /**
+     * Frame the stand straight from the front, in the band the board leaves
+     * free between the top bar and itself: as close as it can be while the
+     * whole stand still fits, and centred in that band.
+     */
+    #frameDepot() {
+        const cam = this.stage.camera
+        const { w, h } = this.stage.size
+        const top = (this.$('.topbar')?.getBoundingClientRect().bottom ?? 96) + 8
+        // offsetTop ignores the board's rise-in transform: frame where it comes to rest
+        const panelTop = this.inventoryPanel.el.offsetTop || h * 0.6
+        const free = Math.max(140, panelTop - top - 8)
+        const tan = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2)
+        const height = DEPOT_BOUNDS.top - DEPOT_BOUNDS.bottom
+        const byHeight = (height * h) / (2 * tan * free)
+        const byWidth = (DEPOT_BOUNDS.width * h) / (2 * tan * w * 0.96)
+        const dist = Math.max(byHeight, byWidth) * 1.04
+        const look = this.depot.center
+        this.rig.set(new THREE.Vector3(look.x, look.y, look.z + dist), look)
+        this.stage.viewOffset.x = 0
+        this.stage.viewOffset.y = h / 2 - (top + free / 2)
+        this.stage.applyViewOffset()
     }
 
     deselectZone() {
@@ -384,30 +651,76 @@ export class App {
         this.labels.setAll('is-dim', false)
         this.zoneCard.hide()
         this.#frameForPanel(null)
-        this.#flyCity(this.#cityFrame().pos, CITY_VIEW.target, 1.8)
-        this.#showGuideDock('Puedes elegir cualquier zona.', session.role === 'collector' ? 'Elige una zona para revisar.' : 'Selecciona una zona de la ciudad.')
+        this.#flyCity(this.#cityFrame().pos, CITY_VIEW.target, 1.3)
+        this.#showGuideDock('Puedes elegir cualquier zona.', 'Selecciona una zona de la ciudad.')
     }
 
     #cityDir() {
         return CITY_VIEW.pos.clone().sub(CITY_VIEW.target).normalize()
     }
 
+    /**
+     * Where the city view rests. A collection point only works its own zone, so
+     * its view comes in close on that zone; everyone else sees the whole city.
+     */
+    #homeFrame() {
+        const zoneId = session.role === 'collector' ? session.point?.zone : null
+        if (!zoneId || !this.city) return { pos: this.#cityFrame().pos, target: CITY_VIEW.target.clone() }
+        const { center, radius } = this.city.zoneFrame(zoneId)
+        const a = this.stage.size.w / this.stage.size.h
+        const dist = radius * HOME_ZONE_FIT * Math.min(1.8, Math.max(1, 1.15 / a))
+        const dir = this.#cityDir()
+        dir.y *= HOME_ZONE_TILT
+        return { pos: center.clone().addScaledVector(dir.normalize(), dist), target: center.clone() }
+    }
+
     /** Fly within the city view; the limited orbit is paused during the move. */
-    async #flyCity(pos, target, duration) {
+    async #flyCity(pos, target, duration, ease) {
         this.#disableOrbit()
-        const flight = (this._flight = this.rig.flyTo(pos, target, { duration }))
+        const flight = (this._flight = this.rig.flyTo(pos, target, { duration, ease }))
         await flight
         if (this._flight === flight && ['city', 'zone'].includes(this.state)) this.#enableOrbit()
     }
 
-    #followOffset() {
+    /* ================================================================
+       The barrio camera: one fixed vantage point, zoom only
+       ================================================================ */
+
+    /**
+     * Point the barrio camera at something and stay there.
+     * `dist` is the distance at zoom 1; the person can only move along that
+     * same line, so the framing they were given is always recoverable.
+     */
+    #lookAt(look, { dir = BARRIO_VIEW.dir, dist = BARRIO_VIEW.dist } = {}) {
         const a = this.stage.size.w / this.stage.size.h
-        const base = this.hood?.cameraOffset ? new THREE.Vector3(...this.hood.cameraOffset) : FOLLOW_OFFSET.clone()
-        return base.multiplyScalar(Math.min(1.45, Math.max(1, 0.85 / a)))
+        this.barrioCam = { look: look.clone(), dir: dir.clone(), dist: dist * Math.min(1.5, Math.max(1, 0.9 / a)) }
+        this.zoom.value = this.zoom.target = 1
+        return this.#camPos()
     }
 
-    #followLook() {
-        return this.hood?.cameraLook ? new THREE.Vector3(...this.hood.cameraLook) : FOLLOW_LOOK.clone()
+    #camPos() {
+        const c = this.barrioCam
+        return c.look.clone().addScaledVector(c.dir, c.dist * this.zoom.value)
+    }
+
+    /** Wheel and pinch only change how close the view is, never its angle. */
+    zoomBy(delta) {
+        if (!this.barrioCam) return
+        const z = this.zoom
+        // close views (the stand, the counter) can always back off far enough to take in the whole barrio
+        const max = Math.max(BARRIO_VIEW.zoom.max, BARRIO_VIEW.wholeBarrio / this.barrioCam.dist)
+        z.target = THREE.MathUtils.clamp(z.target * (1 + delta), BARRIO_VIEW.zoom.min, max)
+    }
+
+    #zoomStep(dt) {
+        const z = this.zoom
+        if (!this.barrioCam || Math.abs(z.target - z.value) < 0.0005) return
+        z.value += (z.target - z.value) * (1 - Math.exp(-dt * 7))
+        this.rig.kill()
+        this.rig.stopFollow()
+        this.rig.pos.copy(this.#camPos())
+        this.rig.target.copy(this.barrioCam.look)
+        this.rig.apply()
     }
 
     #cityFrame() {
@@ -425,10 +738,12 @@ export class App {
                 const h = panel.footprint().h || window.innerHeight * 0.6
                 y = Math.min(h * 0.5, window.innerHeight * 0.32)
             } else {
-                x = ((panel.footprint().w || fallbackW) + 24) * 0.5
+                // the supply panel sits on the left, so the scene moves right; the zone card is on the right
+                const shift = ((panel.footprint().w || fallbackW) + 24) * 0.5
+                x = panel === this.zoneCard ? shift : -shift
             }
         }
-        gsap.to(vo, { x, y, duration: this.reducedMotion ? 0.01 : 1.6, ease: 'sine.inOut', onUpdate: () => this.stage.applyViewOffset() })
+        gsap.to(vo, { x, y, duration: this.reducedMotion ? 0.01 : 1.0, ease: 'sine.inOut', onUpdate: () => this.stage.applyViewOffset() })
     }
 
     /* ================================================================
@@ -454,13 +769,15 @@ export class App {
         const offset = cam.position.clone().sub(o.target)
         const sph = new THREE.Spherical().setFromVector3(offset)
         this.orbitBase = { target: o.target.clone(), radius: sph.radius, theta: sph.theta, phi: sph.phi }
-        // Restricted: a little rotation, a little tilt, modest zoom, short pan
-        o.minAzimuthAngle = sph.theta - 0.42
-        o.maxAzimuthAngle = sph.theta + 0.42
-        o.minPolarAngle = Math.max(0.35, sph.phi - 0.16)
-        o.maxPolarAngle = Math.min(1.05, sph.phi + 0.12)
-        o.minDistance = sph.radius * 0.72
-        o.maxDistance = sph.radius * 1.12
+        // Restricted, but with room to tilt toward the horizon and turn west, so the
+        // hills with Cristo Rey and the Tres Cruces can be brought into view
+        // (the hills are to the west, which the camera faces by swinging toward +theta)
+        o.minAzimuthAngle = sph.theta - 0.6
+        o.maxAzimuthAngle = sph.theta + 0.9
+        o.minPolarAngle = Math.max(0.3, sph.phi - 0.2)
+        o.maxPolarAngle = Math.min(1.36, sph.phi + 0.5)
+        o.minDistance = sph.radius * 0.6
+        o.maxDistance = sph.radius * 1.2
         o.enabled = true
         o.update()
     }
@@ -479,7 +796,7 @@ export class App {
         // keep panning close to the curated view
         const d = new THREE.Vector3().subVectors(o.target, b.target)
         d.y = 0
-        const max = b.radius * 0.14
+        const max = b.radius * 0.24
         if (d.length() > max) {
             d.setLength(max)
             const fix = b.target.clone().add(d).setY(b.target.y)
@@ -516,8 +833,8 @@ export class App {
         const ready = this.hood.prepare(barrio)
 
         const focus = this.city.focusPoint(zone.id)
-        const dive = this.rig.flyTo(focus.clone().addScaledVector(this.#cityDir(), 55), focus, { duration: 1.9, ease: 'power2.in' })
-        await wait(this.reducedMotion ? 0.1 : 1.0)
+        const dive = this.rig.flyTo(focus.clone().addScaledVector(this.#cityDir(), 55), focus, { duration: 1.4, ease: 'power2.in' })
+        await wait(this.reducedMotion ? 0.1 : 0.5)
         await this.#veil(true)
         await Promise.all([dive, ready])
 
@@ -527,28 +844,36 @@ export class App {
         this.clouds.group.visible = false
         this.hood.group.visible = true
         await this.hood.setBarrio(barrio)
+        this.#nightLights()
         this.#barrioLighting()
         this.stage.viewOffset.x = this.stage.viewOffset.y = 0
         this.stage.applyViewOffset()
 
-        const start = this.hood.start
+        this.families.clear()
+        // a barrio kept in the cache may still hold supplies from an earlier visit
+        this.hood.resetDisplay()
+        const acopio = this.hood.acopio
+        this.#setContext('home', barrio.name, 'Cali, Valle del Cauca')
+
+        // the collection point sits in the middle of the view in every barrio
+        const c = acopio.center
+        const arrive = this.#lookAt(new THREE.Vector3(c.x, c.y + 1, c.z - 2))
+        this.barrioHome = { ...this.barrioCam }
+        this.rig.set(arrive.clone().add(new THREE.Vector3(0, 26, 16)), this.barrioCam.look.clone())
+
         this.currentNode = this.hood.startNode
-        this.guide.place(start, Math.PI)
+        this.guide.place(this.hood.start, Math.PI)
         this.guide.hide()
-        this.rig.set(start.clone().add(new THREE.Vector3(0, 34, 38)), start.clone().add(new THREE.Vector3(0, 0, -16)))
-        this.#setContext('home', barrio.name, session.role === 'collector' ? session.point.name : 'Cali, Valle del Cauca')
 
         this.#veil(false)
-        await this.rig.flyTo(start.clone().add(this.#followOffset()), start.clone().add(this.#followLook()), { duration: 2.8, ease: 'power3.out' })
+        await this.rig.flyTo(arrive, this.barrioCam.look.clone(), { duration: 1.9, ease: 'power3.out' })
 
         await this.guide.appear()
         this.setState('barrio')
-        this.rig.follow(this.guide.root, this.#followOffset(), this.#followLook())
         this.#showBack('Volver al mapa')
-        this.#showHouseLabels()
-        if (session.role === 'collector') this.say('Estas son las casas del barrio.', 'Elige una para revisar sus suministros.')
-        else this.say('Hola. Estas casas necesitan apoyo.', 'Selecciona una casa para ver qué se necesita.')
-        this.labels.get(`house:${barrio.houses[0].id}`)?.focus({ preventScroll: true })
+        this.#showBarrioLabels()
+        this.say('Hola. Aquí se recibe la ayuda del barrio.', 'Entra al punto de acopio para dejar tus suministros.')
+        this.labels.get('acopio')?.focus({ preventScroll: true })
         this.guide.point(1.4)
     }
 
@@ -557,133 +882,156 @@ export class App {
         return new Promise((resolve) => {
             gsap.to(el, {
                 autoAlpha: on ? 1 : 0,
-                duration: this.reducedMotion ? 0.15 : on ? 0.9 : 1.4,
+                duration: this.reducedMotion ? 0.15 : on ? 0.6 : 0.95,
                 ease: on ? 'sine.in' : 'sine.out',
                 onComplete: resolve,
             })
         })
     }
 
-    #showHouseLabels() {
+    /**
+     * One marker: the collection point, the only thing a person opens in a
+     * barrio. The houses carry no markers; what they need is shown at the stand.
+     */
+    #showBarrioLabels() {
         this.labels.clear()
-        this.barrio.houses.forEach((h, i) => {
-            const el = this.labels.add(`house:${h.id}`, {
-                html: this.#houseLabelHtml(h),
-                ariaLabel: this.#houseLabelAria(h),
-                anchor: () => this.hood.labelAnchor(h.id, this._hAnchor ?? (this._hAnchor = new THREE.Vector3())),
-                onClick: () => this.goToHouse(h.id),
-            })
-            el.style.setProperty('--delay', `${i * 80}ms`)
+        const acopioEl = this.labels.add('acopio', {
+            className: 'is-compact is-point',
+            html: `<span class="wlabel-icon" style="background:#011E41">${icon('box')}</span>`,
+            ariaLabel: `Punto de acopio del ${this.barrio.name}. Abrir`,
+            anchor: () => this.hood.acopioAnchor(this._aAnchor ?? (this._aAnchor = new THREE.Vector3())),
+            onClick: () => this.openPoint(),
         })
+        acopioEl.style.setProperty('--delay', '0ms')
     }
 
-    #houseStatus(h) {
-        if (session.urgentCount(h.id)) return ['Faltante urgente', 'is-high is-urgent']
-        if (h.supported) return ['Apoyo en camino', 'is-ok']
-        return h.priority === 'alta' ? ['Prioridad alta', 'is-high'] : ['Necesita apoyo', '']
-    }
-
-    #houseLabelHtml(h) {
-        const c = CATEGORIES[h.category]
-        const [text, cls] = this.#houseStatus(h)
-        return `<span class="wlabel-icon" style="background:${c.color}">${icon(c.icon)}</span><span class="wlabel-text">${c.label}<span class="wlabel-status ${cls}">${text}</span></span>`
-    }
-
-    #houseLabelAria(h) {
-        return `Casa ${h.number}, ${CATEGORIES[h.category].label}. ${this.#houseStatus(h)[0]}. Ir a esta casa`
+    /** Move in on the counter (panel open) or back to the barrio view (panel closed). */
+    #frameCounter(on) {
+        if (on) {
+            const v = this.hood.acopioViewpoint(COUNTER_VIEW)
+            this.#lookAt(v.look, { dir: v.dir, dist: v.dist })
+        } else if (this.barrioHome) {
+            this.barrioCam = { ...this.barrioHome, look: this.barrioHome.look.clone(), dir: this.barrioHome.dir.clone() }
+            this.zoom.value = this.zoom.target = 1
+        }
+        return this.rig.flyTo(this.#camPos(), this.barrioCam.look.clone(), { duration: this.reducedMotion ? 0.3 : 1.3, ease: 'power2.inOut' })
     }
 
     /* ================================================================
-       Neighborhood — click-and-go
+       The collection point — the only place to act inside a barrio
        ================================================================ */
 
-    async goToHouse(id) {
-        if (!['barrio', 'walking'].includes(this.state)) return
-        const house = this.hood.house(id)
-        if (!house) return
-        this.houseId = id
+    /**
+     * Donors walk over first; collection points are already standing there.
+     * Either way the camera does not move: what changes is who is at the counter.
+     */
+    async openPoint() {
+        if (!['barrio', 'walking'].includes(this.state) || this.atPoint) return
+        if (this.state === 'walking') return
         this.setState('walking')
-        this.hood.setSelected(id)
-        for (const h of this.barrio.houses) this.labels.setClass(`house:${h.id}`, 'is-active', h.id === id)
-        this.say('', `Vamos a la casa de ${CATEGORIES[house.data.category].label.toLowerCase()}.`)
-
-        this.rig.follow(this.guide.root, this.#followOffset(), this.#followLook())
-        const { points } = this.hood.route(this.currentNode, id)
+        this.hood.setSelected(true)
+        this.labels.setClass('acopio', 'is-active', true)
+        this.say('', 'Vamos al punto de acopio.')
+        const { points } = this.hood.route(this.currentNode, 'acopio')
         points[0] = this.guide.position.clone().setY(0)
         const arrived = await this.guide.walk(points)
-        if (!arrived || this.houseId !== id) return
-
-        this.currentNode = `door:${id}`
-        this.guide.faceTowards(house.center)
+        if (!arrived || this.state !== 'walking') return
+        this.currentNode = 'acopio'
+        // step aside so the counter stays in view while supplies are left on it
+        const stand = this.hood.acopio
+        this.guide.walk([this.guide.position.clone(), stand.aside.clone()], { speed: 3.2 }).then((done) => {
+            if (done) this.guide.faceTowards(stand.counter)
+        })
         this.guide.nod()
-        this.openHouse(id)
-    }
 
-    async openHouse(id) {
-        const house = this.hood.house(id)
-        this.setState('house')
+        this.audio.play('open')
+        this.atPoint = true
+        this.setState('point')
+        this.hood.setSelected(true)
         this.hood.setFocusMode(true)
-        for (const h of this.barrio.houses) this.labels.setClass(`house:${h.id}`, 'is-hidden', h.id !== id)
+        this.labels.setAll('is-hidden', true)
         this.#showBack('Volver al barrio')
-        const { pos, look } = this.hood.viewpointFor(id)
-        this.rig.flyTo(pos, look, { duration: 2.0 })
 
-        if (session.role === 'collector') this.say('', 'Marca lo que falta con urgencia.')
-        else {
-            const urgent = session.urgentCount(id)
-            this.say(urgent ? 'Hay insumos marcados como urgentes.' : '', 'Elige qué y cuánto quieres aportar.')
-        }
-        await this.panel.openFor(house.data, this.barrio)
+        this.say(session.urgentCount(this.barrio.id) ? 'Hay insumos marcados como urgentes.' : '', 'Elige qué dejar en el punto de acopio.')
+
+        // the panel opens on the left and the camera moves in on the stand, framed in the space to its right
+        this.#frameCounter(true)
+        // the needs on offer are the point's stock right now, whatever happened since the barrio was built
+        refreshBarrioNeeds(this.barrio)
+        await this.panel.openFor(this.barrio)
         this.#syncProgress()
         this.#frameForPanel(this.panel)
-        this.panel.el.querySelector('.tile-toggle:not([disabled]), .alert-btn')?.focus({ preventScroll: true })
+        this.panel.el.querySelector('.tile-toggle:not(.is-static), .alert-btn')?.focus({ preventScroll: true })
     }
 
-    async closeHouse() {
-        if (this.state !== 'house') return
+    async closePoint() {
+        if (this.state !== 'point') return
+        this.atPoint = false
         this.setState('barrio')
-        this.hood.setSelected(null)
+        this.hood.setSelected(false)
         this.hood.setFocusMode(false)
+        this.hood.clearDisplay()
+        this.labels.setAll('is-hidden', false)
         this.labels.setAll('is-active', false)
-        for (const h of this.barrio.houses) this.labels.setClass(`house:${h.id}`, 'is-hidden', false)
         this.#showBack('Volver al mapa')
         this.#frameForPanel(null)
+        this.#frameCounter(false)
         this.panel.close()
-        this.rig.follow(this.guide.root, this.#followOffset(), this.#followLook(), { stiffness: 1.6 })
-        const h = this.hood.house(this.houseId)
-        this.houseId = null
-        if (session.role === 'collector') this.say('', 'Puedes revisar otra casa.')
-        else this.say(h?.data.supported ? 'Gracias. Tu aporte quedó registrado.' : '', 'Puedes elegir otra casa.')
+        if (barrioCovered(this.barrio)) this.say('El barrio quedó cubierto.', 'Gracias por tu apoyo.')
+        else this.say('', 'Puedes dejar más suministros cuando quieras.')
     }
 
     #onDonorStep(step) {
         this.#syncProgress()
         const lines = {
-            supplies: ['', 'Elige qué y cuánto quieres aportar.'],
-            basket: ['Esta es tu cesta de apoyo.', 'Puedes ajustar las cantidades.'],
+            supplies: ['', 'Elige qué dejar en el punto de acopio.'],
             method: ['', 'Elige cómo quieres aportar.'],
             details: ['', 'Necesitamos pocos datos para coordinar.'],
             summary: ['Revisa el resumen.', 'Si todo está bien, confirma.'],
-            payment: ['', 'Revisa el valor antes de pagar.'],
-            gateway: ['', 'Elige un medio de pago.'],
-            done: ['Gracias por ayudar.', 'Puedes apoyar otra casa cuando quieras.'],
+            payment: ['', 'Elige un medio de pago.'],
+            done: ['Las familias salieron a recoger.', 'Puedes seguir apoyando cuando quieras.'],
         }
         if (lines[step]) this.say(...lines[step])
-        // the panel can grow or shrink between steps; keep the house framed
         requestAnimationFrame(() => this.#frameForPanel(this.panel))
     }
 
-    registerSupport(house, basket, record) {
-        for (const n of house.needs) if (basket.has(n.item)) n.qty = Math.max(0, n.qty - basket.get(n.item))
-        house.supported = true
+    /**
+     * What arrives at the stand is shared out among the families waiting for it,
+     * and the ones who were served come out to collect.
+     */
+    registerSupport(barrio, basket, record) {
+        // the panel plays the completion sound as it moves to its last step
+        const served = applyDonation(barrio, basket)
+        // the donation goes onto the point's shelves and into the sheet, so the point's board,
+        // the sheet and the next donor all count it
+        this.board.donate(pointForZone(barrio.zone.id).id, basket)
         session.donations.push(record)
-        this.labels.update(`house:${house.id}`, this.#houseLabelHtml(house), this.#houseLabelAria(house))
-        console.info(`[NEXOS] Aporte ${record.code} (${record.mode === 'physical' ? 'entrega física' : 'dinero, demostración'}) · casa ${house.number} · ${money(record.value)}`, Object.fromEntries([...basket].map(([k, v]) => [SUPPLIES[k].label, v])))
+        // what was left stays on the counter, and the families come in line to take their share of it
+        this.hood.commitDisplay()
+        this.families.run(this.hood, served)
+        console.info(
+            `[NEXOS] Aporte ${record.code} (${record.mode === 'physical' ? 'entrega física' : 'dinero, demostración'}) · ${barrio.name} · ${money(record.value)} · ${served.length} ${served.length === 1 ? 'familia' : 'familias'}`,
+            Object.fromEntries([...basket].map(([k, v]) => [SUPPLIES[k].label, v]))
+        )
     }
 
-    #onAlert(house, item, on) {
-        this.labels.update(`house:${house.id}`, this.#houseLabelHtml(house), this.#houseLabelAria(house))
-        this.say(on ? 'Alerta registrada.' : 'Alerta retirada.', on ? `Los donantes verán “${SUPPLIES[item].label}” como urgente.` : 'Puedes marcar otro insumo si lo necesitas.')
+    /**
+     * Shortages are no longer flagged by hand: whatever the board shows below its
+     * critical line is what donors see first in this zone. The point's own board
+     * is mirrored at once; the sheet carries it to every other device.
+     */
+    #onShortages() {
+        if (session.point && this.inventory) this.board.mirror(session.point.id, this.inventory.stock)
+    }
+
+    /** The stock of some point moved (the sheet, a point's board, a donation): what donors read follows. */
+    #onStock() {
+        if (['city', 'zone'].includes(this.state)) {
+            for (const z of ZONES) this.labels.update(`zone:${z.id}`, this.#zoneLabelHtml(z), this.#zoneAria(z))
+        }
+        if (this.state === 'zone' && this.zone && this.zoneCard.open) this.zoneCard.render(this.zone)
+        if (this.barrio) refreshBarrioNeeds(this.barrio)
+        if (this.state === 'point' && session.role === 'donor') this.donorPanel.refreshNeeds()
     }
 
     /* ================================================================
@@ -691,12 +1039,14 @@ export class App {
        ================================================================ */
 
     async returnToMap() {
-        if (!['barrio', 'walking', 'house'].includes(this.state)) return
+        if (!['barrio', 'walking', 'point'].includes(this.state)) return
         this.setState('leaving')
         this.guide.stop()
+        this.families.clear()
         this.panel.close()
+        this.hood.resetDisplay()
         this.hood.setFocusMode(false)
-        this.hood.setSelected(null)
+        this.hood.setSelected(false)
         this.labels.clear()
         this.worldBubble.hide()
         this.#hideBack()
@@ -707,24 +1057,27 @@ export class App {
         const focus = this.city.focusPoint(this.zone?.id ?? 'centro')
         this.rig.set(focus.clone().addScaledVector(this.#cityDir(), 70), focus)
         this.zone = null
-        this.houseId = null
+        this.atPoint = false
+        this.barrioCam = null
 
         this.#veil(false)
-        await this.rig.flyTo(this.#cityFrame().pos, CITY_VIEW.target, { duration: 2.6, ease: 'power3.out' })
+        await this.rig.flyTo(this.#cityFrame().pos, CITY_VIEW.target, { duration: 1.8, ease: 'power3.out' })
         this.setState('city')
         this.#showZoneLabels()
-        this.#showGuideDock(session.role === 'collector' ? 'Puedes revisar otra zona.' : 'Puedes apoyar en otra zona.', session.role === 'collector' ? 'Elige una zona.' : 'Selecciona una zona de la ciudad.')
+        this.#showGuideDock('Puedes apoyar en otra zona.', 'Selecciona una zona de la ciudad.')
         this.#enableOrbit()
     }
 
     #showCity() {
         this.rig.stopFollow()
+        this.#hideDepot()
         this.hood.group.visible = false
         this.guide.hide()
         this.city.group.visible = true
         this.clouds.group.visible = true
         this.city.setSelected(null)
         this.#cityLighting()
+        this.stage.setInk(INK.city[0], INK.city[1])
         this.stage.viewOffset.x = this.stage.viewOffset.y = 0
         this.stage.applyViewOffset()
         this.#setContext('map', 'Mapa de ayuda', 'Cali, Valle del Cauca')
@@ -737,6 +1090,7 @@ export class App {
         this.setState('exiting')
         this.#disableOrbit()
         this.guide?.stop()
+        this.families?.clear()
         if (this.panel.open) this.panel.close()
         this.zoneCard.open && this.zoneCard.hide()
         this.labels.clear()
@@ -746,14 +1100,19 @@ export class App {
         this.#frameForPanel(null)
         this.$('.login').hidden = true
 
-        if (['barrio', 'walking', 'house', 'leaving', 'entering'].includes(from)) {
+        if (['barrio', 'walking', 'point', 'leaving', 'entering', 'inventory'].includes(from)) {
             await this.#veil(true)
             this.#showCity()
-            this.rig.set(this.#cityFrame().pos, CITY_VIEW.target)
+            const home = this.#homeFrame()
+            this.rig.set(home.pos, home.target)
             this.#veil(false)
         }
         if (this.city) {
+            this.rig.kill()
+            const look = this.rig.target.clone()
+            INTRO_CURVE.points[3].copy(this.rig.pos)
             gsap.to(this, { cloudPresence: 1, duration: 1.5 })
+            this.stage.setInk(0, undefined, this.reducedMotion ? 0 : 0.8)
             const s = { p: 1 }
             await new Promise((resolve) =>
                 gsap.to(s, {
@@ -763,7 +1122,7 @@ export class App {
                     onUpdate: () => {
                         const e = s.p * s.p * (3 - 2 * s.p)
                         this.rig.pos.copy(INTRO_CURVE.getPoint(e))
-                        this.rig.target.lerpVectors(INTRO_TARGET_FROM, CITY_VIEW.target, e)
+                        this.rig.target.lerpVectors(INTRO_TARGET_FROM, look, e)
                         this.rig.apply()
                     },
                     onComplete: resolve,
@@ -771,6 +1130,9 @@ export class App {
             )
         }
         this.intro = { p: 0, target: 0, auto: false }
+        this.inventory?.stop()
+        this.inventory = null
+        this.city?.setFocusZone(null)
         session.role = null
         session.point = null
         this.zone = this.barrio = null
@@ -801,12 +1163,12 @@ export class App {
         const s = this.state
         let i = 0
         if (role === 'collector') {
-            i = s === 'login' ? 0 : ['intro', 'city', 'zone'].includes(s) ? 1 : s === 'house' ? 3 : 2
+            i = s === 'login' ? 0 : s === 'inventory' ? 2 : 1
         } else {
             if (['entering', 'barrio', 'walking', 'leaving'].includes(s)) i = 1
-            if (s === 'house') {
+            if (s === 'point') {
                 const step = this.donorPanel.step
-                i = step === 'supplies' ? 2 : step === 'basket' ? 3 : step === 'done' ? 5 : 4
+                i = step === 'supplies' ? 2 : ['method', 'details', 'payment'].includes(step) ? 3 : 4
             }
         }
         this.progress.set(i)
@@ -818,13 +1180,24 @@ export class App {
         else if (session.role === 'donor') chip.innerHTML = `${icon('heart')}<span>Donante</span>`
         else chip.innerHTML = ''
         const exit = this.$('.js-exit')
-        exit.textContent = session.role === 'collector' ? 'Cerrar sesión' : 'Salir'
+        const label = session.role === 'collector' ? 'Cerrar sesión' : 'Salir'
+        exit.setAttribute('aria-label', label)
+        exit.title = label
     }
 
     #placeWorldBubble(w, h) {
         const el = this.$('.bubble-world')
-        if (el.hidden || !this.guide?.root.visible) return
+        if (el.hidden) return
         const panelOpen = this.panel.open
+        // the supply panel sits on the left; nothing is placed underneath it
+        const panelRight = panelOpen && !isNarrow() ? this.panel.el.getBoundingClientRect().right + 16 : 24
+        if (!this.guide?.root.visible) {
+            // collection points have no character on screen, so the line is simply docked
+            el.classList.remove('is-left')
+            el.style.maxWidth = `${Math.min(420, w - panelRight - 24)}px`
+            el.style.transform = `translate3d(${panelRight}px, ${h - el.offsetHeight - 24}px, 0)`
+            return
+        }
         if (isNarrow()) {
             const top = panelOpen ? (this.$('.progress').getBoundingClientRect().bottom || this.$('.topbar').getBoundingClientRect().bottom || 80) + 10 : h - el.offsetHeight - 16
             el.classList.remove('is-left')
@@ -839,14 +1212,13 @@ export class App {
         const y = (-p.y * 0.5 + 0.5) * h
         const bw = el.offsetWidth
         const bh = el.offsetHeight
-        const panelLeft = panelOpen ? this.panel.el.getBoundingClientRect().left - 16 : w - 24
         let left = x + 46
         let isLeft = false
-        if (left + bw > panelLeft) {
+        if (left + bw > w - 24 && x - 46 - bw >= panelRight) {
             left = x - 46 - bw
             isLeft = true
         }
-        left = Math.max(24, left)
+        left = Math.max(panelRight, Math.min(left, w - bw - 24))
         const minTop = (this.$('.progress').getBoundingClientRect().bottom || 120) + 12
         const top = Math.min(Math.max(minTop, y - bh + 24), h - bh - 24)
         el.classList.toggle('is-left', isLeft)
@@ -883,23 +1255,87 @@ export class App {
     }
 
     back() {
-        if (this.state === 'house') {
-            // inside the donor flow, step back before leaving the house
-            const order = { basket: 'supplies', method: 'basket', details: 'method', summary: 'details', payment: 'method', gateway: 'payment' }
+        if (this.state === 'point') {
+            // inside the donor flow, step back before leaving the stand
+            const order = { method: 'supplies', details: 'method', summary: 'details', payment: 'method' }
             const prev = session.role === 'donor' && order[this.donorPanel.step]
             if (prev) return this.donorPanel.go(prev)
-            return this.closeHouse()
+            return this.closePoint()
         }
+        if (this.state === 'inventory') return this.closeInventory()
         if (this.state === 'barrio' || this.state === 'walking') return this.returnToMap()
         if (this.state === 'zone') return this.deselectZone()
         if (this.state === 'login') return this.#loginBack()
     }
 
+    /**
+     * Cali's time and weather, every few seconds: the clock always, and the
+     * world only when the light has really moved (a change of weather, or the
+     * sun a little lower), so the scene eases from one to the next.
+     */
+    #onSky(s) {
+        this.#renderClock(s)
+        const key = `${s.kind}:${Math.round(s.daylight * 48)}`
+        if (key === this.skyKey) return
+        const first = !this.skyKey
+        this.skyKey = key
+        // the real day changes slowly; a time set by hand answers at once
+        this.stage.applyMood(skyMood(this.theme.mood, s), first || this.reducedMotion ? 0 : s.manual ? 0.35 : 4)
+        // it rains in the world when it rains in Cali (as hard as it does), and always in a flood emergency
+        const level = Math.max(this.theme.mood.rain ? 0.55 : 0, s.weather.rain ?? 0)
+        this.rainOn = level > 0
+        if (this.rainOn) {
+            this.#setupRain()
+            this.rain.near.setLevel(level)
+            this.rain.far.setLevel(level)
+        }
+        // a storm flashes now and then (not for people who asked for less motion)
+        this.lightning = !!s.weather.lightning && !this.reducedMotion
+        this.nextFlash = null
+        this.nightness = 1 - s.daylight
+        this.#nightLights()
+    }
+
+    #renderClock(s) {
+        const el = this.$('.clock')
+        if (!el) return
+        el.querySelector('.clock-time').textContent = s.time
+        el.querySelector('.clock-sub').textContent = [s.temp !== null ? `${s.temp} °C` : null, s.loaded ? s.label : 'Cali'].filter(Boolean).join(' · ')
+        const ic = el.querySelector('.clock-icon')
+        if (ic.dataset.icon !== s.icon) {
+            ic.dataset.icon = s.icon
+            ic.innerHTML = ''
+            hydrateIcons(el)
+        }
+        el.setAttribute('aria-label', `En Cali son las ${s.time}. ${s.label}${s.temp !== null ? `, ${s.temp} grados` : ''}.`)
+    }
+
+    /**
+     * After dark the street lamps come on and the windows glow warm. Lamps and
+     * glass share their materials across every copy, so setting them once
+     * reaches every house; it runs again whenever a new barrio is built.
+     */
+    #nightLights() {
+        const n = this.nightness ?? 0
+        this.hood?.setNight(n)
+        setWindowGlow(n)
+        this.stage.scene.traverse((o) => {
+            if (!o.isMesh) return
+            for (const m of [o.material].flat()) {
+                if (!m?.emissive) continue
+                const name = m.name ?? ''
+                if (name.startsWith('house:lamp')) m.emissiveIntensity = 0.6 + 2.6 * n
+                // only the glass glows, through what is painted on it (see three/nightWindows.js)
+                else if (WINDOW_MATERIAL.test(name)) makeNightWindow(m)
+            }
+        })
+    }
+
     #setupRain() {
-        if (!this.theme.mood.rain) return
+        if (this.rain) return
         this.rain = {
-            near: new Rain({ count: 2600, area: 70, height: 36, length: 0.9, opacity: 0.28 }),
-            far: new Rain({ count: 3200, area: 520, height: 260, length: 7, opacity: 0.18 }),
+            near: new Rain({ count: 2600, area: 70, height: 36, length: 0.9, opacity: 0.17 }),
+            far: new Rain({ count: 3200, area: 520, height: 260, length: 7, opacity: 0.11 }),
         }
         this.stage.scene.add(this.rain.near.mesh, this.rain.far.mesh)
     }
@@ -924,12 +1360,14 @@ export class App {
             let hit = null
             if (['city', 'zone'].includes(this.state)) {
                 hit = this.city.pick(toRay(e))
+                // a collection point can only act on its own zone, so only that one reacts
+                if (session.role === 'collector' && hit !== session.point?.zone) hit = null
                 this.city.setHover(hit)
                 for (const z of ZONES) this.labels.setClass(`zone:${z.id}`, 'is-hover', z.id === hit)
             } else if (['barrio', 'walking'].includes(this.state)) {
-                hit = this.hood.pick(toRay(e))
-                this.hood.setHover(hit)
-                for (const h of this.barrio.houses) this.labels.setClass(`house:${h.id}`, 'is-hover', h.id === hit)
+                hit = this.hood.pick(toRay(e)) === 'acopio' ? 'acopio' : null
+                this.hood.setHover(!!hit)
+                this.labels.setClass('acopio', 'is-hover', !!hit)
             }
             canvas.style.cursor = hit ? 'pointer' : ['city', 'zone'].includes(this.state) ? 'grab' : ''
         }
@@ -940,7 +1378,7 @@ export class App {
         })
         canvas.addEventListener('pointerleave', () => {
             this.city?.setHover(null)
-            this.hood?.setHover(null)
+            this.hood?.setHover(false)
         })
         canvas.addEventListener('pointerup', (e) => {
             if (!down) return
@@ -952,13 +1390,41 @@ export class App {
                 if (id) this.selectZone(id)
                 else if (this.state === 'zone') this.deselectZone()
             } else if (['barrio', 'walking'].includes(this.state)) {
-                const id = this.hood.pick(toRay(e))
-                if (id) this.goToHouse(id)
+                if (this.hood.pick(toRay(e)) === 'acopio') this.openPoint()
             }
         })
 
-        // Descent: wheel / touch speed it up (it also runs on its own)
-        window.addEventListener('wheel', (e) => this.state === 'intro' && this.advanceIntro(Math.max(-0.2, Math.min(0.2, e.deltaY * 0.001))), { passive: true })
+        // Wheel: speeds up the descent above the clouds, zooms inside a barrio
+        window.addEventListener(
+            'wheel',
+            (e) => {
+                if (this.state === 'intro') return this.advanceIntro(Math.max(-0.2, Math.min(0.2, e.deltaY * 0.001)))
+                if (['barrio', 'walking', 'point'].includes(this.state)) this.zoomBy(Math.max(-0.12, Math.min(0.12, e.deltaY * 0.0012)))
+            },
+            { passive: true }
+        )
+
+        // Pinch to zoom, with the same limits as the wheel
+        let pinch = null
+        const spread = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY)
+        canvas.addEventListener(
+            'touchstart',
+            (e) => {
+                if (e.touches.length === 2) pinch = spread(e.touches)
+            },
+            { passive: true }
+        )
+        canvas.addEventListener(
+            'touchmove',
+            (e) => {
+                if (e.touches.length !== 2 || pinch === null) return
+                const d = spread(e.touches)
+                if (d > 0) this.zoomBy(Math.max(-0.1, Math.min(0.1, (pinch - d) / 420)))
+                pinch = d
+            },
+            { passive: true }
+        )
+        canvas.addEventListener('touchend', () => (pinch = null), { passive: true })
         let ty = null
         window.addEventListener('touchstart', (e) => (ty = e.touches[0]?.clientY ?? null), { passive: true })
         window.addEventListener(
@@ -978,22 +1444,40 @@ export class App {
         this.$('.back-btn').addEventListener('click', () => this.back())
         this.$('.js-exit').addEventListener('click', () => this.exitSession())
         this.$('.recenter').addEventListener('click', () => this.recenter())
+        this.$('.skip-intro').addEventListener('click', () => {
+            if (this.state !== 'intro' || !this.worldReady) return
+            this.audio.play('tap')
+            this.intro.p = 1
+            this.enterCity()
+        })
+
+        const soundBtn = this.$('.js-sound')
+        soundBtn.addEventListener('click', () => {
+            const on = this.audio.toggle()
+            if (on) this.audio.play('tap')
+        })
+        this.audio.onChange((on) => {
+            soundBtn.setAttribute('aria-pressed', String(on))
+            soundBtn.setAttribute('aria-label', on ? 'Silenciar sonido' : 'Activar sonido')
+            const ic = soundBtn.querySelector('[data-icon]')
+            ic.dataset.icon = on ? 'sound' : 'muted'
+            ic.innerHTML = ''
+            hydrateIcons(soundBtn)
+        })
 
         window.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && !e.target.closest?.('input, textarea')) this.back()
         })
         window.addEventListener('resize', () => {
             if (this.state === 'zone') this.#frameForPanel(this.zoneCard)
-            if (this.state === 'house') this.#frameForPanel(this.panel)
+            if (this.state === 'point') this.#frameForPanel(this.panel)
+            if (this.state === 'inventory') requestAnimationFrame(() => this.#frameDepot())
         })
 
-        // Alerts made by a collection point show up live in every view
-        session.on((type, d) => {
-            if (type !== 'alerts') return
-            if (this.barrio && this.labels.get(`house:${d.houseId}`)) {
-                const h = this.barrio.houses.find((x) => x.id === d.houseId)
-                if (h) this.labels.update(`house:${h.id}`, this.#houseLabelHtml(h), this.#houseLabelAria(h))
-            }
+        // Alerts made by a collection point show up live on the map
+        session.on((type) => {
+            if (type !== 'alerts' || !['city', 'zone'].includes(this.state)) return
+            for (const z of ZONES) this.labels.update(`zone:${z.id}`, this.#zoneLabelHtml(z), this.#zoneAria(z))
         })
     }
 }

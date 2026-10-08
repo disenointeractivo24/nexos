@@ -66,9 +66,11 @@ export class Labels {
         for (const [id, it] of this.items) it.el.classList.toggle(cls, id === except ? !on : on)
     }
 
-    /** Project each anchor to the screen. Called every frame. */
     /** Project each anchor to the screen. `avoid` = screen rects labels must not slide under. */
     project(width, height, avoid = []) {
+        // The camera was moved this frame but the renderer has not refreshed its
+        // matrices yet; without this the labels trail one frame behind the world.
+        this.camera.updateMatrixWorld()
         const placed = []
         for (const it of this.items.values()) {
             const p = this._v.copy(it.anchor()).project(this.camera)

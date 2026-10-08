@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>NEXOS · Exportar modelos</title>
+    <style>
+        body { font: 15px/1.5 system-ui, sans-serif; margin: 24px; color: #011E41; background: #F4F7F9; }
+        pre { background: #fff; padding: 16px; border-radius: 12px; border: 1px solid #dde3e8; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>Exportar modelos a FBX · paso 1</h1>
+    <p>Herramienta de desarrollo: construye los modelos de la experiencia, los convierte a quads y los envía al receptor local
+        (<code>node tools/export-models/receive.mjs</code>). Después se ejecuta el script de Blender (ver <code>tools/export-models/README.md</code>).</p>
+    <pre id="log"></pre>
+    <script type="module" src="./tools/exportModels.js"></script>
+</body>
+</html>

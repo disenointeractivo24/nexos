@@ -22,7 +22,9 @@ export function buildGuide() {
         buckle: new THREE.MeshStandardMaterial({ color: '#2B2F33', roughness: 0.45 }),
         face: new THREE.MeshStandardMaterial({ color: '#1C1E22', roughness: 0.3 }),
     }
+    for (const [name, m] of Object.entries(M)) m.name = `guia_${name}`
     const emblem = new THREE.MeshStandardMaterial({
+        name: 'guia_emblema',
         map: canvasTexture(256, 256, (ctx, w) => {
             ctx.clearRect(0, 0, w, w)
             ctx.fillStyle = '#FFFFFF'

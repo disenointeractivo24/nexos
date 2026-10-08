@@ -5,6 +5,13 @@
  * small, respectful cues in the world, and changes which needs come first.
  * No damage, no destruction, no fear.
  *
+ * `skin` carries the context down into the neighborhood itself, so a barrio
+ * does not look the same in every emergency:
+ *   grass / grassMix   how far the barrio's own grass shifts toward the context
+ *   leaf               canopy colours for that context (null keeps the default)
+ *   paint              an extra ground pass, drawn by id in NeighborhoodScene
+ *   damp               extra wetness on the ground material (0–1)
+ *
  * To add a theme: add an entry here. Cues are implemented by id in
  * three/ThemeCues.js (city + neighborhood).
  */
@@ -21,7 +28,10 @@ export const THEMES = {
             wet: 0, haze: 0, rain: 0,
         },
         boost: { refugio: 2, medicinas: 1, agua: 1 },
-        cues: { city: ['tents'], barrio: ['inspection', 'reliefTent'] },
+        skin: {
+            grass: '#B5AF84', grassMix: 0.55, leaf: ['#8DA074', '#9AAB7E', '#84976C', '#A3B188', '#7E9268'], paint: 'dust', damp: 0,
+        },
+        cues: { city: ['tents'], barrio: ['inspection', 'reliefTent', 'cones', 'meetingPoint'] },
     },
     incendio: {
         id: 'incendio',
@@ -35,21 +45,10 @@ export const THEMES = {
             wet: 0, haze: 0.35, rain: 0,
         },
         boost: { medicinas: 2, agua: 2, higiene: 1 },
-        cues: { city: ['smoke'], barrio: ['distantSmoke', 'reliefTent'] },
-    },
-    tsunami: {
-        id: 'tsunami',
-        label: 'Tsunami en el Pacífico',
-        title: 'Apoyo a familias del Pacífico',
-        icon: 'wave',
-        lead: 'Familias del Pacífico llegaron a Cali después del tsunami y necesitan apoyo.',
-        mood: {
-            skyTop: '#8DBADB', skyHorizon: '#EDEEE8', fog: '#E5EBEA',
-            sun: '#FFE6C4', sunIntensity: 2.8, hemiSky: '#E5F0F7', hemiGround: '#CDB898', hemiIntensity: 1.28,
-            wet: 0.15, haze: 0, rain: 0,
+        skin: {
+            grass: '#BCAE79', grassMix: 0.68, leaf: ['#9A9A62', '#A8A06A', '#8E8F5C', '#B3A571', '#8A8A5A'], paint: 'ash', damp: 0,
         },
-        boost: { refugio: 2, agua: 2, alimentos: 1 },
-        cues: { city: ['tents', 'highRiver'], barrio: ['reliefTent', 'waterTanks'] },
+        cues: { city: ['smoke'], barrio: ['distantSmoke', 'reliefTent', 'waterPoint', 'ashFall'] },
     },
     lluvias: {
         id: 'lluvias',
@@ -63,14 +62,26 @@ export const THEMES = {
             wet: 1, haze: 0.2, rain: 1,
         },
         boost: { refugio: 1, higiene: 2, agua: 1 },
-        cues: { city: ['rain', 'highRiver'], barrio: ['rain', 'puddles', 'sandbags'] },
+        skin: {
+            grass: '#88A371', grassMix: 0.55, leaf: ['#6F8E5C', '#7B9866', '#657F54', '#86A06E', '#5F7A50'], paint: 'wet', damp: 0.55,
+        },
+        cues: { city: ['rain', 'highRiver'], barrio: ['rain', 'puddles', 'sandbags', 'clothesLine', 'reliefTent'] },
     },
 }
 
-/** Random per session; `?tema=lluvias` (or any theme id) forces one for demos. */
+/** How often each theme comes up: an earthquake is the most likely emergency for Cali. */
+const WEIGHTS = { sismo: 2, incendio: 1, lluvias: 1 }
+
+/** Weighted random per session; `?tema=lluvias` (or any theme id) forces one for demos. */
 export function pickTheme() {
     const forced = new URLSearchParams(location.search).get('tema')
     if (forced && THEMES[forced]) return THEMES[forced]
     const ids = Object.keys(THEMES)
-    return THEMES[ids[Math.floor(Math.random() * ids.length)]]
+    const total = ids.reduce((s, id) => s + (WEIGHTS[id] ?? 1), 0)
+    let r = Math.random() * total
+    for (const id of ids) {
+        r -= WEIGHTS[id] ?? 1
+        if (r < 0) return THEMES[id]
+    }
+    return THEMES.sismo
 }
