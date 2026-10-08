@@ -210,7 +210,7 @@ export class InventoryStore {
         this.pushTimer = setTimeout(() => {
             this.pushTimer = null
             this.#push()
-        }, 450)
+        }, 250)
     }
 
     #push() {

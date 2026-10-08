@@ -64,6 +64,15 @@ function stateFormula_(row) {
 /** De dónde vino el último cambio de una fila. */
 var ORIGINS = ['App', 'Hoja', 'Donación']
 
+/**
+ * Velocidad: cada llamada a Apps Script ya tarda cerca de un segundo en
+ * arrancar, así que el script hace lo mínimo con la hoja. Las lecturas salen de
+ * una copia en memoria (CacheService) que se renueva con cada cambio; una
+ * edición a mano la borra al instante (onEdit), y por si acaso dura poco.
+ */
+var CACHE_SECONDS = 30
+var LAYOUT_CHECK_SECONDS = 600
+
 var SUMMARY_TAB = 'Resumen'
 var LEGACY_TAB = 'inventario'
 var LEGACY_KEPT = 'Datos anteriores'
@@ -136,6 +145,7 @@ function organize_() {
     buildZone_(ss, point, kept)
   }
   buildSummary_(ss)
+  forget_()
 
   var old = ss.getSheetByName(LEGACY_TAB)
   if (old) {
@@ -159,6 +169,13 @@ function organize_() {
 
 /** Si la hoja todavía no está ordenada, la ordena (la primera llamada de la aplicación lo hace sola). */
 function ensure_() {
+  var cache = CacheService.getScriptCache()
+  if (cache.get('layout-ok')) return
+  ensureLayout_()
+  cache.put('layout-ok', '1', LAYOUT_CHECK_SECONDS)
+}
+
+function ensureLayout_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet()
   var ready = !!ss.getSheetByName(SUMMARY_TAB)
   for (var i = 0; ready && i < POINTS.length; i++) ready = !!ss.getSheetByName(POINTS[i].tab)
@@ -398,6 +415,81 @@ function zoneSheet_(point) {
   return ss.getSheetByName(point.tab)
 }
 
+/* ---------------- copia en memoria ---------------- */
+
+function cacheKey_(point) {
+  return 'rows:' + point.id
+}
+
+function remember_(point, rows) {
+  try {
+    CacheService.getScriptCache().put(cacheKey_(point), JSON.stringify(rows), CACHE_SECONDS)
+  } catch (e) {}
+}
+
+/** Borra la copia de un punto (o de todos), para que la próxima lectura vaya a la hoja. */
+function forget_(point) {
+  try {
+    var cache = CacheService.getScriptCache()
+    if (point) cache.remove(cacheKey_(point))
+    else cache.removeAll(POINTS.map(cacheKey_))
+  } catch (e) {}
+}
+
+/** Las filas de un punto: de la memoria si están, de la hoja si no. */
+function rowsFast_(point) {
+  try {
+    var hit = CacheService.getScriptCache().get(cacheKey_(point))
+    if (hit) return JSON.parse(hit)
+  } catch (e) {}
+  var rows = rowsFor_(point)
+  remember_(point, rows)
+  return rows
+}
+
+/** Todos los puntos, pidiendo a la memoria todo de una vez. */
+function allRowsFast_() {
+  var hits = {}
+  try {
+    hits = CacheService.getScriptCache().getAll(POINTS.map(cacheKey_)) || {}
+  } catch (e) {}
+  var out = {}
+  for (var i = 0; i < POINTS.length; i++) {
+    var p = POINTS[i]
+    var hit = hits[cacheKey_(p)]
+    if (hit) out[p.id] = JSON.parse(hit)
+    else {
+      out[p.id] = rowsFor_(p)
+      remember_(p, out[p.id])
+    }
+  }
+  return out
+}
+
+/** Filas en el formato de la aplicación, desde los valores de la pestaña de un punto. */
+function rowsFromBlock_(point, block) {
+  var rows = []
+  for (var i = 0; i < ITEMS.length; i++) {
+    var it = ITEMS[i]
+    for (var r = 0; r < block.length; r++) {
+      var row = block[r]
+      if (String(row[COL.id - 1]) !== it.id) continue
+      var qty = row[COL.qty - 1]
+      if (qty === '' || qty === null) continue
+      var at = row[COL.at - 1]
+      rows.push({
+        point: point.id,
+        item: it.id,
+        qty: clamp_(it, qty),
+        cap: it.cap,
+        updatedAt: at ? new Date(at).toISOString() : null,
+        by: row[COL.by - 1] || null,
+      })
+    }
+  }
+  return rows
+}
+
 function rowsFor_(point) {
   var sh = zoneSheet_(point)
   var data = readZone_(sh) || {}
@@ -418,35 +510,43 @@ function rowsFor_(point) {
   return rows
 }
 
+/**
+ * Escribe en bloque: una lectura y dos escrituras, cambien uno o todos los
+ * insumos. Devuelve las filas tal como quedaron, sin volver a leer la hoja.
+ */
 function write_(point, items, origin) {
   var sh = zoneSheet_(point)
-  var last = sh.getLastRow()
-  var ids = sh.getRange(FIRST_ROW, COL.id, Math.max(1, last - FIRST_ROW + 1), 1).getValues()
+  var n = ITEMS.length
+  var block = sh.getRange(FIRST_ROW, 1, n, WIDTH).getValues()
+  var at = {}
+  for (var r = 0; r < block.length; r++) at[String(block[r][COL.id - 1])] = r
   var now = new Date()
+  var touched = false
   for (var i = 0; i < items.length; i++) {
     var it = itemById_(items[i].item)
-    if (!it) continue
-    var row = 0
-    for (var r = 0; r < ids.length; r++) if (String(ids[r][0]) === it.id) row = FIRST_ROW + r
-    if (!row) continue
-    sh.getRange(row, COL.qty).setValue(clamp_(it, items[i].qty))
-    sh.getRange(row, COL.at, 1, 2).setValues([[now, origin]])
+    if (!it || at[it.id] === undefined) continue
+    var row = block[at[it.id]]
+    row[COL.qty - 1] = clamp_(it, items[i].qty)
+    row[COL.at - 1] = now
+    row[COL.by - 1] = origin
+    touched = true
   }
+  if (touched) {
+    sh.getRange(FIRST_ROW, COL.qty, n, 1).setValues(block.map(function (row) { return [row[COL.qty - 1]] }))
+    sh.getRange(FIRST_ROW, COL.at, n, 2).setValues(block.map(function (row) { return [row[COL.at - 1], row[COL.by - 1]] }))
+  }
+  return rowsFromBlock_(point, block)
 }
 
 function doGet(e) {
   try {
     ensure_()
     var action = (e && e.parameter && e.parameter.action) || 'read'
-    if (action === 'all') {
-      var points = {}
-      for (var i = 0; i < POINTS.length; i++) points[POINTS[i].id] = rowsFor_(POINTS[i])
-      return json_({ ok: true, points: points, serverTime: new Date().toISOString() })
-    }
+    if (action === 'all') return json_({ ok: true, points: allRowsFast_(), serverTime: new Date().toISOString() })
     if (action !== 'read') return json_({ ok: false, error: 'Acción no soportada: ' + action })
     var point = pointById_(e.parameter.point)
     if (!point) return json_({ ok: false, error: 'Punto de acopio desconocido: ' + e.parameter.point })
-    return json_({ ok: true, rows: rowsFor_(point), serverTime: new Date().toISOString() })
+    return json_({ ok: true, rows: rowsFast_(point), serverTime: new Date().toISOString() })
   } catch (err) {
     return json_({ ok: false, error: String(err) })
   }
@@ -468,9 +568,10 @@ function doPost(e) {
     if (!point) return json_({ ok: false, error: 'Punto de acopio desconocido: ' + body.point })
     var items = body.items || []
     if (body.item !== undefined) items = [{ item: body.item, qty: body.qty }]
-    write_(point, items, body.by === 'donor' ? 'Donación' : 'App')
-    SpreadsheetApp.flush()
-    return json_({ ok: true, rows: rowsFor_(point), serverTime: new Date().toISOString() })
+    var rows = write_(point, items, body.by === 'donor' ? 'Donación' : 'App')
+    // the other devices read this from memory on their next poll
+    remember_(point, rows)
+    return json_({ ok: true, rows: rows, serverTime: new Date().toISOString() })
   } catch (err) {
     return json_({ ok: false, error: String(err) })
   } finally {
@@ -487,9 +588,11 @@ function doPost(e) {
 function onEdit(e) {
   if (!e || !e.range) return
   var sh = e.range.getSheet()
-  var isZone = false
-  for (var i = 0; i < POINTS.length; i++) if (POINTS[i].tab === sh.getName()) isZone = true
-  if (!isZone) return
+  var zone = null
+  for (var i = 0; i < POINTS.length; i++) if (POINTS[i].tab === sh.getName()) zone = POINTS[i]
+  if (!zone) return
+  // a hand edit: the app must read the sheet again, not its copy in memory
+  forget_(zone)
   var r0 = e.range.getRow()
   var r1 = r0 + e.range.getNumRows() - 1
   var c0 = e.range.getColumn()
