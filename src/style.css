@@ -2028,3 +2028,285 @@ canvas.items {
 /* Near the right edge of the screen the shortage bubble sits on the marker's left */
 .wlabel.is-bubble-left .need-bubble { left: auto; right: calc(100% + 8px); }
 .wlabel.is-bubble-left .need-bubble::before { left: auto; right: -5px; transform: translateY(-50%) rotate(-135deg); }
+
+/* ==========================================================
+   Usability pass (Nielsen's heuristics): status, undo, help,
+   confirmation, recognition
+   ========================================================== */
+
+/* A toast: what just happened, with "Deshacer" (above the item canvas, under the veil) */
+.toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(var(--gutter) + 8px);
+    translate: -50% 0;
+    z-index: 35;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    max-width: min(560px, calc(100vw - 2 * var(--gutter)));
+    padding: 10px 10px 10px 18px;
+    border-radius: var(--radius-pill);
+    background: rgba(1, 30, 65, 0.92);
+    border-color: rgba(255, 255, 255, 0.18);
+    color: #fff;
+    font-size: 16px;
+    box-shadow: var(--shadow-lift);
+}
+.toast-text { min-width: 0; }
+.toast-text b { font-weight: 800; }
+.toast-action {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: #fff;
+    color: var(--navy);
+    font-size: 15px;
+    font-weight: 800;
+    cursor: pointer;
+}
+.toast-action [data-icon] { width: 18px; height: 18px; }
+/* over the collection point board, the toast sits above it */
+.ui[data-state="inventory"] .toast { bottom: auto; top: calc(var(--gutter) + 84px); }
+
+/* A dialog: a question before something final, or help */
+.dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    display: grid;
+    place-items: center;
+    padding: var(--gutter);
+    background: rgba(1, 30, 65, 0.32);
+}
+.dialog {
+    width: min(460px, 100%);
+    max-height: calc(100vh - 2 * var(--gutter));
+    overflow: auto;
+    padding: 22px;
+    border-radius: 24px;
+    background: var(--glass-bg-strong);
+    color: var(--navy);
+}
+.dialog-head { display: flex; align-items: center; gap: 12px; }
+.dialog-icon { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 14px; background: rgba(1, 30, 65, 0.08); }
+.dialog-icon [data-icon] { width: 26px; height: 26px; }
+.dialog-head h2 { margin: 0; font-size: 24px; line-height: 1.15; font-weight: 800; }
+.dialog-body { margin: 14px 0 18px; font-size: 17px; line-height: 1.45; color: var(--charcoal); }
+.dialog-body p { margin: 0; }
+.dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.dialog-actions .btn { min-height: 50px; padding: 0 20px; font-size: 17px; }
+.btn-danger { background: var(--red); color: #fff; box-shadow: 0 8px 20px rgba(245, 51, 63, 0.28); }
+.btn-danger:hover { background: var(--red-press); }
+.help-steps { margin: 0; padding-left: 22px; display: grid; gap: 10px; }
+.help-steps li::marker { font-weight: 800; color: var(--navy); }
+.t-critico { color: var(--red-press); }
+.t-estable { color: #A86F0E; }
+.t-abastecido { color: #2E7D5B; }
+
+/* The help button next to every panel's close */
+.help-btn { margin-left: auto; }
+.help-btn + .icon-btn { margin-left: 0 !important; }
+.supply-head .help-btn,
+.board-head .help-btn { width: 44px; height: 44px; }
+.supply-head .help-btn [data-icon],
+.board-head .help-btn [data-icon] { width: 24px; height: 24px; }
+
+/* Is the count saved? Always in view on the board */
+.sync-chip {
+    margin: 0 auto 0 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 32px;
+    padding: 0 12px;
+    border-radius: var(--radius-pill);
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+    background: rgba(1, 30, 65, 0.06);
+    color: var(--charcoal);
+}
+.sync-chip [data-icon] { width: 16px; height: 16px; }
+.sync-chip[data-state="saved"] { background: rgba(46, 125, 91, 0.12); color: #24694B; }
+.sync-chip[data-state="error"] { background: rgba(245, 51, 63, 0.1); color: var(--red-press); }
+.sync-chip .link-btn { min-height: 28px; padding: 0 0 0 6px; font-size: 14px; color: inherit; }
+.sync-spin {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { rotate: 360deg; } }
+
+/* The count can be typed: it looks like the number, and is an input */
+.qty-field { min-width: 0; display: flex; flex-direction: column; align-items: center; line-height: 1; cursor: text; }
+.qty-field input {
+    width: 3.4ch;
+    padding: 2px 0;
+    border: 1.5px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--navy);
+    font: inherit;
+    font-size: 22px;
+    font-weight: 800;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    -moz-appearance: textfield;
+}
+.qty-field input::-webkit-outer-spin-button,
+.qty-field input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.qty-field input:hover { border-color: rgba(1, 30, 65, 0.2); }
+.qty-field input:focus { outline: none; border-color: var(--navy); background: #fff; }
+.qty-field input:disabled { color: rgba(1, 30, 65, 0.4); }
+.qty-field small { margin-top: 3px; font-size: 12px; font-weight: 600; color: var(--charcoal); white-space: nowrap; }
+
+/* Category tabs carry their name; the open one is named above the supplies */
+.cat-tab { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; line-height: 1.1; }
+.cat-label { font-size: 12px; font-weight: 700; color: var(--charcoal); max-width: 76px; text-align: center; }
+.cat-tab.is-on .cat-label { color: var(--navy); }
+.cat-title { margin: 0 0 10px; font-size: 17px; font-weight: 800; color: var(--navy); }
+.cat-title span { font-weight: 600; color: var(--charcoal); }
+
+@media (max-width: 1179px) {
+    .sync-chip { font-size: 13px; padding: 0 10px; }
+}
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    .toast { bottom: calc(var(--gutter) + 4px); font-size: 14px; padding: 8px 8px 8px 14px; gap: 10px; }
+    .toast-action { min-height: 36px; padding: 0 12px; font-size: 14px; }
+    .ui[data-state="inventory"] .toast { top: calc(var(--gutter) + 124px); }
+    .ui[data-state="point"] .toast { bottom: auto; top: calc(var(--gutter) + 124px); }
+    .dialog { padding: 18px; }
+    .dialog-head h2 { font-size: 21px; }
+    .dialog-body { font-size: 16px; }
+    .dialog-actions .btn { flex: 1; min-height: 48px; padding: 0 12px; font-size: 16px; }
+    .board-foot { gap: 10px; }
+    .sync-chip { min-height: 28px; padding: 0 9px; font-size: 12px; }
+    .supply-head .help-btn,
+    .board-head .help-btn { width: 40px; height: 40px; }
+    .supply-head .help-btn [data-icon],
+    .board-head .help-btn [data-icon] { width: 22px; height: 22px; }
+    .qty-field { flex-direction: row; align-items: baseline; gap: 3px; }
+    .qty-field input { font-size: 18px; width: 3ch; }
+    .qty-field small { margin: 0; font-size: 11px; }
+    .cat-label { display: none; }
+    .cat-title { margin: 0 0 8px; font-size: 15px; }
+}
+.done-offline { display: flex; gap: 8px; align-items: flex-start; margin: 12px 0 0 !important; padding: 10px 12px; border-radius: 12px; background: rgba(1, 30, 65, 0.06); font-size: 15px !important; text-align: left; }
+.done-offline [data-icon] { width: 20px; height: 20px; flex: none; }
+/* the box count never pushes a card wider than its column */
+.stock-boxes { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* The donor's count can be typed: it looks like the number, and is an input */
+.stepper .qty-input {
+    width: 3ch;
+    min-width: 46px;
+    padding: 4px 0;
+    border: 1.5px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--navy);
+    font: inherit;
+    font-size: 22px;
+    font-weight: 800;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    -moz-appearance: textfield;
+}
+.stepper .qty-input::-webkit-outer-spin-button,
+.stepper .qty-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.stepper .qty-input:hover { border-color: rgba(1, 30, 65, 0.2); }
+.stepper .qty-input:focus { outline: none; border-color: var(--navy); background: #fff; }
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    .tile .stepper .qty-input { min-width: 38px; font-size: 18px; padding: 2px 0; }
+}
+
+/* ==========================================================
+   Buttons look like buttons. Panels are white glass, so every
+   button is dark and solid, a strong accent against them:
+   - main action: solid red (Continuar, Ingresar…), as before;
+   - everything else (− +, ± caja, ayuda, cerrar, sonido): solid
+     navy with a white sign, a little lighter and lifted on hover.
+   A disabled button is the same dark button, faded: it reads as
+   "this button, not now", never as a hover.
+   ========================================================== */
+:root {
+    --btn-dark: var(--navy);
+    --btn-dark-hover: #123E73;
+    --btn-shadow: 0 2px 0 rgba(1, 30, 65, 0.22), 0 4px 10px rgba(1, 30, 65, 0.14);
+}
+.stepper button,
+.stepper-board button,
+.icon-btn,
+.box-step button {
+    background: var(--btn-dark);
+    border: 0;
+    color: #fff;
+    box-shadow: var(--btn-shadow);
+    transition: background-color 160ms var(--ease-calm), transform 120ms var(--ease-calm), box-shadow 160ms var(--ease-calm), opacity 160ms;
+    -webkit-tap-highlight-color: transparent;
+}
+.stepper button:hover:not([disabled]),
+.stepper-board button:hover:not([disabled]),
+.icon-btn:hover,
+.box-step button:hover:not([disabled]) {
+    background: var(--btn-dark-hover);
+    border: 0;
+    color: #fff;
+    transform: translateY(-1px);
+}
+.stepper button:active:not([disabled]),
+.stepper-board button:active:not([disabled]),
+.icon-btn:active,
+.box-step button:active:not([disabled]) { transform: translateY(1px); box-shadow: 0 1px 0 rgba(1, 30, 65, 0.22); }
+.stepper button[disabled],
+.stepper-board button[disabled],
+.box-step button[disabled] {
+    opacity: 0.28;
+    background: var(--btn-dark);
+    color: #fff;
+    box-shadow: none;
+    transform: none;
+    cursor: not-allowed;
+}
+.box-step button { font-weight: 800; }
+.sound-btn.is-floating { background: var(--btn-dark); border: 0; color: #fff; }
+.sound-btn[aria-pressed="false"] { color: rgba(255, 255, 255, 0.6); }
+.sound-btn[aria-pressed="false"]:hover { color: #fff; }
+
+/* the unit / box switch: a light track, the chosen side a navy pill */
+.step-toggle { background: rgba(1, 30, 65, 0.08); border: 0; }
+.step-toggle button[aria-checked="true"] { background: var(--navy); color: #fff; box-shadow: var(--btn-shadow); }
+
+/* the typed quantity is a field, not a button: it gets an underline so it reads as editable */
+.stepper .qty-input,
+.qty-field input { border-bottom-color: rgba(1, 30, 65, 0.25); border-radius: 8px 8px 4px 4px; }
+
+/* Donor supply cards: every card the same height, and every part of it on the same line
+   as in its neighbours, whatever the length of the name or the number */
+.supply-grid { align-items: stretch; }
+.tile { height: 100%; }
+.tile-name {
+    min-height: 2.3em;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    align-content: center;
+}
+.tile-meta > span { white-space: nowrap; }
+.tile-meta b { font-size: 18px; }
+.tile .stepper { margin-top: auto; }
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    .tile { height: auto; }
+    .tile-name { min-height: 0; -webkit-line-clamp: 1; }
+    .tile .stepper { margin-top: 0; }
+}

@@ -26,6 +26,7 @@ import { WINDOW_MATERIAL, makeNightWindow, setWindowGlow } from '../three/nightW
 import { stockState } from '../data/inventory.js'
 import { Progress, STEPS } from '../ui/Progress.js'
 import { icon, hydrateIcons } from '../ui/icons.js'
+import { Toast, Dialog } from '../ui/feedback.js'
 import { session } from './session.js'
 import { Audio } from './audio.js'
 
@@ -130,7 +131,9 @@ export class App {
         this.worldBubble = new Bubble(this.$('.bubble-world'))
         this.progress = new Progress(this.$('.progress'))
 
-        const opts = { reducedMotion: this.reducedMotion, audio: this.audio }
+        this.toast = new Toast(this.$('.toast'), { reducedMotion: this.reducedMotion })
+        this.dialog = new Dialog(this.$('.dialog-backdrop'), { reducedMotion: this.reducedMotion })
+        const opts = { reducedMotion: this.reducedMotion, audio: this.audio, toast: this.toast, dialog: this.dialog }
         const panelEl = this.$('.supply-panel')
         this.zoneCard = new ZoneCard(this.$('.zone-card'), opts, {
             onEnter: (zone) => this.enterBarrio(zone),
@@ -235,21 +238,30 @@ export class App {
         this.stage.scene.add(this.city.group)
         await this.city.build()
         this.#cityLighting()
+        // the textured Torre de Cali and stadium, while the rest loads
+        const landmarks = this.city.useLandmarkModels(this.loader)
 
         await assets
+        await landmarks
         this.hood = new NeighborhoodScene(this.loader, this.theme)
-        await this.hood.build()
+        // hidden from the start: the frame loop runs while it loads its models, and a visible
+        // barrio would be updated before its guide exists
         this.hood.group.visible = false
+        await this.hood.build()
         this.stage.scene.add(this.hood.group)
         // the collection point's own stand, seen from the front while its inventory is open
         this.depot = new Depot({ supplies: this.inventoryPanel.supplies, reducedMotion: this.reducedMotion })
         this.stage.scene.add(this.depot.group)
+        // the point's own stand, the same model donors see in the barrio
+        const stand = await this.loader.load('collection-point')
+        if (stand.source === 'glb') this.depot.setStand(this.loader.instanceSync(stand))
 
         const guideT = await this.loader.load('guide')
-        this.guide = new GuideCharacter(this.loader.instanceSync(guideT), guideT.animations, { reducedMotion: this.reducedMotion })
+        // the guide has a face that moves, and the larger idle gestures (waving, stretching)
+        this.guide = new GuideCharacter(this.loader.instanceSync(guideT), guideT.animations, { reducedMotion: this.reducedMotion, face: true, lively: true })
         this.hood.group.add(this.guide.root)
         this.families = new Families({ parent: this.hood.group, reducedMotion: this.reducedMotion })
-        this.portrait = new GuideCharacter(this.loader.instanceSync(guideT), guideT.animations, { reducedMotion: this.reducedMotion })
+        this.portrait = new GuideCharacter(this.loader.instanceSync(guideT), guideT.animations, { reducedMotion: this.reducedMotion, face: true, lively: true })
         this.portrait.place(new THREE.Vector3(), 0.32)
         this.portrait.blob.visible = false
 
@@ -287,7 +299,7 @@ export class App {
         const focus = this.city?.focusMask
         this.stage.setFocus(this.city?.group.visible ? this.city.focusAmount : 0, focus?.texture, focus?.bounds)
         if (this.clouds.group.visible) this.clouds.update(dt, this.stage.camera, this.cloudPresence)
-        if (this.hood?.group.visible) {
+        if (this.hood?.group.visible && this.guide) {
             this.hood.update(dt, t)
             if (this.guide.root.visible) {
                 this.guide.update(dt, t)
@@ -1053,7 +1065,8 @@ export class App {
         this.currentNode = 'acopio'
         // step aside so the counter stays in view while supplies are left on it
         const stand = this.hood.acopio
-        this.guide.walk([this.guide.position.clone(), stand.aside.clone()], { speed: 3.2 }).then((done) => {
+        const around = (stand.asidePath ?? [stand.aside]).map((p) => p.clone())
+        this.guide.walk([this.guide.position.clone(), ...around], { speed: 3.2 }).then((done) => {
             if (done) this.guide.faceTowards(stand.counter)
         })
         this.guide.nod()
@@ -1121,6 +1134,7 @@ export class App {
         session.donations.push(record)
         // what was left stays on the counter, and the families come in line to take their share of it
         this.hood.commitDisplay()
+        this.guide.celebrate()
         this.families.run(this.hood, served)
         if (served.length) this.#pullBackForFamilies()
         console.info(
@@ -1200,7 +1214,10 @@ export class App {
     /** "Salir": rise back above the clouds to the role choice. */
     async exitSession() {
         if (['role', 'boot', 'exiting'].includes(this.state)) return
+        if (!(await this.#confirmExit())) return
+        if (['role', 'boot', 'exiting'].includes(this.state)) return
         const from = this.state
+        this.toast.hide()
         this.setState('exiting')
         this.#disableOrbit()
         this.guide?.stop()
@@ -1249,9 +1266,41 @@ export class App {
         this.city?.setFocusZone(null)
         session.role = null
         session.point = null
+        // leaving ends the visit: a basket left behind is not waiting for the next person
+        session.baskets.clear()
         this.zone = this.barrio = null
         this.setState('role')
         this.$('.role-donor').focus({ preventScroll: true })
+    }
+
+    /**
+     * Leaving throws away what is not confirmed yet, so it asks first, and only then:
+     * a donor with something in the basket or halfway through giving it, or a point
+     * whose last changes could not reach the sheet.
+     */
+    async #confirmExit() {
+        const keep = { label: 'Seguir aquí', value: false }
+        if (session.role === 'donor') {
+            const items = [...session.baskets.values()].reduce((n, b) => n + b.size, 0)
+            const giving = this.state === 'point' && ['details', 'summary', 'payment', 'gateway', 'paying'].includes(this.donorPanel.step)
+            if (!items && !giving) return true
+            const what = giving ? 'Tu aporte todavía no está confirmado.' : `Tu cesta tiene ${items} ${items === 1 ? 'insumo' : 'insumos'} sin confirmar.`
+            return this.dialog.ask({
+                icon: 'alert',
+                title: '¿Salir de NEXOS?',
+                body: `<p>${what} Si sales ahora, se descarta.</p>`,
+                actions: [keep, { label: 'Salir y descartar', value: true, kind: 'danger' }],
+            })
+        }
+        if (session.role === 'collector' && this.inventory?.unsaved && (this.inventory.status === 'error' || this.inventory.failures > 0)) {
+            return this.dialog.ask({
+                icon: 'alert',
+                title: 'Hay cambios sin enviar',
+                body: '<p>Algunos cambios del inventario todavía no llegan a la hoja de Google porque no hay conexión. Quedan guardados en este dispositivo y se envían la próxima vez que entres desde aquí.</p>',
+                actions: [keep, { label: 'Salir de todos modos', value: true, kind: 'danger' }],
+            })
+        }
+        return true
     }
 
     /* ================================================================
@@ -1369,6 +1418,7 @@ export class App {
     }
 
     back() {
+        if (this.dialog.open) return
         if (this.state === 'point') {
             // inside the donor flow, step back before leaving the stand
             const order = { method: 'supplies', details: 'method', summary: 'details', payment: 'method' }

@@ -4,7 +4,7 @@ import { ZONES } from '../data/zones.js'
 import { WORLD, HOUSE_SCHEMES, sharedMaterial } from './materials.js'
 import { canopyGeometry, trunkGeometry, palmGeometry } from './procedural/nature.js'
 import { canvasTexture, crossTexture } from './procedural/textures.js'
-import { stylize, stylizeWater } from './stylize.js'
+import { stylize, stylizeWater, stylizeRiver } from './stylize.js'
 import { buildCityCues } from './ThemeCues.js'
 import * as props from './props.js'
 
@@ -124,6 +124,12 @@ const ROADS = [
     [[-30, 10], [12, 4], [52, -2], [118, -18]], // Calle 25
 ]
 
+/**
+ * Clear ground round the Estadio Pascual Guerrero: the model is 36 long, so houses and
+ * avenues keep a few metres of open space from it on every side.
+ */
+const STADIUM_CLEAR = 24
+
 /** Open green squares on the map. */
 const PARKS = [
     { x: 52, z: 72, r: 12 },
@@ -136,7 +142,7 @@ const PARKS = [
 const LANDMARK_GROUNDS = [
     { x: -8, z: -6, r: 9 },
     { x: 24, z: -12, r: 7 },
-    { x: -26, z: 58, r: 17 },
+    { x: -26, z: 58, r: STADIUM_CLEAR },
 ]
 /**
  * What an avenue must go round and never cross: the parks, the landmarks and
@@ -327,6 +333,19 @@ function distToSamples(x, z, samples) {
     return Math.sqrt(best)
 }
 
+/**
+ * The map's ground painted in Substance Painter on fuentes_3d/terrenos/terreno_cali.fbx:
+ * one BaseColor per part, in static/assets/city/. Only the colour is used (matte); a part
+ * without its picture keeps the colours drawn here. Set to {} to go back to those.
+ */
+const GROUND_TEXTURES = {
+    terreno: 'assets/city/cali_piso.png', // Piso_Cali: the floor painted on its own, without baked shadows
+    avenidas: 'assets/city/cali_avenidas.jpg',
+    lineas_centrales: 'assets/city/cali_lineas_centrales.jpg',
+    parques: 'assets/city/cali_parques.jpg',
+    rio_orillas: 'assets/city/cali_rio_orillas.jpg',
+}
+
 /* ================================================================= */
 
 export class CityOverview {
@@ -366,6 +385,7 @@ export class CityOverview {
             () => this.#vegetation(),
             () => this.#aidPoints(),
             () => this.#themeCues(),
+            () => this.#groundTextures(),
         ]
         for (let i = 0; i < steps.length; i++) {
             steps[i]()
@@ -373,6 +393,77 @@ export class CityOverview {
             await new Promise((r) => setTimeout(r, 0))
         }
         this.ready = true
+    }
+
+    /** Lay the painted textures on the parts of the ground that have one (see GROUND_TEXTURES). */
+    #groundTextures() {
+        const loader = new THREE.TextureLoader()
+        const parts = new Map()
+        this.group.traverse((o) => {
+            const k = o.userData.ground
+            if (k && GROUND_TEXTURES[k]) parts.set(k, [...(parts.get(k) ?? []), o])
+        })
+        for (const [k, meshes] of parts) {
+            loader.load(new URL(GROUND_TEXTURES[k], document.baseURI).href, (tex) => {
+                tex.colorSpace = THREE.SRGBColorSpace
+                // painted on the exported FBX, whose UVs run upside down from the ones built here
+                // (glTF and Blender count v from the other edge), so the picture is read unflipped
+                tex.flipY = false
+                // the avenues and the river measure their length in metres along the strip
+                tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+                tex.anisotropy = 8
+                for (const mats of new Set(meshes.map((m) => m.material))) {
+                    for (const m of [mats].flat()) {
+                        m.map = tex
+                        m.vertexColors = false
+                        m.color?.set('#FFFFFF')
+                        if ('roughness' in m) {
+                            m.roughness = 1
+                            m.metalness = 0
+                        }
+                        m.needsUpdate = true
+                    }
+                }
+            })
+        }
+    }
+
+    /**
+     * Swap the drawn Torre de Cali and stadium for the textured models, in the same place
+     * and turned the same way. Called once the city is built; a model that fails to load
+     * leaves the drawn one standing.
+     */
+    async useLandmarkModels(loader) {
+        await Promise.all(
+            Object.entries(this.landmarks ?? {}).map(async ([id, drawn]) => {
+                const t = await loader.load(id)
+                if (t.source !== 'glb') return
+                const model = loader.instanceSync(t)
+                model.position.copy(drawn.position)
+                model.rotation.copy(drawn.rotation)
+                // the stadium lies along the avenue that passes it, its length running beside the road
+                if (id === 'estadio') model.rotation.y = this.#alongNearestRoad(model.position.x, model.position.z)
+                this.group.add(model)
+                this.group.remove(drawn)
+                this.landmarks[id] = model
+            })
+        )
+    }
+
+    /** Yaw that lays a model's length (its local Z) along the avenue closest to (x, z). */
+    #alongNearestRoad(x, z) {
+        let best = Infinity, dir = [1, 0]
+        for (const samples of this.roadSamples) {
+            for (let i = 1; i < samples.length; i++) {
+                const p = samples[i], q = samples[i - 1]
+                const d = (p.x - x) ** 2 + (p.z - z) ** 2
+                if (d < best) {
+                    best = d
+                    dir = [p.x - q.x, p.z - q.z]
+                }
+            }
+        }
+        return Math.atan2(dir[0], dir[1])
     }
 
     #themeCues() {
@@ -684,20 +775,51 @@ export class CityOverview {
         const terrain = new THREE.Mesh(geo, stylize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }), { ao: 0, rim: 0.06 }))
         terrain.receiveShadow = true
         terrain.name = 'terrain'
+        terrain.userData.ground = 'terreno'
         this.terrain = terrain
         this.group.add(terrain)
     }
 
     #water() {
-        const mat = stylizeWater(new THREE.MeshStandardMaterial({ color: WORLD.river, roughness: 0.25, metalness: 0.05, envMapIntensity: 1.3 }), { scale: 0.35 })
+        const rock = stylize(new THREE.MeshStandardMaterial({ color: '#FFFFFF', roughness: 0.9, flatShading: true }), { ao: 0.2, aoHeight: 1, rim: 0.12 })
+        const rockColors = ['#8C8F93', '#A3A6A8', '#9C6A4E', '#B8B4AE'].map((c) => new THREE.Color(c))
+        // its own random sequence, so the rocks do not move the houses and trees placed after them
+        let rs = 4242
+        const rand = () => ((rs = (rs * 16807) % 2147483647) / 2147483647)
         const bank = new THREE.MeshStandardMaterial({ color: '#C9C2AF', roughness: 1 })
         for (const r of this.riverSamples) {
             const pts = r.samples.map((p) => new THREE.Vector3(p.x, 0, p.z))
+            // each river its own material: the foam and the ripples are sized to its width
+            const mat = stylizeRiver(new THREE.MeshStandardMaterial({ color: '#FFFFFF', roughness: 0.6, metalness: 0 }), { width: r.width })
             const water = new THREE.Mesh(ribbonGeometry(pts, r.width, 0.16), mat)
             water.receiveShadow = true
+            water.userData.ground = 'rio_agua'
             const edge = new THREE.Mesh(ribbonGeometry(pts, r.width + 1.4, 0.1), bank)
             edge.receiveShadow = true
+            edge.userData.ground = 'rio_orillas'
             this.group.add(edge, water)
+
+            // a few rocks breaking the surface, never in the middle of the stream
+            const stones = []
+            for (let i = 6; i < pts.length - 6; i += 9 + Math.floor(rand() * 9)) {
+                const a = pts[i - 1], b = pts[i + 1]
+                const dx = b.x - a.x, dz = b.z - a.z
+                const l = Math.hypot(dx, dz) || 1
+                const side = (rand() < 0.5 ? -1 : 1) * (0.18 + rand() * 0.24) * r.width
+                stones.push([pts[i].x - (dz / l) * side, pts[i].z + (dx / l) * side, r.width * (0.05 + rand() * 0.05)])
+            }
+            const rocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), rock, stones.length)
+            const q = new THREE.Quaternion()
+            const mtx = new THREE.Matrix4()
+            stones.forEach(([x, z, s], i) => {
+                q.setFromEuler(new THREE.Euler(rand() * 3, rand() * 3, rand() * 3))
+                mtx.compose(new THREE.Vector3(x, 0.12, z), q, new THREE.Vector3(s * 1.3, s * 0.45, s))
+                rocks.setMatrixAt(i, mtx)
+                rocks.setColorAt(i, rockColors[Math.floor(rand() * rockColors.length)])
+            })
+            rocks.castShadow = true
+            rocks.receiveShadow = true
+            this.group.add(rocks)
         }
     }
 
@@ -708,7 +830,9 @@ export class CityOverview {
             const pts = samples.map((p) => new THREE.Vector3(p.x, 0, p.z))
             const road = new THREE.Mesh(ribbonGeometry(pts, 2.6, 0.12), mat)
             road.receiveShadow = true
+            road.userData.ground = 'avenidas'
             const line = new THREE.Mesh(ribbonGeometry(pts, 0.22, 0.14), centre)
+            line.userData.ground = 'lineas_centrales'
             this.group.add(road, line)
         }
     }
@@ -741,13 +865,15 @@ export class CityOverview {
             this.group.add(g)
             this.exclusions.push({ x: -8, z: -6, r: 9 })
         }
-        // Torre de Cali
+        // Torre de Cali (drawn here until its model arrives; see useLandmarkModels)
+        this.landmarks = {}
         {
             const g = props.torreDeCali()
             g.position.set(24, 0, -12)
             g.rotation.y = 0.22
             this.group.add(g)
-            this.exclusions.push({ x: 24, z: -12, r: 7 })
+            this.landmarks['torre-de-cali'] = g
+            this.exclusions.push({ x: 24, z: -12, r: 9 })
         }
         // Estadio Pascual Guerrero
         {
@@ -755,7 +881,8 @@ export class CityOverview {
             g.position.set(-26, 0, 58)
             g.rotation.y = 0.3
             this.group.add(g)
-            this.exclusions.push({ x: -26, z: 58, r: 17 })
+            this.landmarks.estadio = g
+            this.exclusions.push({ x: -26, z: 58, r: STADIUM_CLEAR })
         }
         // Keep each zone's aid point clear of buildings
         for (const zone of ZONES) this.exclusions.push({ x: zone.label[0], z: zone.label[1], r: 7 })
@@ -766,6 +893,7 @@ export class CityOverview {
             const disc = new THREE.Mesh(new THREE.CircleGeometry(p.r, 28).rotateX(-Math.PI / 2), sharedMaterial('city:park', { color: '#9FB98A', roughness: 1 }))
             disc.position.set(p.x, 0.09, p.z)
             disc.receiveShadow = true
+            disc.userData.ground = 'parques'
             this.group.add(disc)
             this.exclusions.push({ ...p })
         }

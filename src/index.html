@@ -134,6 +134,14 @@
         <!-- Supply panel (donor or collection point) -->
         <aside class="supply-panel glass" aria-labelledby="supply-title" hidden></aside>
 
+        <!-- What just happened, with a way to undo it -->
+        <div class="toast glass" role="status" aria-live="polite" hidden></div>
+
+        <!-- Questions before something that cannot be undone, and help -->
+        <div class="dialog-backdrop" hidden>
+            <div class="dialog glass" role="alertdialog" aria-modal="true" aria-labelledby="dialog-title"></div>
+        </div>
+
         <!-- Soft cloud veil used between city and neighborhood -->
         <div class="veil" aria-hidden="true">
             <span></span><span></span><span></span><span></span>

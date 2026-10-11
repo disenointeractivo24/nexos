@@ -23,6 +23,10 @@ import * as props from './props.js'
 const GROUND = { minX: -50, maxX: 50, minZ: -62, maxZ: 38, px: 2048 }
 const v3 = (x, z, y = 0) => new THREE.Vector3(x, y, z)
 const MAX_CACHED = 2
+/** The textured stand is drawn about 5 m across; this makes it the size of the old one (6 m). */
+const STAND_SCALE = 1.2
+/** The textured street props (src/data/assets.js), placed by #streetLife. */
+const STREET_PROPS = ['bin', 'cone', 'hydrant', 'electric-box', 'phone-booth', 'bus-stop', 'utility-pole']
 /** Supplies shown at the stand: each unit about this big. */
 const DISPLAY_UNIT = 0.36
 /** A street lamp at night: light strength, how far it reaches, and the size of its halo and ground pool (m). */
@@ -130,9 +134,20 @@ export class NeighborhoodScene {
         this.#cueAssets()
     }
 
-    /** Preload what every barrio needs (lamp model). */
+    /** Preload what every barrio needs: the lamp and the street props. */
     async build() {
         this.lampTemplate = await this.loader.load('lamp-post')
+        const stand = await this.loader.load('collection-point')
+        this.standTemplate = stand.source === 'glb' ? stand : null
+        this.street = {}
+        await Promise.all(
+            STREET_PROPS.map((id) =>
+                this.loader.load(id).then((t) => {
+                    // only the textured models; a missing file falls back to the drawn props
+                    if (t.source === 'glb') this.street[id] = t
+                })
+            )
+        )
     }
 
     /* ---------------- public API (used by App) ---------------- */
@@ -455,11 +470,11 @@ export class NeighborhoodScene {
         const shown = d.items.get(id) ?? { mode: 'units', objs: [] }
         if (count && !d.slots.has(id)) {
             const used = new Set(d.slots.values())
-            const free = DISPLAY_SLOTS.findIndex((_, i) => !used.has(i))
+            const free = a.displaySlots.findIndex((_, i) => !used.has(i))
             if (free < 0) return
             d.slots.set(id, free)
         }
-        const slot = DISPLAY_SLOTS[d.slots.get(id)]
+        const slot = a.displaySlots[d.slots.get(id)]
         const size = template.size
         const s = DISPLAY_UNIT / Math.max(size.x, size.y, size.z, 1e-6)
         const pop = (obj, scale, y, delay = 0) => {
@@ -563,6 +578,35 @@ export class NeighborhoodScene {
     /* ================================================================
        Static, shared parts
        ================================================================ */
+
+    /**
+     * The stand of a barrio: the textured model (fuentes_3d/edificios/Punto de acopio) when
+     * it loaded, the drawn one otherwise. Supplies a donor leaves go on its desk: four spots
+     * along the desk top, then the ground at the front corners and at the sides.
+     */
+    #stand() {
+        if (!this.standTemplate) return { stand: buildCollectionPoint(), slots: DISPLAY_SLOTS, counter: { z: 1.9, y: 1.0 }, half: 3.3, front: 2.6 }
+        const model = this.loader.instanceSync(this.standTemplate)
+        model.scale.setScalar(STAND_SCALE)
+        // a plain group holds it, so what is set on the desk is not scaled with it
+        const stand = new THREE.Group()
+        stand.name = 'collection-point'
+        stand.add(model)
+        stand.updateMatrixWorld(true)
+        const desk = new THREE.Box3()
+        model.traverse((o) => {
+            if (o.isMesh && /escritorio/i.test([o.material].flat()[0]?.name ?? '')) desk.expandByObject(o)
+        })
+        if (desk.isEmpty()) desk.set(new THREE.Vector3(-2, 0, 1.2), new THREE.Vector3(2, 1.1, 2.2))
+        const top = desk.max.y + 0.03
+        const z = (desk.min.z + desk.max.z) / 2
+        const w = desk.max.x - desk.min.x
+        const slots = [-0.375, -0.125, 0.125, 0.375].map((k) => new THREE.Vector3((desk.min.x + desk.max.x) / 2 + k * w, top, z))
+        const bounds = new THREE.Box3().setFromObject(model)
+        const front = bounds.max.z
+        slots.push(new THREE.Vector3(-1.9, 0, front + 0.6), new THREE.Vector3(2.1, 0, front + 0.6), new THREE.Vector3(-3.9, 0, -1.1), new THREE.Vector3(3.9, 0, -0.4))
+        return { stand, slots, counter: { z: desk.max.z + 0.3, y: top }, half: Math.max(-bounds.min.x, bounds.max.x), front }
+    }
 
     #outer() {
         this.outerMat = stylize(new THREE.MeshStandardMaterial({ color: WORLD.grass, roughness: 1 }), { ao: 0, rim: 0 })
@@ -774,7 +818,8 @@ export class NeighborhoodScene {
         let acopio = null
         if (L.acopio) {
             const ay = gy(L.acopio.x, L.acopio.z)
-            const stand = buildCollectionPoint()
+            const local = (x, z) => v3(L.acopio.x, L.acopio.z, ay).add(new THREE.Vector3(x, 0, z).applyAxisAngle(new THREE.Vector3(0, 1, 0), L.acopio.yaw))
+            const { stand, slots, counter, half, front } = this.#stand()
             stand.position.set(L.acopio.x, ay, L.acopio.z)
             stand.rotation.y = L.acopio.yaw
             group.add(stand)
@@ -789,9 +834,13 @@ export class NeighborhoodScene {
                 yaw: L.acopio.yaw,
                 center: v3(L.acopio.x, L.acopio.z, ay),
                 door: v3(acopioDoor.x, acopioDoor.z, gy(acopioDoor.x, acopioDoor.z)),
-                counter: v3(L.acopio.x, L.acopio.z, ay).addScaledVector(acopioFront, 1.9).setY(ay + 1.0),
+                counter: v3(L.acopio.x, L.acopio.z, ay).addScaledVector(acopioFront, counter.z).setY(ay + counter.y),
+                displaySlots: slots,
                 // where the guide waits while the panel is open: beside the counter, not in front of it
-                aside: v3(L.acopio.x, L.acopio.z, ay).add(new THREE.Vector3(-4.3, 0, 1.2).applyAxisAngle(new THREE.Vector3(0, 1, 0), L.acopio.yaw)),
+                // where the guide waits beside the stand, and the way there: out round the front corner,
+                // never across the stand itself
+                aside: local(-(half + 1.1), 1.2),
+                asidePath: [local(-(half + 1.1), front + 0.9), local(-(half + 1.1), 1.2)],
             }
             const ring = new THREE.Mesh(
                 new THREE.PlaneGeometry(3.4, 3.4).rotateX(-Math.PI / 2),
@@ -825,9 +874,10 @@ export class NeighborhoodScene {
         const [ox, oz] = L.open
         blocked.push({ x: ox, z: oz, r: 3.4 })
         blocked.push({ x: L.start[0], z: L.start[1] + 2, r: 3.5 })
+        // street furniture first, so the bushes and trees keep clear of it
+        this.#streetLife(L, group, houses, blocked, distToPaths, rand, gy)
         const occluders = this.#vegetation(L, group, blocked, distToPaths, rand, disposables, gy)
         if (L.look.walls) this.#walls(L, paths, links, group, gy, L.acopio)
-        this.#streetLife(L, group, houses, blocked, distToPaths, rand, gy)
         await yieldFrame()
 
         /* ---- emergency context cues ---- */
@@ -859,7 +909,8 @@ export class NeighborhoodScene {
         // the inspection barrier uses the textured obstacle model (procedural one if it fails)
         const obstacle = this.theme.cues.barrio.includes('inspection') ? await this.loader.load('obstacle') : null
         const barrier = obstacle?.source === 'glb' ? () => this.loader.instanceSync(obstacle) : null
-        const cues = buildBarrioCues(this.theme, { layout: L, doors: doorList, fillers, open: L.open, pathPoints, spots, heightAt: gy, rand, barrier })
+        const cone = this.street?.cone ? () => this.loader.instanceSync(this.street.cone) : null
+        const cues = buildBarrioCues(this.theme, { layout: L, doors: doorList, fillers, open: L.open, pathPoints, spots, heightAt: gy, rand, barrier, cone })
         group.add(cues.group)
         updaters.push(cues.update)
 
@@ -1601,8 +1652,17 @@ export class NeighborhoodScene {
             blocked.push({ x, z, r: 0.8 })
         }
         const pot = (scale) => props.pot(rand, scale)
-        const bin = props.bin
+        const street = this.street ?? {}
+        const prop = (id) => (street[id] ? this.loader.instanceSync(street[id]) : null)
+        const bin = () => prop('bin') ?? props.bin()
         const bicycle = props.bicycle
+        /** The way to the nearest path, as a yaw for a prop that should face it. */
+        const towardPath = (x, z) => {
+            const e = 0.3
+            const gx = distToPaths(x + e, z) - distToPaths(x - e, z)
+            const gz = distToPaths(x, z + e) - distToPaths(x, z - e)
+            return Math.atan2(-gx, -gz)
+        }
 
         // a pair of pots beside every door the guide actually visits
         for (const [, h] of houses) {
@@ -1626,11 +1686,37 @@ export class NeighborhoodScene {
             if (d < 1.1 || d > 2.6) continue
             if (blocked.some((b) => Math.hypot(x - b.x, z - b.z) < b.r + 1.1)) continue
             if (bins < 4 && rand() < 0.55) {
-                place(bin(), x, z, rand() * Math.PI * 2)
+                place(bin(), x, z, towardPath(x, z))
                 bins++
             } else if (bikes < 3) {
                 place(bicycle(), x, z, rand() * Math.PI * 2)
                 bikes++
+            }
+        }
+
+        /*
+         * The rest of the street furniture, each at the edge of a path and facing it:
+         * [model, how many, closest and farthest from the path's centre, room it needs]
+         */
+        const kerbside = [
+            ['bus-stop', 1, 2.4, 3.6, 2.6],
+            ['utility-pole', 3, 1.3, 2.2, 1.2],
+            ['hydrant', 2, 1.1, 2.0, 0.8],
+            ['electric-box', 2, 1.4, 2.6, 1.0],
+            ['phone-booth', 1, 1.3, 2.4, 1.0],
+        ]
+        for (const [id, count, near, far, room] of kerbside) {
+            if (!street[id]) continue
+            let n = 0
+            for (let i = 0; i < 1200 && n < count; i++) {
+                const x = (rand() - 0.5) * 50
+                const z = -30 + rand() * 42
+                const d = distToPaths(x, z)
+                if (d < near || d > far) continue
+                if (blocked.some((b) => Math.hypot(x - b.x, z - b.z) < b.r + room)) continue
+                place(prop(id), x, z, towardPath(x, z))
+                blocked[blocked.length - 1].r = room
+                n++
             }
         }
     }

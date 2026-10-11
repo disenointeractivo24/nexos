@@ -144,6 +144,8 @@ const MODELS = {
     canal: ['house-zinc', 'house-estrato4', 'house-two-story', 'house-tile', 'house-estrato2'],
     parque: ['house-tile', 'house-estrato2', 'house-two-story', 'house-zinc', 'house-estrato3'],
 }
+/** Two houses closer than this (m) are neighbours, and are never the same model. */
+const NEIGHBOUR_RADIUS = 13
 const FILLER_MODELS = ['house-estrato2', 'house-zinc', 'house-two-story', 'house-tile', 'house-estrato3', 'house-estrato4', 'house-estrato5']
 
 function seeded(str) {
@@ -187,14 +189,29 @@ export function buildBarrio(zone, theme) {
     // San Fernando mirrors the reference: the shelter is house 12.
     if (zone.id === 'centro') houses[4].number = 12
 
+    // filler houses: never the same model as a house standing near it, and the models
+    // spread as evenly as the barrio allows
+    const placed = houses.map((h) => ({ model: h.model, at: layout.slots[h.slot] })).filter((p) => p.at)
+    const used = new Map(FILLER_MODELS.map((m) => [m, 0]))
     const fillers = Object.keys(layout.slots)
         .filter((k) => k.startsWith('F'))
-        .map((slot, i) => ({
-            id: `${zone.id}-${slot}`,
-            slot,
-            model: FILLER_MODELS[(i + Math.floor(rand() * FILLER_MODELS.length)) % FILLER_MODELS.length],
-            scheme: ['cream', 'white', 'sage', 'blush', 'ochre'][Math.floor(rand() * 5)],
-        }))
+        .map((slot) => {
+            const at = layout.slots[slot]
+            const near = new Set(placed.filter((p) => Math.hypot(p.at.x - at.x, p.at.z - at.z) < NEIGHBOUR_RADIUS).map((p) => p.model))
+            const free = FILLER_MODELS.filter((m) => !near.has(m))
+            const pool = free.length ? free : FILLER_MODELS
+            const least = Math.min(...pool.map((m) => used.get(m)))
+            const options = pool.filter((m) => used.get(m) === least)
+            const model = options[Math.floor(rand() * options.length)]
+            used.set(model, used.get(model) + 1)
+            placed.push({ model, at })
+            return {
+                id: `${zone.id}-${slot}`,
+                slot,
+                model,
+                scheme: ['cream', 'white', 'sage', 'blush', 'ochre'][Math.floor(rand() * 5)],
+            }
+        })
 
     const barrio = { id: zone.id, name: `Barrio ${zone.barrio}`, zone, layout, houses, fillers }
     refreshBarrioNeeds(barrio)

@@ -40,12 +40,14 @@ export const ASSETS = {
         id: 'guide',
         category: 'characters',
         label: 'Guía humanitario',
-        // The muñequito, rigged by tools/rig_guia.py (fuentes_3d/guia/): bones named body, head,
-        // armL/R and legL/R, which the app moves itself. Clips named like "idle" / "walk", if a
-        // later version brings them, are picked up automatically. The stand-in is the fallback.
+        // The muñequito, a puppet rig exported by tools/exportar_guia.py (fuentes_3d/guia/): rigid
+        // pieces hanging from joints named body, head, armL/R and legL/R, which the app turns
+        // itself. Clips named like "idle" / "walk", if a later version brings them, are picked up
+        // automatically. The stand-in is the fallback.
         model: '/assets/characters/guia.glb',
         procedural: 'guide',
-        fit: { height: 1.6 },
+        // the body is 4 units tall in the model: 1.6 m here; the helmet goes on top of that
+        scale: 1.6 / 4,
     },
 
     /* ---------------- houses ---------------- */
@@ -140,6 +142,28 @@ export const ASSETS = {
             rules: [[/^Cube054$/, 'lamp']],
         },
     },
+
+    /*
+     * Street props painted in Substance Painter (fuentes_3d/props/, exported with
+     * tools/exportar_props.py): already in metres, so no scale. `front` is the side that
+     * faces the street; the barrio turns each one toward the nearest path.
+     */
+    bin: { id: 'bin', category: 'props', label: 'Caneca de basura', model: '/assets/props/basurero.glb', procedural: null, stylize: { ao: 0.2, aoHeight: 0.8, rim: 0.1 } },
+    cone: { id: 'cone', category: 'props', label: 'Cono de tránsito', model: '/assets/props/cono.glb', procedural: null, stylize: { ao: 0.15, aoHeight: 0.4, rim: 0.1 } },
+    hydrant: { id: 'hydrant', category: 'props', label: 'Hidrante', model: '/assets/props/hidrante.glb', procedural: null, stylize: { ao: 0.2, aoHeight: 0.6, rim: 0.1 } },
+    'electric-box': { id: 'electric-box', category: 'props', label: 'Caja eléctrica', model: '/assets/props/caja-electrica.glb', procedural: null, front: '+x', stylize: { ao: 0.2, aoHeight: 0.6, rim: 0.1 } },
+    'phone-booth': { id: 'phone-booth', category: 'props', label: 'Teléfono público', model: '/assets/props/telefono.glb', procedural: null, front: '+x', stylize: { ao: 0.2, aoHeight: 0.8, rim: 0.1 } },
+    'bus-stop': { id: 'bus-stop', category: 'props', label: 'Parada de bus', model: '/assets/props/parada-bus.glb', procedural: null, front: '+x', stylize: { ao: 0.2, aoHeight: 1.2, rim: 0.1 } },
+    'utility-pole': { id: 'utility-pole', category: 'props', label: 'Poste de energía', model: '/assets/props/poste.glb', procedural: null, stylize: { ao: 0.15, aoHeight: 1.5, rim: 0.1 } },
+
+    /*
+     * Buildings painted in Substance Painter (fuentes_3d/edificios/, exported with
+     * tools/exportar_props.py). The landmarks are sized to the city map; the collection
+     * point is the stand donors walk to and the one a point works from.
+     */
+    'torre-de-cali': { id: 'torre-de-cali', category: 'landmarks', label: 'Torre de Cali', model: '/assets/buildings/torre-de-cali.glb', procedural: null, fit: { height: 42 }, stylize: { ao: 0.15, aoHeight: 4, rim: 0.1 } },
+    estadio: { id: 'estadio', category: 'landmarks', label: 'Estadio Pascual Guerrero', model: '/assets/buildings/estadio.glb', procedural: null, fit: { size: 36 }, stylize: { ao: 0.2, aoHeight: 1, rim: 0.1 } },
+    'collection-point': { id: 'collection-point', category: 'buildings', label: 'Punto de acopio', model: '/assets/buildings/punto-de-acopio.glb', procedural: null, front: '+x', stylize: { ao: 0.25, aoHeight: 1.6, rim: 0.1 } },
 
     /* ---------------- supplies (procedural until GLBs arrive) ---------------- */
     rice: { id: 'rice', category: 'supplies', label: 'Arroz', model: null, procedural: 'rice', fit: { size: 1.7 } },

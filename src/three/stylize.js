@@ -115,6 +115,90 @@ export function stylize(material, { ao = 0.32, aoHeight = 2.4, rim = 0.14, rimCo
     return material
 }
 
+/**
+ * A cartoon river: murky green-brown water, its surface broken into lighter patches that
+ * drift downstream, a lacework of faint ripples, and pale foam along both banks. Drawn on a
+ * strip whose uv runs along the river in metres (x) and across it from 0 to 1 (y);
+ * `width` is the strip's width in metres, so the pattern keeps its size on any river.
+ */
+export function stylizeRiver(material, { width = 10, speed = 1 } = {}) {
+    const u = { uTime: shaderTime, uWidth: { value: width }, uSpeed: { value: speed } }
+    material.onBeforeCompile = (shader) => {
+        Object.assign(shader.uniforms, u)
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', '#include <common>\nvarying vec2 vRiverUv;')
+            .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRiverUv = uv;')
+        shader.fragmentShader = shader.fragmentShader
+            .replace(
+                '#include <common>',
+                /* glsl */ `#include <common>
+                uniform float uTime;
+                uniform float uWidth;
+                uniform float uSpeed;
+                varying vec2 vRiverUv;
+                float rHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+                float rNoise(vec2 p) {
+                    vec2 i = floor(p), f = fract(p);
+                    f = f * f * (3.0 - 2.0 * f);
+                    return mix(mix(rHash(i), rHash(i + vec2(1.0, 0.0)), f.x), mix(rHash(i + vec2(0.0, 1.0)), rHash(i + vec2(1.0, 1.0)), f.x), f.y);
+                }
+                float rFbm(vec2 p) {
+                    float v = 0.0, a = 0.5;
+                    for (int k = 0; k < 4; k++) { v += a * rNoise(p); p = p * 2.03 + 7.1; a *= 0.5; }
+                    return v;
+                }
+                // distance to the nearest cell centre and to the second nearest (a moving voronoi)
+                vec2 rCells(vec2 p, float t) {
+                    vec2 i = floor(p), f = fract(p);
+                    float d1 = 8.0, d2 = 8.0;
+                    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+                        vec2 g = vec2(float(x), float(y));
+                        vec2 o = vec2(rHash(i + g), rHash(i + g + 19.3));
+                        o = 0.5 + 0.42 * sin(t + 6.2831 * o);
+                        float d = length(g + o - f);
+                        if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+                    }
+                    return vec2(d1, d2);
+                }`
+            )
+            .replace(
+                '#include <color_fragment>',
+                /* glsl */ `#include <color_fragment>
+                float t = uTime * uSpeed;
+                // metres: along the river, and across it from bank to bank
+                vec2 m = vec2(vRiverUv.x, vRiverUv.y * uWidth);
+                vec2 flow = m - vec2(t * 1.6, 0.0);
+                float patches = rFbm(flow * 0.22);
+                float bands = rFbm(flow * vec2(0.08, 0.5) + 3.0);
+                vec2 c = rCells(flow * 0.3 + vec2(0.0, patches * 1.5), t * 1.3);
+                float ripple = (1.0 - smoothstep(0.0, 0.16, c.y - c.x)) * smoothstep(0.35, 0.7, rFbm(flow * 0.15 + 11.0));
+                // a river, not a pool: murky green-brown water, like the Cauca
+                vec3 deep = vec3(0.12, 0.19, 0.13);
+                vec3 mid = vec3(0.22, 0.29, 0.19);
+                vec3 light = vec3(0.34, 0.38, 0.25);
+                vec3 col = mix(deep, mid, smoothstep(0.3, 0.62, patches));
+                col = mix(col, light, smoothstep(0.58, 0.8, patches) * 0.75);
+                col += vec3(0.06, 0.06, 0.04) * (bands - 0.5);
+                col = mix(col, vec3(0.55, 0.58, 0.48), ripple * 0.3);
+                // white foam along both banks, frayed by the noise
+                float edge = min(vRiverUv.y, 1.0 - vRiverUv.y) * uWidth;
+                float fray = rFbm(m * vec2(0.5, 1.2) - vec2(t * 0.7, 0.0));
+                float foam = 1.0 - smoothstep(0.25, 0.9, edge - fray * 0.9);
+                col = mix(col, vec3(0.70, 0.69, 0.58), foam * 0.45);
+                diffuseColor.rgb = col;`
+            )
+            .replace(
+                '#include <emissivemap_fragment>',
+                /* glsl */ `#include <emissivemap_fragment>
+                // water stays bright under the cel shading: part of its colour is its own
+                totalEmissiveRadiance += diffuseColor.rgb * 0.08;`
+            )
+    }
+    material.customProgramCacheKey = () => 'nx-river'
+    material.needsUpdate = true
+    return material
+}
+
 /** Calm moving water: soft bands and occasional glints, no foam, no drama. */
 export function stylizeWater(material, { scale = 1 } = {}) {
     const u = { uTime: shaderTime, uSway: { value: 0 }, uScale: { value: scale } }

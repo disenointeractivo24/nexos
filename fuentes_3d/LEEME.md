@@ -53,29 +53,65 @@ piezas que comparten material y escribe el GLB.
 
 ## El guía (muñequito)
 
-`guia/muñequito.blend` es el modelo tal como se hizo. La aplicación no lo usa
-directamente: `tools/rig_guia.py` lo prepara y escribe
-`static/assets/characters/guia.glb`. El script:
+`guia/muñequito.blend` es el muñequito con su rig de títere: cada parte (piernas,
+torso, brazos, cabeza con casco y el morral) es una pieza rígida que cuelga de una
+curva que hace de articulación. `tools/exportar_guia.py` lo exporta a
+`static/assets/characters/guia.glb` sin cambiarle nada:
 
-- toma solo lo que está visible en el archivo (lo oculto son versiones viejas) y
-  aplica los modificadores (espejo, subdivisión, solidify);
-- quita las piezas que quedan completamente dentro de la cabeza;
-- le da a la piel un color crema y a los ojos y la boca un color oscuro;
-- le pone un esqueleto sencillo con los nombres que la aplicación anima: `body`,
-  `head`, `armL`, `armR`, `legL`, `legR` (caminar, respirar, asentir, señalar).
+- toma lo que está visible en el archivo (lo oculto son versiones viejas);
+- cambia cada curva por un punto vacío en el mismo lugar, con el nombre que la
+  aplicación mueve: `body` (cadera y torso), `head`, `armL`, `armR`, `legL` y
+  `legR`. Los reconoce por su posición, así que renombrar las curvas no importa;
+- si junto al `.blend` está la versión texturizada (`muñequito_texturas.fbx` y la
+  carpeta `texturas/`, de Substance Painter), usa sus piezas y sus texturas. En ese
+  FBX las piezas que comparten material están unidas (toda la piel es «Body»), así
+  que el script las separa otra vez y cuelga cada una de su articulación;
+- da color a las piezas que aún no tienen: piel crema y casco naranja;
+- exporta con los modificadores aplicados. El `.blend` no se modifica.
 
-El `.blend` original no se modifica. `guia/guia-rig.blend` es el resultado, por
-si se quiere revisar el esqueleto en Blender.
-
-Cuando el muñequito tenga casco y maletín, basta con agregarlos al mismo `.blend`
-(visibles) y volver a correr, desde `starter/`:
+Después de cambiar el muñequito en Blender, desde `starter/`:
 
 ```
-"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup "fuentes_3d/guia/muñequito.blend" --python tools/rig_guia.py -- static/assets/characters/guia.glb fuentes_3d/guia/guia-rig.blend
+"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup "fuentes_3d/guia/muñequito.blend" --python tools/exportar_guia.py -- static/assets/characters/guia.glb
 ```
 
-Lo que esté por encima del cuello (Z > 2,06 en las unidades del modelo, como el
-casco) se mueve con la cabeza; lo que esté en la espalda (el maletín), con el
-cuerpo. Si una pieza nueva trae su propio material (por ejemplo, el casco
-naranja), se respeta; las que no tienen material quedan crema (el cuerpo) u
-oscuras (ojos y boca).
+Las texturas se llaman `muñequito_texturas_<material>_<Mapa>.jpg` (Body, CASCO,
+Backpack, Correas y bolsillos, Cierre). Solo se usa el BaseColor, con la superficie
+mate: el muñequito se ve tal como está pintado, sin brillos. Los demás mapas se ignoran. Si se vuelven a exportar desde Substance,
+basta con reemplazar los archivos de `texturas/` (y el FBX si cambió la malla) y
+volver a correr el comando.
+
+La cara (ojos, boca) y sus expresiones las dibuja la aplicación sobre la cabeza
+(`src/three/guideFace.js`); la cruz del casco viene pintada en su textura.
+
+`guia/muñequito-v1-sin-rig.blend` es la primera versión, sin rig.
+
+## Props de la calle
+
+`props/<Nombre>/` tiene cada prop tal como sale de Substance Painter: el modelo en
+`GLB/` y las texturas `<prefijo>_<material>_<Mapa>.jpg`. `tools/exportar_props.py`
+les pone el BaseColor (mate, sin los demás mapas), los asienta en el suelo y escribe
+`static/assets/props/<nombre>.glb`. Desde `starter/`:
+
+```
+"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python tools/exportar_props.py -- fuentes_3d/props static/assets/props
+```
+
+Están registrados en `src/data/assets.js` (bin, cone, hydrant, electric-box,
+phone-booth, bus-stop, utility-pole) y los ubica `#streetLife` en
+`src/three/NeighborhoodScene.js`, al borde de las calles y mirando hacia ellas.
+
+## Edificios (Torre de Cali, estadio, punto de acopio)
+
+`edificios/<Nombre>/` tiene cada edificio como sale de Substance (modelo en `GLB/` y
+texturas). Se exportan con el mismo script de los props, hacia `static/assets/buildings/`:
+
+```
+"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python tools/exportar_props.py -- fuentes_3d/edificios static/assets/buildings
+```
+
+- `torre-de-cali.glb` y `estadio.glb` reemplazan los dibujados en el mapa de Cali
+  (`useLandmarkModels` en `src/three/CityOverview.js`; tamaño en `src/data/assets.js`).
+- `punto-de-acopio.glb` es el puesto del barrio (lo que el donante deja va sobre su
+  escritorio) y el de la vista del punto de acopio (`setStand` en `src/three/Depot.js`,
+  donde su escritorio, estantería y cajas se ocultan para mostrar el inventario en vivo).

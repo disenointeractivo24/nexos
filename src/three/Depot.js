@@ -126,6 +126,34 @@ export class Depot {
         }
     }
 
+    /**
+     * The textured stand replaces the drawn canopy, big enough to roof the whole shelving.
+     * Its own desk, shelf and crates make way for the live bays; its floor sits flush with
+     * the ground. The camera frames it through DEPOT_BOUNDS.
+     */
+    setStand(model) {
+        const hide = /escritorio|estanteria|cajas/i
+        const box = new THREE.Box3()
+        let floor = 0
+        model.traverse((o) => {
+            if (!o.isMesh) return
+            const name = [o.material].flat()[0]?.name ?? ''
+            if (hide.test(name)) o.visible = false
+            if (/piso/i.test(name)) floor = Math.max(floor, new THREE.Box3().setFromObject(o).max.y)
+        })
+        box.setFromObject(model)
+        const s = DEPOT_BOUNDS.width / (box.max.x - box.min.x)
+        model.scale.setScalar(s)
+        model.position.set(0, -(floor * s) + 0.01, -0.35 - ((box.min.z + box.max.z) / 2) * s)
+        model.traverse((o) => o.isMesh && ((o.castShadow = true), (o.receiveShadow = true)))
+        this.group.add(model)
+        for (const o of this.canopyParts) o.visible = false
+        // the point's name stays, under the roof and over the shelves
+        this.banner.position.set(0, 2.95, 0.4)
+        this.emblem.position.set(-4.18, 2.95, 0.41)
+        DEPOT_BOUNDS.top = (box.max.y - floor) * s
+    }
+
     #canopy() {
         const canvas = stylize(sharedMaterial('dp:canvas', { color: '#F7F5F0', roughness: 0.85, side: THREE.DoubleSide }))
         const under = stylize(sharedMaterial('dp:canvasIn', { color: '#E4DED2', roughness: 0.9, side: THREE.DoubleSide }))
@@ -141,6 +169,7 @@ export class Depot {
         const soffit = new THREE.Mesh(new THREE.PlaneGeometry(9.5, 3.8).rotateX(Math.PI / 2), under)
         soffit.position.set(0, 3.34, -0.35)
         this.group.add(roof, soffit)
+        this.canopyParts = [roof, soffit]
 
         for (const [x, z] of [[-4.5, -2.05], [4.5, -2.05], [-4.5, 1.35], [4.5, 1.35]]) {
             const p = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 3.35, 8), pole)
@@ -148,6 +177,7 @@ export class Depot {
             const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.24, 0.08, 10), pole)
             foot.position.set(x, 0.12, z)
             this.group.add(p, foot)
+            this.canopyParts.push(p, foot)
         }
 
         this.bannerCanvas = document.createElement('canvas')
@@ -166,6 +196,8 @@ export class Depot {
         emblem.position.set(-4.18, 3.0, 1.47)
         emblem.userData.flat = true
         this.group.add(banner, emblem)
+        this.banner = banner
+        this.emblem = emblem
         this.#drawBanner('')
     }
 

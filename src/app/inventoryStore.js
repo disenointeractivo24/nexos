@@ -128,6 +128,8 @@ export class InventoryStore {
         this.listeners = new Set()
         /** 'local' · 'sync' · 'online' · 'error' */
         this.status = endpoint ? 'sync' : 'local'
+        /** False until the sheet has been asked once: before that the numbers are only this device's guess. */
+        this.ready = !endpoint
         this.lastError = null
         this.failures = 0 // in a row; one alone is a hiccup, not an outage
         this.lastSync = null
@@ -287,6 +289,22 @@ export class InventoryStore {
         }
         this.#watchPage()
         if (this.pending.size) await this.#reconcileQueued()
+        await this.refresh()
+        this.ready = true
+        this.#emit()
+        this.#loop()
+    }
+
+    /** Changes made here that the sheet has not confirmed yet. */
+    get unsaved() {
+        return this.pending.size + (this.inflight?.size ?? 0)
+    }
+
+    /** Ask the sheet again now, instead of waiting for the next poll (the "Reintentar" button). */
+    async retry() {
+        if (!this.endpoint || this.stopped) return
+        this.status = 'sync'
+        this.#emit()
         await this.refresh()
         this.#loop()
     }

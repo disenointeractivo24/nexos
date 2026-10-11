@@ -220,9 +220,18 @@ export class Rain {
     }
 }
 
-/** Safety cones — a lane kept clear while a building is checked. */
-export function cones(n = 3) {
+/** Safety cones — a lane kept clear while a building is checked. `make` gives the textured model, if it loaded. */
+export function cones(n = 3, make = null) {
     const g = new THREE.Group()
+    if (make) {
+        for (let i = 0; i < n; i++) {
+            const c = make()
+            c.position.set((i - (n - 1) / 2) * 1.15, 0, (i % 2) * 0.25)
+            c.rotation.y = i * 0.7
+            g.add(c)
+        }
+        return g
+    }
     const body = stylize(sharedMaterial('cue:cone', { color: '#E4683C', roughness: 0.75 }))
     const band = stylize(sharedMaterial('cue:coneBand', { color: '#F6F2EA', roughness: 0.7 }))
     for (let i = 0; i < n; i++) {
@@ -431,7 +440,8 @@ function ashFall({ count = 180, area = 46, height = 16 } = {}) {
  * @param theme   session theme
  * @param ctx     { layout, doors:[Vector3], fillers:[{x,z,yaw}], open:[x,z],
  *                  pathPoints:[Vector3], spots:[{x,z}], heightAt(x,z), rand,
- *                  barrier?() → the textured obstacle model, if it loaded }
+ *                  barrier?() → the textured obstacle model, if it loaded,
+ *                  cone?() → the textured cone, if it loaded }
  * @returns {{group: THREE.Group, update: (dt:number)=>void}}
  */
 export function buildBarrioCues(theme, ctx) {
@@ -462,7 +472,7 @@ export function buildBarrioCues(theme, ctx) {
         const bx = f.x + front.x * 4.4
         const bz = f.z + front.z * 4.4
         place(ctx.barrier?.() ?? barrier(), bx, bz, f.yaw)
-        if (cues.includes('cones')) place(cones(3), bx + front.z * 2.2, bz - front.x * 2.2, f.yaw + Math.PI / 2)
+        if (cues.includes('cones')) place(cones(3, ctx.cone), bx + front.z * 2.2, bz - front.x * 2.2, f.yaw + Math.PI / 2)
     }
     if (cues.includes('meetingPoint')) {
         const p = nextSpot({ x: ox + 4.6, z: oz + 3.2 })

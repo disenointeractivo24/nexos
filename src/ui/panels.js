@@ -6,16 +6,19 @@ import { ZONES, zoneNeeds, zoneLevel, NEED_WORD, barrioNeeds } from '../data/zon
 import { pointForZone, mapEmbedUrl, directionsUrl } from '../data/collectionPoints.js'
 import { session } from '../app/session.js'
 import { cloneMaterials } from '../three/GuideCharacter.js'
+import { helpList } from './feedback.js'
 
 const isNarrow = () => window.matchMedia('(max-width: 760px), (max-height: 560px) and (max-width: 1000px)').matches
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 
 /** Calm reveal for side panels; exposes `alpha` for the 3D item layer. */
 class Panel {
-    constructor(el, { reducedMotion, audio }) {
+    constructor(el, { reducedMotion, audio, toast, dialog }) {
         this.el = el
         this.reducedMotion = reducedMotion
         this.audio = audio ?? { play() {} }
+        this.toast = toast
+        this.dialog = dialog
         this.state = { alpha: 0 }
         this.open = false
     }
@@ -305,6 +308,7 @@ export class DonorPanel extends Panel {
             }[this.step]
             fn.call(this)
             this.el.querySelector('.js-close')?.addEventListener('click', () => this.onClose())
+            this.el.querySelector('.js-help')?.addEventListener('click', () => this.showHelp())
         }
         if (animate) this.morph(draw)
         else {
@@ -321,8 +325,25 @@ export class DonorPanel extends Panel {
                     <h2 id="supply-title">${title}</h2>
                     <p class="sub">${sub}</p>
                 </div>
-                <button class="icon-btn js-close" type="button" aria-label="Cerrar y volver al barrio">${icon('x')}</button>
+                <button class="icon-btn help-btn js-help" type="button" aria-label="Ayuda: cómo donar" title="Ayuda">${icon('help')}</button>
+                <button class="icon-btn js-close" type="button" aria-label="Cerrar y volver al barrio" title="Cerrar">${icon('x')}</button>
             </div>`
+    }
+
+    /** How donating works, in four steps, where the person is when they wonder. */
+    showHelp() {
+        this.audio.play('tap')
+        return this.dialog?.ask({
+            icon: 'help',
+            title: 'Cómo donar',
+            body: helpList([
+                'Arriba eliges el <b>tipo de ayuda</b>; abajo aparece lo que el barrio necesita de ese tipo.',
+                'Suma con <b>+</b> lo que quieras dejar, o <b>toca el número y escribe la cantidad</b>. Con <b>Caja</b> (en el celular) o <b>+ caja</b>, sumas una caja completa.',
+                'Lo marcado como <b>Urgente</b> es lo que más falta en este barrio.',
+                'Toca <b>Continuar</b>: entregas los productos en el punto o aportas su valor. Puedes volver atrás en cualquier paso.',
+            ]),
+            actions: [{ label: 'Entendido', value: true, kind: 'primary' }],
+        })
     }
 
     #totals() {
@@ -359,6 +380,7 @@ export class DonorPanel extends Panel {
                         <button class="cat-tab ${on ? 'is-on' : ''}" type="button" role="tab" aria-selected="${on}"
                             data-cat="${g.category}" title="${c.label}" aria-label="${c.label}">
                             <span class="cat-icon" style="background:${c.color}">${icon(c.icon)}</span>
+                            <span class="cat-label">${c.label}</span>
                             ${urgent ? '<span class="cat-dot"></span>' : ''}
                         </button>`
                     })
@@ -397,6 +419,7 @@ export class DonorPanel extends Panel {
             ${this.#head('Punto de acopio', `${this.barrio.name} · Elige qué dejar aquí.`)}
             <div class="supply-body step-enter">
                 <div class="cat-row">${this.#categoryStrip()}${stepToggle(this.byBox)}</div>
+                <p class="cat-title">${CATEGORIES[group?.category]?.label ?? ''}<span>${tiles ? ` · ${group.items.length} ${group.items.length === 1 ? 'insumo' : 'insumos'}` : ''}</span></p>
                 <div class="supply-grid" role="group" aria-label="Suministros que necesita el barrio">${tiles}</div>
                 <section class="basket-inline" aria-label="Tu cesta de apoyo" hidden>
                     <p class="section-title">Tu cesta de apoyo</p>
@@ -456,7 +479,8 @@ export class DonorPanel extends Panel {
         return `
             <div class="stepper" role="group" aria-label="Cantidad de ${label}">
                 <button type="button" class="js-minus" aria-label="Quitar uno" ${q <= 0 ? 'disabled' : ''}>${icon('minus')}</button>
-                <output aria-live="polite">${q}</output>
+                <input class="qty-input js-qty" type="number" inputmode="numeric" min="0" max="${max}" step="1" value="${q}"
+                    aria-label="Cantidad de ${label}, hasta ${max}" title="Toca para escribir la cantidad">
                 <button type="button" class="js-plus" aria-label="Agregar uno" ${q >= max ? 'disabled' : ''}>${icon('plus')}</button>
             </div>`
     }
@@ -466,6 +490,19 @@ export class DonorPanel extends Panel {
         const step = () => (this.byBox && isNarrow() && scope.classList.contains('tile') ? perBox(id) : 1)
         scope.querySelector('.js-minus')?.addEventListener('click', () => this.#setQty(id, (this.basket.get(id) ?? 0) - step(), max))
         scope.querySelector('.js-plus')?.addEventListener('click', () => this.#setQty(id, (this.basket.get(id) ?? 0) + step(), max))
+        // whoever already knows how many can type it; more than the barrio needs is capped
+        const input = scope.querySelector('.js-qty')
+        if (!input) return
+        input.addEventListener('focus', () => input.select())
+        input.addEventListener('keydown', (e) => e.key === 'Enter' && input.blur())
+        input.addEventListener('change', () => {
+            const n = Math.round(Number(input.value))
+            const q = this.basket.get(id) ?? 0
+            if (input.value === '' || !Number.isFinite(n)) return (input.value = q)
+            this.#setQty(id, n, max)
+            // capped (or unchanged): the field shows what is really in the basket
+            input.value = this.basket.get(id) ?? 0
+        })
     }
 
     #setQty(id, q, max) {
@@ -476,8 +513,8 @@ export class DonorPanel extends Panel {
         else this.basket.delete(id)
         this.el.querySelectorAll(`[data-item="${id}"]`).forEach((scope) => {
             scope.classList.toggle('is-selected', q > 0)
-            const out = scope.querySelector('output')
-            if (out) out.textContent = q
+            const out = scope.querySelector('.js-qty')
+            if (out && document.activeElement !== out) out.value = q
             for (const b of scope.querySelectorAll('.js-minus, .js-box-minus')) b.disabled = q <= 0
             for (const b of scope.querySelectorAll('.js-plus, .js-box-plus')) b.disabled = q >= max
             const sub = scope.querySelector('.row-subtotal')
@@ -812,6 +849,9 @@ export class DonorPanel extends Panel {
                     <h3>Gracias por tu apoyo</h3>
                     <p>${physical ? `Te esperamos en <b>${esc(this.point.name)}</b>, ${esc((w?.detail ?? '').replace(/\.$/, ''))}.` : 'Con tu aporte, el equipo comprará y dejará estos suministros en el punto de acopio.'}</p>
                     <p class="done-note">Las familias ya salieron a recogerlos.</p>
+                    ${session.stock?.status === 'error'
+                        ? `<p class="done-offline">${icon('info')} Sin conexión en este momento: tu aporte quedó guardado en este dispositivo y se suma al inventario apenas vuelva la conexión.</p>`
+                        : ''}
                     <p class="done-code">${physical ? 'Código de entrega' : 'Referencia'}<b>${r.code}</b></p>
                     <p class="done-small">Valor equivalente: ${money(r.totals.value)}${physical ? '' : ' · Pago de demostración'}</p>
                 </div>
@@ -873,6 +913,7 @@ export class InventoryPanel extends Panel {
     close() {
         this.unsubscribe?.()
         this.unsubscribe = null
+        this.toast?.hide()
         this.store.stop()
         this.items.removeWhere('tile:')
         this.el.classList.remove('is-board')
@@ -916,7 +957,8 @@ export class InventoryPanel extends Panel {
             </div>
             <div class="stepper stepper-board" role="group" aria-label="Unidades de ${esc(s.label)}">
                 <button type="button" class="js-minus" aria-label="Quitar una unidad de ${esc(s.label)}" ${qty <= 0 ? 'disabled' : ''}>${icon('minus')}</button>
-                <output aria-live="polite"><b class="js-qty">${qty}</b><small>de ${cap}</small></output>
+                <label class="qty-field"><input class="js-qty" type="number" inputmode="numeric" min="0" max="${cap}" step="1" value="${qty}"
+                    aria-label="Cantidad de ${esc(s.label)}, de ${cap}" title="Toca para escribir la cantidad"><small>de ${cap}</small></label>
                 <button type="button" class="js-plus" aria-label="Agregar una unidad de ${esc(s.label)}" ${qty >= cap ? 'disabled' : ''}>${icon('plus')}</button>
             </div>
             <div class="box-step">
@@ -938,7 +980,8 @@ export class InventoryPanel extends Panel {
                     <p class="sub">${esc(this.point.name)} · ${esc(zone?.name ?? '')}</p>
                 </div>
                 ${stepToggle(this.byBox)}
-                <button class="icon-btn js-close" type="button" aria-label="Cerrar el inventario">${icon('x')}</button>
+                <button class="icon-btn help-btn js-help" type="button" aria-label="Ayuda: cómo usar el inventario" title="Ayuda">${icon('help')}</button>
+                <button class="icon-btn js-close" type="button" aria-label="Cerrar el inventario" title="Cerrar">${icon('x')}</button>
             </div>
             <div class="supply-body step-enter">
                 <div class="stock-grid" role="group" aria-label="Inventario del punto de acopio">
@@ -946,7 +989,7 @@ export class InventoryPanel extends Panel {
                 </div>
             </div>
             <div class="board-foot">
-                <p class="source-line js-source" hidden></p>
+                <p class="sync-chip js-sync" role="status" aria-live="polite"></p>
                 <p class="summary js-summary" aria-live="polite"></p>
             </div>`
         hydrateIcons(this.el)
@@ -959,7 +1002,17 @@ export class InventoryPanel extends Panel {
             card.querySelector('.js-plus').addEventListener('click', () => this.#bump(id, 1))
             card.querySelector('.js-box-minus').addEventListener('click', () => this.#bump(id, -per))
             card.querySelector('.js-box-plus').addEventListener('click', () => this.#bump(id, per))
+            // a faster way for whoever already knows the count: type it
+            const input = card.querySelector('.js-qty')
+            input.addEventListener('focus', () => input.select())
+            input.addEventListener('keydown', (e) => e.key === 'Enter' && input.blur())
+            input.addEventListener('change', () => {
+                const n = Math.round(Number(input.value))
+                if (input.value === '' || !Number.isFinite(n)) return this.#sync()
+                this.#setTo(id, n)
+            })
         })
+        this.el.querySelector('.js-help').addEventListener('click', () => this.#help())
         this.el.querySelector('.js-close').addEventListener('click', () => this.onClose())
         bindStepToggle(this.el, (byBox) => {
             this.byBox = byBox
@@ -971,10 +1024,82 @@ export class InventoryPanel extends Panel {
     #bump(id, delta) {
         // phones have one pair of buttons; the switch makes them count boxes
         if (this.byBox && isNarrow() && Math.abs(delta) === 1) delta *= perBox(id)
+        this.#setTo(id, this.store.get(id) + delta)
+    }
+
+    /**
+     * Every change says what it did and can be taken back for a few seconds. Taps in a row on
+     * the same supply count as one change, so "Deshacer" returns to where the count started.
+     */
+    #setTo(id, qty) {
+        if (!this.store.ready) return this.audio.play('error')
         const before = this.store.get(id)
-        const after = this.store.add(id, delta)
-        if (after !== before) this.audio.play(after > before ? 'add' : 'remove')
-        else this.audio.play('error')
+        const after = this.store.set(id, qty)
+        if (after === before) {
+            this.audio.play('error')
+            return this.#sync()
+        }
+        this.audio.play(after > before ? 'add' : 'remove')
+        const from = this.undo?.id === id && this.toast?.visible ? this.undo.from : before
+        this.undo = { id, from }
+        const s = SUPPLIES[id]
+        this.toast?.show(`<b>${esc(s.label)}</b>: ${from} → ${after} ${esc(s.units)}`, {
+            action: from !== after ? 'Deshacer' : null,
+            onAction: () => {
+                this.store.set(id, from)
+                this.undo = null
+                this.audio.play('remove')
+                this.toast.show(`<b>${esc(s.label)}</b> volvió a ${from}.`, { duration: 2500 })
+            },
+        })
+    }
+
+    #help() {
+        this.audio.play('tap')
+        this.dialog?.ask({
+            icon: 'help',
+            title: 'Cómo usar el inventario',
+            body: helpList([
+                'Cada tarjeta es un insumo. Usa <b>−</b> y <b>+</b> para contar unidades; con <b>Caja</b> (en el celular) o los botones <b>caja</b>, cuentas cajas completas.',
+                'Si ya sabes el número, <b>toca la cantidad y escríbela</b>.',
+                'Colores: <b class="t-critico">rojo</b> es crítico (menos del 30 %), <b class="t-estable">amarillo</b> estable y <b class="t-abastecido">verde</b> abastecido.',
+                'Todo se guarda solo en la hoja de Google; arriba ves si ya quedó guardado. Si te equivocas, toca <b>Deshacer</b> en el aviso de abajo.',
+            ]),
+            actions: [{ label: 'Entendido', value: true, kind: 'primary' }],
+        })
+    }
+
+    /**
+     * Whether the count is safe, always in view: loading, saving, saved (and when),
+     * or offline with the changes kept here and a way to try again now. A single failed
+     * call is retried quietly; it only shows as offline after the second.
+     */
+    #syncChip() {
+        const chip = this.el.querySelector('.js-sync')
+        if (!chip) return
+        const st = this.store
+        const time = st.lastSync ? new Date(st.lastSync).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }) : ''
+        let state, html
+        if (st.status !== 'sync') this.retrying = false
+        if (!st.ready) [state, html] = ['loading', '<span class="sync-spin"></span>Cargando inventario…']
+        else if (this.retrying) [state, html] = ['saving', '<span class="sync-spin"></span>Reintentando…']
+        else if (st.status === 'local') [state, html] = ['saved', `${icon('check')}Guardado en este dispositivo`]
+        // while offline the store keeps retrying; a retry in flight must not flash "Guardando…"
+        else if (st.failures >= 2)
+            [state, html] = ['error', `${icon('alert')}Sin conexión${st.unsaved ? ` · ${st.unsaved} sin enviar` : ''}<button type="button" class="link-btn js-retry">Reintentar</button>`]
+        else if (st.unsaved || st.status === 'sync') [state, html] = ['saving', '<span class="sync-spin"></span>Guardando…']
+        else [state, html] = ['saved', `${icon('check')}Guardado${time ? ` · ${time}` : ''}`]
+        if (chip.dataset.state === state && chip.dataset.time === time) return
+        chip.dataset.state = state
+        chip.dataset.time = time
+        chip.innerHTML = html
+        chip.title = st.status === 'error' ? st.sourceLine() : ''
+        hydrateIcons(chip)
+        chip.querySelector('.js-retry')?.addEventListener('click', () => {
+            this.audio.play('tap')
+            this.retrying = true
+            st.retry()
+        })
     }
 
     /** Redraw the numbers in place — the sheet may also have moved them. */
@@ -986,15 +1111,19 @@ export class InventoryPanel extends Panel {
             const cap = stockCap(id)
             const st = stockState(id, qty)
             card.className = `stock-card is-${st.id}`
-            card.querySelector('.js-qty').textContent = qty
+            const input = card.querySelector('.js-qty')
+            // never type over what the person is writing
+            if (document.activeElement !== input) input.value = qty
+            input.disabled = !this.store.ready
             card.querySelector('.js-boxes').textContent = boxesLabel(qty, perBox(id))
             card.querySelector('.stock-fill').style.width = `${Math.round(stockRatio(id, qty) * 100)}%`
             const chip = card.querySelector('.stock-state')
             chip.textContent = st.label
             chip.dataset.state = st.id
             card.querySelector('.stock-meter').setAttribute('aria-label', `${qty} de ${cap} ${SUPPLIES[id].units}. ${st.label}.`)
-            for (const b of card.querySelectorAll('.js-minus, .js-box-minus')) b.disabled = qty <= 0
-            for (const b of card.querySelectorAll('.js-plus, .js-box-plus')) b.disabled = qty >= cap
+            // until the sheet has answered once, the numbers are only this device's guess: no edits
+            for (const b of card.querySelectorAll('.js-minus, .js-box-minus')) b.disabled = !this.store.ready || qty <= 0
+            for (const b of card.querySelectorAll('.js-plus, .js-box-plus')) b.disabled = !this.store.ready || qty >= cap
             this.items.setSelected(`tile:${id}`, st.id === 'critico')
         }
         const short = this.store.shortages()
@@ -1005,14 +1134,7 @@ export class InventoryPanel extends Panel {
                 ? `<b>${short.length} ${short.length === 1 ? 'insumo crítico' : 'insumos críticos'}:</b> ${short.map((id) => esc(SUPPLIES[id].label)).join(', ')}`
                 : '<b>Sin faltantes críticos</b>'
         }
-        // the connection only speaks up when something is really wrong with it:
-        // a single failed call is retried quietly a few seconds later
-        const src = this.el.querySelector('.js-source')
-        if (src) {
-            src.hidden = !(this.store.status === 'error' && this.store.failures >= 2)
-            src.textContent = src.hidden ? '' : this.store.sourceLine()
-            src.dataset.status = this.store.status
-        }
+        this.#syncChip()
         this.onShortages?.(short)
     }
 }
