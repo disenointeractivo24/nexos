@@ -1,8 +1,11 @@
 name: Deploy to GitHub Pages
 
+# The published app is always main, at the site's root. The version being tried out
+# (branch funciones-nuevas) is built beside it, at /prueba/, so it can be opened on a
+# phone without touching the published one.
 on:
   push:
-    branches: [main]
+    branches: [main, funciones-nuevas]
   workflow_dispatch:
 
 permissions:
@@ -19,11 +22,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: actions/setup-node@v4
         with:
           node-version: 20
       - run: npm install
       - run: npm run build
+
+      # the trial version, if the branch exists
+      - uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          ref: funciones-nuevas
+          path: prueba-src
+      - name: Build the trial version at /prueba/
+        if: hashFiles('prueba-src/package.json') != ''
+        working-directory: prueba-src
+        run: |
+          npm install
+          npm run build
+          mkdir -p ../dist/prueba
+          cp -r dist/. ../dist/prueba/
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
