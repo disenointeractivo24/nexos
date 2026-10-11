@@ -48,6 +48,12 @@ export const ICONS = {
     help: stroke('<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.5a2.5 2.5 0 0 1 4.9.7c0 1.8-2.5 2.2-2.5 3.8"/><circle cx="12" cy="17.2" r="0.6" fill="currentColor"/>'),
     undo: stroke('<path d="M8.5 6.5 4.5 10.5l4 4"/><path d="M4.5 10.5H14a5 5 0 0 1 0 10h-3"/>'),
     logout: stroke('<path d="M14 4.5h4.5v15H14"/><path d="M10 8l-4 4 4 4M6 12h9"/>'),
+    search: stroke('<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/>'),
+    qr: stroke('<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2.5v2.5H14zM17.5 17.5H20V20h-2.5zM14 20h1M20 14v1"/>'),
+    camera: stroke('<path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.3l1.4-2h5.6l1.4 2h2.3A1.5 1.5 0 0 1 20 8.5v9A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="12.8" r="3.3"/>'),
+    truck: stroke('<path d="M3.5 6.5h10.5v9.5H3.5z"/><path d="M14 9.5h3.6l2.9 3.2v3.3H14"/><circle cx="7.5" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>'),
+    refresh: stroke('<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4.2h-4.2"/>'),
+    download: stroke('<path d="M12 4v11"/><path d="m7.5 10.8 4.5 4.5 4.5-4.5"/><path d="M5 19.5h14"/>'),
 }
 
 export function icon(name) {

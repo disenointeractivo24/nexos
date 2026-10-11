@@ -77,6 +77,10 @@
                         <span class="role-go" data-icon="chevron-right" aria-hidden="true"></span>
                     </button>
                 </div>
+                <div class="role-links">
+                    <button class="role-track js-track" type="button"><span data-icon="search" aria-hidden="true"></span>¿Ya donaste? Sigue tu aporte</button>
+                    <button class="role-track js-lite" type="button"><span data-icon="phone" aria-hidden="true"></span>Versión ligera, sin 3D</button>
+                </div>
             </div>
         </section>
 
@@ -128,6 +132,9 @@
             <span>Centrar mapa</span>
         </button>
 
+        <!-- Live map: what is happening right now, anywhere -->
+        <p class="live-note glass" role="status" aria-live="polite" hidden><span class="live-dot" aria-hidden="true"></span><b>En vivo</b><span class="live-text"></span></p>
+
         <!-- Zone card -->
         <aside class="zone-card glass" aria-labelledby="zone-title" hidden></aside>
 
@@ -138,6 +145,11 @@
         <div class="toast glass" role="status" aria-live="polite" hidden></div>
 
         <!-- Questions before something that cannot be undone, and help -->
+        <!-- ¿Dónde está mi ayuda? (following a donation by its code) -->
+        <section class="track" aria-labelledby="track-title" hidden>
+            <div class="track-card" role="dialog" aria-modal="true" aria-labelledby="track-title"></div>
+        </section>
+
         <div class="dialog-backdrop" hidden>
             <div class="dialog glass" role="alertdialog" aria-modal="true" aria-labelledby="dialog-title"></div>
         </div>

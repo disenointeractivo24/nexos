@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import gsap from 'gsap'
+import { COLLECTION_POINTS } from '../data/collectionPoints.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { ZONES } from '../data/zones.js'
 import { WORLD, HOUSE_SCHEMES, sharedMaterial } from './materials.js'
@@ -7,6 +9,11 @@ import { canvasTexture, crossTexture } from './procedural/textures.js'
 import { stylize, stylizeWater, stylizeRiver } from './stylize.js'
 import { buildCityCues } from './ThemeCues.js'
 import * as props from './props.js'
+
+/** Live map colours: a donation on its way, in the point, handed out; a transfer. */
+const LIVE_COLOURS = { aporte: '#F5333F', recibido: '#1F8A4C', entregado: '#E39B1B', traslado: '#1E6FD9', 'traslado-recibido': '#1E6FD9' }
+const LIVE_RING = new THREE.RingGeometry(0.86, 1, 72).rotateX(-Math.PI / 2)
+const LIVE_DOT = new THREE.SphereGeometry(2.6, 20, 14)
 
 /**
  * An abstracted, readable Cali: Farallones hills to the west with Cristo Rey
@@ -530,6 +537,88 @@ export class CityOverview {
 
     setSelected(id) {
         this.selected = id
+    }
+
+    /**
+     * Live map: something just happened at a collection point, on this device or any other.
+     * A ring spreads over its zone (a donation scheduled, received, handed out), or a light
+     * travels from one point to the other (a transfer). Calm and brief: it says "this is
+     * happening now" without pulling the eye away from what the person is doing.
+     */
+    pulse(e) {
+        const zoneOf = (pointId) => COLLECTION_POINTS.find((p) => p.id === pointId)?.zone
+        const from = zoneOf(e.point)
+        if (!from || !ZONES.some((z) => z.id === from)) return
+        const colour = LIVE_COLOURS[e.kind] ?? LIVE_COLOURS.aporte
+        const to = e.kind === 'traslado' ? zoneOf(e.to) : null
+        if (to && to !== from) this.#travel(from, to, colour)
+        else this.#rings(from, colour)
+    }
+
+    #rings(zoneId, colour, delay = 0) {
+        const at = this.focusPoint(zoneId)
+        for (let i = 0; i < 3; i++) {
+            const ring = new THREE.Mesh(
+                LIVE_RING,
+                new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity: 0, depthWrite: false, depthTest: false })
+            )
+            ring.position.set(at.x, 1.2, at.z)
+            ring.renderOrder = 20
+            ring.scale.setScalar(3)
+            this.group.add(ring)
+            const d = delay + i * 0.45
+            gsap.to(ring.material, { opacity: 0.85, duration: 0.25, delay: d })
+            gsap.to(ring.scale, { x: 34, y: 34, z: 34, duration: 2.4, delay: d, ease: 'power2.out' })
+            gsap.to(ring.material, {
+                opacity: 0,
+                duration: 1.6,
+                delay: d + 0.8,
+                ease: 'sine.in',
+                onComplete: () => {
+                    this.group.remove(ring)
+                    ring.material.dispose()
+                },
+            })
+        }
+    }
+
+    #travel(fromZone, toZone, colour) {
+        const a = this.focusPoint(fromZone).setY(2)
+        const b = this.focusPoint(toZone).setY(2)
+        const mid = a.clone().lerp(b, 0.5).setY(2 + a.distanceTo(b) * 0.28)
+        const curve = new THREE.QuadraticBezierCurve3(a, mid, b)
+        const light = new THREE.Mesh(LIVE_DOT, new THREE.MeshBasicMaterial({ color: colour, transparent: true, depthTest: false }))
+        light.renderOrder = 21
+        const trail = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(curve.getPoints(48)),
+            new THREE.LineDashedMaterial({ color: colour, dashSize: 6, gapSize: 4, transparent: true, opacity: 0, depthTest: false })
+        )
+        trail.computeLineDistances()
+        trail.renderOrder = 20
+        this.group.add(trail, light)
+        this.#rings(fromZone, colour)
+        const s = { u: 0 }
+        gsap.to(trail.material, { opacity: 0.7, duration: 0.4 })
+        gsap.to(s, {
+            u: 1,
+            duration: 2.6,
+            delay: 0.3,
+            ease: 'power1.inOut',
+            onUpdate: () => curve.getPoint(s.u, light.position),
+            onComplete: () => {
+                this.#rings(toZone, colour)
+                gsap.to(trail.material, {
+                    opacity: 0,
+                    duration: 0.8,
+                    onComplete: () => {
+                        this.group.remove(trail, light)
+                        trail.geometry.dispose()
+                        trail.material.dispose()
+                        light.material.dispose()
+                    },
+                })
+            },
+        })
     }
 
     /**

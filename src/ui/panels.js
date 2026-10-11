@@ -7,6 +7,10 @@ import { pointForZone, mapEmbedUrl, directionsUrl } from '../data/collectionPoin
 import { session } from '../app/session.js'
 import { cloneMaterials } from '../three/GuideCharacter.js'
 import { helpList } from './feedback.js'
+import { deliveryWindows } from '../data/delivery.js'
+import { newCode, trackUrl, ledger, readCode } from '../app/donations.js'
+import { qrSvg, scanQr } from './qr.js'
+import { COLLECTION_POINTS } from '../data/collectionPoints.js'
 
 const isNarrow = () => window.matchMedia('(max-width: 760px), (max-height: 560px) and (max-width: 1000px)').matches
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
@@ -182,19 +186,6 @@ function bindStepToggle(root, onChange) {
     )
 }
 
-function deliveryWindows(now = new Date()) {
-    const day = (offset) => {
-        const d = new Date(now)
-        d.setDate(d.getDate() + offset)
-        return d.toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })
-    }
-    const list = []
-    if (now.getHours() < 12) list.push({ id: 'hoy-tarde', label: 'Hoy en la tarde', detail: `${day(0)}, de 2:00 a 6:00 p. m.` })
-    list.push({ id: 'manana-am', label: 'Mañana en la mañana', detail: `${day(1)}, de 8:00 a. m. a 12:00 m.` })
-    list.push({ id: 'manana-pm', label: 'Mañana en la tarde', detail: `${day(1)}, de 2:00 a 6:00 p. m.` })
-    list.push({ id: 'pasado-am', label: 'Pasado mañana', detail: `${day(2)}, de 8:00 a. m. a 12:00 m.` })
-    return list
-}
 
 /** "3 cajas y 2 sueltas": how a volunteer counts a shelf. */
 function boxesLabel(qty, per) {
@@ -204,7 +195,7 @@ function boxesLabel(qty, per) {
     return `${boxes} ${boxes === 1 ? 'caja' : 'cajas'}${loose ? ` + ${loose}` : ''}`
 }
 
-const refCode = () => `NX-${Math.floor(1000 + Math.random() * 9000)}`
+const refCode = () => newCode('NX')
 
 /**
  * Donor panel, opened at the barrio's collection point.
@@ -218,9 +209,9 @@ const refCode = () => `NX-${Math.floor(1000 + Math.random() * 9000)}`
  *   supplies → method → (details → summary) | (payment → paying) → done
  */
 export class DonorPanel extends Panel {
-    constructor(el, opts, { items, loader, onClose, onStep, onConfirm, onExitMap, onBasket }) {
+    constructor(el, opts, { items, loader, onClose, onStep, onConfirm, onExitMap, onBasket, onTrack }) {
         super(el, opts)
-        Object.assign(this, { items, loader, onClose, onStep, onConfirm, onExitMap, onBasket })
+        Object.assign(this, { items, loader, onClose, onStep, onConfirm, onExitMap, onBasket, onTrack })
         this.step = 'supplies'
         this.details = { name: '', phone: '', email: '', window: '', notes: '' }
     }
@@ -821,13 +812,17 @@ export class DonorPanel extends Panel {
 
     #finish() {
         this.code = this.code ?? refCode()
+        const w = deliveryWindows().find((x) => x.id === this.details.window)
         const record = {
             code: this.code,
             mode: this.mode,
+            point: this.point.id,
             barrio: this.barrio.id,
             items: Object.fromEntries(this.basket),
             value: this.#totals().value,
             window: this.details.window,
+            // when it will be brought, written out: the window's id only means something today
+            slot: this.mode === 'physical' && w ? `${w.label}: ${w.detail}` : '',
             at: new Date().toISOString(),
         }
         this.lastRecord = { ...record, totals: this.#totals(), lines: [...this.basket] }
@@ -848,12 +843,14 @@ export class DonorPanel extends Panel {
                     <span class="done-mark">${icon('check')}</span>
                     <h3>Gracias por tu apoyo</h3>
                     <p>${physical ? `Te esperamos en <b>${esc(this.point.name)}</b>, ${esc((w?.detail ?? '').replace(/\.$/, ''))}.` : 'Con tu aporte, el equipo comprará y dejará estos suministros en el punto de acopio.'}</p>
-                    <p class="done-note">Las familias ya salieron a recogerlos.</p>
+                    <p class="done-note">${physical ? 'Así recogerán tu aporte las familias cuando lo lleves al punto.' : 'Las familias ya salieron a recogerlos.'}</p>
                     ${session.stock?.status === 'error'
                         ? `<p class="done-offline">${icon('info')} Sin conexión en este momento: tu aporte quedó guardado en este dispositivo y se suma al inventario apenas vuelva la conexión.</p>`
                         : ''}
                     <p class="done-code">${physical ? 'Código de entrega' : 'Referencia'}<b>${r.code}</b></p>
+                    ${physical ? `<div class="done-qr"><div class="qr-img js-qr" role="img" aria-label="Código QR del aporte ${r.code}"></div><span>Muestra este QR en el punto: al escanearlo, tu aporte queda recibido. También lo encuentras en «Sigue tu aporte».</span></div>` : ''}
                     <p class="done-small">Valor equivalente: ${money(r.totals.value)}${physical ? '' : ' · Pago de demostración'}</p>
+                    <button class="btn btn-secondary js-track" type="button">${icon('search')} Seguir mi aporte</button>
                 </div>
             </div>
             <div class="supply-foot">
@@ -862,6 +859,11 @@ export class DonorPanel extends Panel {
                 <button class="btn btn-primary js-primary js-done" type="button">Seguir en el barrio</button>
             </div>`
         this.code = null
+        if (physical) qrSvg(trackUrl(r.code)).then((svg) => {
+            const box = this.el.querySelector('.js-qr')
+            if (box) box.innerHTML = svg
+        })
+        this.el.querySelector('.js-track').addEventListener('click', () => this.onTrack?.(r.code))
         this.el.querySelector('.js-done').addEventListener('click', () => this.onClose())
         this.el.querySelector('.js-map').addEventListener('click', () => this.onExitMap?.())
     }
@@ -984,6 +986,18 @@ export class InventoryPanel extends Panel {
                 <button class="icon-btn js-close" type="button" aria-label="Cerrar el inventario" title="Cerrar">${icon('x')}</button>
             </div>
             <div class="supply-body step-enter">
+                <details class="pending js-pending" open>
+                    <summary class="pending-sum"><span class="pending-title">${icon('box')} Pendientes</span><span class="pending-count js-pending-count"></span></summary>
+                    <form class="pending-form js-receive-form" novalidate>
+                        <label class="sr-only" for="receive-code">Código del aporte o del traslado</label>
+                        <input id="receive-code" name="code" type="text" placeholder="Código NX-… o TR-…" autocapitalize="characters" autocomplete="off" spellcheck="false">
+                        <button class="btn btn-primary" type="submit">Recibir</button>
+                        <button class="btn btn-secondary js-scan" type="button">${icon('camera')} Escanear QR</button>
+                        <button class="btn btn-secondary js-transfer" type="button">${icon('truck')} Enviar a otro punto</button>
+                    </form>
+                    <p class="form-error js-receive-error" role="alert" hidden></p>
+                    <div class="pending-lists js-pending-lists"></div>
+                </details>
                 <div class="stock-grid" role="group" aria-label="Inventario del punto de acopio">
                     ${this.supplies.map((s) => this.#card(s)).join('')}
                 </div>
@@ -1014,6 +1028,20 @@ export class InventoryPanel extends Panel {
         })
         this.el.querySelector('.js-help').addEventListener('click', () => this.#help())
         this.el.querySelector('.js-close').addEventListener('click', () => this.onClose())
+        this.queueKey = null
+        const form = this.el.querySelector('.js-receive-form')
+        form.addEventListener('submit', (e) => {
+            e.preventDefault()
+            this.#receive(form.querySelector('input').value)
+        })
+        this.el.querySelector('.js-scan').addEventListener('click', () => this.#scan())
+        this.el.querySelector('.js-transfer').addEventListener('click', () => this.#transferSheet())
+        this.el.querySelector('.js-pending-lists').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-action]')
+            if (!b) return
+            if (b.dataset.action === 'deliver') this.#deliver(b.dataset.code)
+            else this.#receive(b.dataset.code)
+        })
         bindStepToggle(this.el, (byBox) => {
             this.byBox = byBox
             this.audio.play('tap')
@@ -1135,7 +1163,267 @@ export class InventoryPanel extends Panel {
                 : '<b>Sin faltantes críticos</b>'
         }
         this.#syncChip()
+        this.#pending()
         this.onShortages?.(short)
+    }
+
+    /* ---------------- donations and transfers waiting for this point ---------------- */
+
+    /** The lists, redrawn only when they change (the form above them is left alone). */
+    #pending() {
+        const q = this.store.queue ?? {}
+        const key = JSON.stringify(q)
+        if (key === this.queueKey) return
+        this.queueKey = key
+        const toReceive = [...(q.scheduled ?? []), ...(q.incoming ?? [])]
+        const toDeliver = q.toDeliver ?? []
+        const outgoing = q.outgoing ?? []
+        const count = this.el.querySelector('.js-pending-count')
+        if (count) count.textContent = [toReceive.length && `${toReceive.length} por recibir`, toDeliver.length && `${toDeliver.length} por entregar`].filter(Boolean).join(' · ') || 'Nada pendiente'
+        const name = (id) => COLLECTION_POINTS.find((p) => p.id === id)?.name.replace('Punto de acopio ', '') ?? id
+        const items = (it) =>
+            Object.entries(it ?? {})
+                .filter(([id]) => SUPPLIES[id])
+                .map(([id, n]) => `${n} × ${SUPPLIES[id].label}`)
+                .join(', ')
+        const row = (ic, x, sub, action, label) => `
+            <li class="pend-row">
+                <span class="pend-icon">${icon(ic)}</span>
+                <span class="pend-text"><b>${esc(x.code)}</b><span>${esc(items(x.items))}</span><small>${esc(sub)}</small></span>
+                ${action ? `<button class="btn btn-primary pend-btn" type="button" data-action="${action}" data-code="${esc(x.code)}">${label}</button>` : ''}
+            </li>`
+        const list = (title, rows, empty) => `
+            <div class="pend-group"><h3>${title}</h3>${rows.length ? `<ul class="pend-list">${rows.join('')}</ul>` : `<p class="pend-empty">${empty}</p>`}</div>`
+        const lists = this.el.querySelector('.js-pending-lists')
+        if (!lists) return
+        lists.innerHTML =
+            list(
+                'Por recibir',
+                [
+                    ...(q.scheduled ?? []).map((d) => row('heart', d, d.slot || 'Entrega agendada', 'receive', 'Recibir')),
+                    ...(q.incoming ?? []).map((t) => row('truck', t, `Traslado desde ${name(t.from)}`, 'receive', 'Recibir')),
+                ],
+                'Nada por recibir. Cuando un donante agende una entrega o te envíen un traslado, aparece aquí.'
+            ) +
+            list(
+                'Por entregar a las familias',
+                toDeliver.map((d) => row('home', d, d.mode === 'money' ? 'Aporte en dinero · comprado por el equipo' : 'Recibido en el punto', 'deliver', 'Entregado')),
+                'Todo lo recibido ya se entregó.'
+            ) +
+            (outgoing.length ? list('Traslados enviados', outgoing.map((t) => row('truck', t, `En camino a ${name(t.to)}`)), '') : '')
+        hydrateIcons(lists)
+    }
+
+    /** A donation or a transfer arrived (typed, tapped or scanned): into the stock it goes. */
+    async #receive(text) {
+        const err = this.el.querySelector('.js-receive-error')
+        const input = this.el.querySelector('.js-receive-form input')
+        const code = readCode(text)
+        if (err) err.hidden = true
+        if (!code) {
+            this.audio.play('error')
+            if (err) {
+                err.textContent = 'Escribe el código del aporte (NX-…) o del traslado (TR-…).'
+                err.hidden = false
+            }
+            input?.focus()
+            return
+        }
+        const out = code.startsWith('TR-') ? await ledger.transferReceive(code, this.point.id) : await ledger.receive(code, this.point.id)
+        if (!out.ok) {
+            this.audio.play('error')
+            if (err) {
+                err.textContent = out.error
+                err.hidden = false
+            }
+            return
+        }
+        if (input) input.value = ''
+        const what = out.record ?? out.transfer
+        const list = Object.entries(what.items ?? {})
+            .filter(([id]) => SUPPLIES[id])
+            .map(([id, n]) => `${n} × ${esc(SUPPLIES[id].label)}`)
+            .join(', ')
+        if (out.already) {
+            this.audio.play('tap')
+            this.toast?.show(`<b>${code}</b> ya se había recibido. No se sumó otra vez.`, { duration: 4000 })
+        } else {
+            this.audio.play('confirm')
+            this.toast?.show(`<b>${code}</b> recibido: ${list} se sumaron al inventario.`, { duration: 5000 })
+        }
+        if (out.rows) this.store.take(out.rows)
+    }
+
+    async #deliver(code) {
+        const out = await ledger.deliver(code, this.point.id)
+        if (!out.ok) {
+            this.audio.play('error')
+            this.toast?.show(esc(out.error), { duration: 4000 })
+            return
+        }
+        this.audio.play('confirm')
+        this.toast?.show(`<b>${esc(code)}</b> entregado a las familias.`, { duration: 3500 })
+        this.store.take([])
+    }
+
+    /**
+     * Send supplies to another point. Each point shows how many supplies it has in crítico,
+     * and the one where this point's spare stock does most good (its crítico supplies count
+     * three times) is picked first. For every supply the form suggests just enough to bring
+     * the other point up to abastecido, never more than this one can spare (it keeps at least
+     * half of its cap), and nothing for what is already abastecido there. It all leaves this
+     * stock now, and enters the other point's when that point receives it.
+     */
+    #transferSheet() {
+        const board = session.stock
+        if (!this.store.ready || !board) return this.audio.play('error')
+        this.audio.play('tap')
+        const me = this.point.id
+        const others = COLLECTION_POINTS.filter((p) => p.id !== me)
+        const mine = (id) => this.store.get(id)
+        const spare = (id) => Math.max(0, mine(id) - Math.ceil(stockCap(id) * 0.5))
+        const need = (p, id) => board.need(p.id, id)
+        const toStocked = (p, id) => Math.max(0, Math.ceil(stockCap(id) * 0.75) - board.qty(p.id, id))
+        const suggest = (p, id) => (board.state(p.id, id).id === 'abastecido' ? 0 : Math.min(spare(id), toStocked(p, id)))
+        const critical = (p) => Object.keys(SUPPLIES).filter((id) => board.state(p.id, id).id === 'critico').length
+        const helps = (p) => Object.keys(SUPPLIES).reduce((n, id) => n + suggest(p, id) * (board.state(p.id, id).id === 'critico' ? 3 : 1), 0)
+        let dest = [...others].sort((a, b) => helps(b) - helps(a) || critical(b) - critical(a))[0]
+        const zoneName = (p) => ZONES.find((z) => z.id === p.zone)?.name ?? ''
+        const sheet = document.createElement('div')
+        sheet.className = 'xfer-sheet'
+        sheet.setAttribute('role', 'dialog')
+        sheet.setAttribute('aria-labelledby', 'xfer-title')
+        sheet.innerHTML = `
+            <div class="xfer-head">
+                <span class="track-mark">${icon('truck')}</span>
+                <div><h3 id="xfer-title">Enviar a otro punto</h3>
+                <p class="sub">Sale de tu inventario ahora y entra en el del otro punto cuando lo reciba.</p></div>
+                <button class="icon-btn js-xfer-close" type="button" aria-label="Cerrar" title="Cerrar">${icon('x')}</button>
+            </div>
+            <fieldset class="xfer-dest"><legend class="field-label">¿A qué punto?</legend>
+                ${others
+                    .map(
+                        (p) => `
+                    <label class="xfer-point">
+                        <input type="radio" name="dest" value="${p.id}" ${p.id === dest.id ? 'checked' : ''}>
+                        <span><b>${esc(zoneName(p))}</b><small>${esc(p.name.replace('Punto de acopio ', ''))}</small></span>
+                        <em class="${critical(p) ? 'is-critical' : ''}">${critical(p) ? `${critical(p)} ${critical(p) === 1 ? 'crítico' : 'críticos'}` : 'Sin críticos'}</em>
+                    </label>`
+                    )
+                    .join('')}
+            </fieldset>
+            <div class="xfer-items js-xfer-items"></div>
+            <p class="form-error js-xfer-error" role="alert" hidden></p>
+            <div class="xfer-foot">
+                <span class="js-xfer-total"></span>
+                <button class="btn btn-secondary js-xfer-close" type="button">Cancelar</button>
+                <button class="btn btn-primary js-xfer-send" type="button">${icon('truck')} Enviar</button>
+            </div>`
+        this.el.appendChild(sheet)
+        const qty = {}
+        const total = () => {
+            const n = Object.values(qty).reduce((a, b) => a + b, 0)
+            sheet.querySelector('.js-xfer-total').textContent = n ? `${n} ${n === 1 ? 'unidad' : 'unidades'} para ${zoneName(dest)}` : 'Elige qué enviar'
+            sheet.querySelector('.js-xfer-send').disabled = !n
+        }
+        const rows = () => {
+            const list = Object.values(SUPPLIES).filter((s) => mine(s.id) > 0)
+            for (const s of list) qty[s.id] = suggest(dest, s.id)
+            sheet.querySelector('.js-xfer-items').innerHTML = list.length
+                ? `<div class="xfer-row xfer-row-head"><span>Insumo</span><span>Tienes</span><span>Allá</span><span>Enviar</span></div>` +
+                  list
+                      .map((s) => {
+                          const st = board.state(dest.id, s.id)
+                          return `
+                    <div class="xfer-row">
+                        <span class="xfer-name">${esc(s.label)}</span>
+                        <span>${mine(s.id)}</span>
+                        <span><i class="stock-state" data-state="${st.id}">${st.label}</i>${need(dest, s.id) ? `<small>faltan ${need(dest, s.id)}</small>` : ''}</span>
+                        <input class="js-xfer-qty" type="number" inputmode="numeric" min="0" max="${mine(s.id)}" step="1" value="${qty[s.id]}" data-item="${s.id}" aria-label="Unidades de ${esc(s.label)} para enviar, de ${mine(s.id)}">
+                    </div>`
+                      })
+                      .join('')
+                : '<p class="pend-empty">Tu punto no tiene insumos para enviar.</p>'
+            sheet.querySelectorAll('.js-xfer-qty').forEach((input) =>
+                input.addEventListener('input', () => {
+                    const id = input.dataset.item
+                    const n = Math.max(0, Math.min(mine(id), Math.round(Number(input.value) || 0)))
+                    qty[id] = n
+                    total()
+                })
+            )
+            total()
+        }
+        rows()
+        hydrateIcons(sheet)
+        const close = () => {
+            sheet.remove()
+            this.el.querySelector('.js-transfer')?.focus()
+        }
+        sheet.querySelectorAll('.js-xfer-close').forEach((b) => b.addEventListener('click', close))
+        sheet.addEventListener('keydown', (e) => e.key === 'Escape' && close())
+        sheet.querySelectorAll('input[name="dest"]').forEach((r) =>
+            r.addEventListener('change', () => {
+                dest = others.find((p) => p.id === r.value)
+                rows()
+            })
+        )
+        sheet.querySelector('input[name="dest"]:checked')?.focus()
+        sheet.querySelector('.js-xfer-send').addEventListener('click', async (e) => {
+            const items = Object.fromEntries(Object.entries(qty).filter(([, n]) => n > 0))
+            if (!Object.keys(items).length) return this.audio.play('error')
+            e.currentTarget.disabled = true
+            const out = await ledger.transfer(me, dest.id, items)
+            if (!out.ok) {
+                e.currentTarget.disabled = false
+                this.audio.play('error')
+                const err = sheet.querySelector('.js-xfer-error')
+                err.textContent = out.error
+                err.hidden = false
+                return
+            }
+            close()
+            this.audio.play('confirm')
+            this.toast?.show(`Traslado <b>${out.transfer.code}</b> en camino a ${esc(zoneName(dest))}.`, { duration: 5000 })
+            if (out.rows) this.store.take(out.rows)
+        })
+    }
+
+    /** The camera reads a donation's QR; whatever it finds is received like a typed code. */
+    async #scan() {
+        this.audio.play('tap')
+        const sheet = document.createElement('div')
+        sheet.className = 'scan-sheet'
+        sheet.setAttribute('role', 'dialog')
+        sheet.setAttribute('aria-label', 'Escanear el código QR de un aporte')
+        sheet.innerHTML = `
+            <div class="scan-box">
+                <video class="scan-video" playsinline muted></video>
+                <span class="scan-frame" aria-hidden="true"></span>
+            </div>
+            <p class="scan-hint">Apunta la cámara al código QR del aporte.</p>
+            <button class="btn btn-secondary js-scan-cancel" type="button">Cancelar</button>`
+        this.el.appendChild(sheet)
+        const scan = scanQr(sheet.querySelector('video'))
+        const close = () => {
+            scan.stop()
+            sheet.remove()
+            this.el.querySelector('.js-scan')?.focus()
+        }
+        sheet.querySelector('.js-scan-cancel').addEventListener('click', close)
+        sheet.querySelector('.js-scan-cancel').focus()
+        sheet.addEventListener('keydown', (e) => e.key === 'Escape' && close())
+        let text = null
+        try {
+            text = await scan.result
+        } catch {
+            close()
+            this.audio.play('error')
+            this.toast?.show('No pudimos usar la cámara. Escribe el código del aporte en el campo de arriba.', { duration: 5000 })
+            return
+        }
+        close()
+        if (text) this.#receive(text)
     }
 }
 

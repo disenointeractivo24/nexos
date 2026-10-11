@@ -16,9 +16,18 @@
  * La aplicación no guarda ninguna credencial de Google: este script corre como
  * la persona dueña de la hoja y expone tres llamadas.
  *
- *   GET  ?action=read&point=<id>   → { ok, rows:[{ point,item,qty,cap,updatedAt,by }] }
- *   GET  ?action=all               → { ok, points:{ <id>: rows } }   (lo que ven los donantes)
+ *   GET  ?action=read&point=<id>   → { ok, rows:[{ point,item,qty,cap,updatedAt,by }], queue }
+ *   GET  ?action=all               → { ok, points:{ <id>: rows }, events }   (lo que ven los donantes)
+ *   GET  ?action=aporte&code=<c>   → { ok, record } o { ok, transfer }   (seguimiento de un aporte)
  *   POST { action:'set', point, items:[{item,qty}], by }   (by:'donor' → Origen "Donación")
+ *   POST { action:'donate', record }              un aporte nuevo (físico: Agendado; dinero: Recibido)
+ *   POST { action:'receive', code, point }        el punto recibió un aporte físico → suma al inventario
+ *   POST { action:'deliver', code, point }        las familias lo recogieron
+ *   POST { action:'transfer', code, from, to, items }      un traslado sale del punto
+ *   POST { action:'transferReceive', code, point }         y entra en el otro
+ *
+ * Los aportes y los traslados se anotan en las pestañas "Aportes" y "Traslados"
+ * (se crean solas la primera vez que se usan).
  *
  * Cómo publicarlo:
  *   1. Extensiones → Apps Script. Pega este archivo y guarda.
@@ -62,7 +71,7 @@ function stateFormula_(row) {
 }
 
 /** De dónde vino el último cambio de una fila. */
-var ORIGINS = ['App', 'Hoja', 'Donación']
+var ORIGINS = ['App', 'Hoja', 'Donación', 'Traslado']
 
 /**
  * Velocidad: cada llamada a Apps Script ya tarda cerca de un segundo en
@@ -538,17 +547,386 @@ function write_(point, items, origin) {
   return rowsFromBlock_(point, block)
 }
 
+/* ---------------- aportes y traslados ---------------- */
+
+/**
+ * Cada aporte y cada traslado queda como una fila, con su estado:
+ *
+ *   Aportes     Agendado → Recibido → Entregado   (en dinero: Recibido desde el principio)
+ *   Traslados   En camino → Recibido
+ *
+ * Un aporte físico solo se suma al inventario del punto cuando el punto lo recibe
+ * (escanea el QR o escribe el código). Un traslado sale del inventario del punto
+ * que lo envía al enviarlo, y entra en el del otro cuando este lo recibe.
+ *
+ * Aquí no se guarda ningún dato personal (nombre, teléfono, correo): la URL /exec
+ * es pública y cualquiera con un código puede ver el estado de ese aporte.
+ */
+var DONATIONS_TAB = 'Aportes'
+var TRANSFERS_TAB = 'Traslados'
+var DONATION_HEADERS = ['Código', 'Estado', 'Modo', 'Punto', 'Barrio', 'Insumos', 'Valor', 'Cita', 'Registrado', 'Recibido', 'Entregado', 'items']
+var DCOL = { code: 1, state: 2, mode: 3, point: 4, barrio: 5, label: 6, value: 7, slot: 8, at: 9, received: 10, delivered: 11, items: 12 }
+var TRANSFER_HEADERS = ['Código', 'Estado', 'Desde', 'Hacia', 'Insumos', 'Enviado', 'Recibido', 'items']
+var TCOL = { code: 1, state: 2, from: 3, to: 4, label: 5, sent: 6, received: 7, items: 8 }
+var DONATION_STATES = ['Agendado', 'Recibido', 'Entregado']
+var TRANSFER_STATES = ['En camino', 'Recibido']
+/** Lo que el mapa en vivo alcanza a mostrar: los últimos eventos, durante unos minutos. */
+var EVENTS_KEEP = 40
+var EVENTS_SECONDS = 900
+/** Cuántas filas recientes lee el script para armar la lista de un punto. */
+var RECENT_ROWS = 300
+
+/** La pestaña de aportes o de traslados; la crea con su formato si no existe. */
+function logSheet_(name) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet()
+  var sh = ss.getSheetByName(name)
+  if (sh) return sh
+  var donations = name === DONATIONS_TAB
+  var headers = donations ? DONATION_HEADERS : TRANSFER_HEADERS
+  sh = ss.insertSheet(name)
+  sh.getRange(1, 1, 1, headers.length - 1).merge()
+    .setValue(donations ? 'Aportes de los donantes' : 'Traslados entre puntos de acopio')
+    .setBackground(NAVY).setFontColor('#FFFFFF').setFontWeight('bold').setFontSize(14).setVerticalAlignment('middle')
+  sh.setRowHeight(1, 36)
+  sh.getRange(2, 1, 1, headers.length - 1).merge()
+    .setValue(donations
+      ? 'Una fila por aporte. La aplicación la escribe sola: un aporte físico queda Agendado y se suma al inventario cuando el punto lo recibe; en dinero entra Recibido. El punto marca Entregado cuando las familias lo recogen.'
+      : 'Una fila por traslado. Sale del inventario del punto que lo envía al enviarlo, y entra en el del otro cuando este marca Recibido.')
+    .setFontColor(NOTE_FG).setFontStyle('italic').setFontSize(9).setWrap(true)
+  sh.setRowHeight(2, 30)
+  sh.getRange(HEAD_ROW, 1, 1, headers.length).setValues([headers])
+    .setBackground(HEAD_BG).setFontWeight('bold').setFontColor(NAVY)
+  sh.setFrozenRows(HEAD_ROW)
+  sh.hideColumns(headers.length)
+  var dates = donations ? [DCOL.at, DCOL.received, DCOL.delivered] : [TCOL.sent, TCOL.received]
+  for (var i = 0; i < dates.length; i++) sh.getRange(FIRST_ROW, dates[i], 1000, 1).setNumberFormat(DATE_FORMAT)
+  if (donations) sh.getRange(FIRST_ROW, DCOL.value, 1000, 1).setNumberFormat('$#,##0')
+  sh.setColumnWidth(donations ? DCOL.label : TCOL.label, 320)
+  return sh
+}
+
+/** Busca una fila por su código. → { sh, row (número de fila), values } o null */
+function findCode_(name, code) {
+  var sh = logSheet_(name)
+  var last = sh.getLastRow()
+  if (last < FIRST_ROW) return null
+  var width = name === DONATIONS_TAB ? DONATION_HEADERS.length : TRANSFER_HEADERS.length
+  var found = sh.getRange(FIRST_ROW, 1, last - FIRST_ROW + 1, 1).createTextFinder(String(code)).matchEntireCell(true).findNext()
+  if (!found) return null
+  var row = found.getRow()
+  return { sh: sh, row: row, values: sh.getRange(row, 1, 1, width).getValues()[0] }
+}
+
+/** Las filas más recientes de una pestaña (para las listas de un punto). */
+function recentRows_(name) {
+  var sh = logSheet_(name)
+  var last = sh.getLastRow()
+  if (last < FIRST_ROW) return []
+  var first = Math.max(FIRST_ROW, last - RECENT_ROWS + 1)
+  var width = name === DONATIONS_TAB ? DONATION_HEADERS.length : TRANSFER_HEADERS.length
+  return sh.getRange(first, 1, last - first + 1, width).getValues()
+}
+
+/** { item: cantidad } limpio: solo insumos del catálogo y cantidades enteras positivas. */
+function cleanItems_(items) {
+  var out = {}
+  for (var id in (items || {})) {
+    var it = itemById_(id)
+    var n = Math.round(Number(items[id]) || 0)
+    if (it && n > 0) out[id] = Math.min(n, it.cap)
+  }
+  return out
+}
+
+function itemsLabel_(items) {
+  var parts = []
+  for (var i = 0; i < ITEMS.length; i++) {
+    var it = ITEMS[i]
+    if (items[it.id]) parts.push(items[it.id] + ' × ' + it.label)
+  }
+  return parts.join(', ')
+}
+
+function parseItems_(text) {
+  try {
+    return cleanItems_(JSON.parse(String(text || '{}')))
+  } catch (e) {
+    return {}
+  }
+}
+
+function iso_(d) {
+  return d ? new Date(d).toISOString() : null
+}
+
+function donationFromRow_(v) {
+  return {
+    code: String(v[DCOL.code - 1]),
+    state: String(v[DCOL.state - 1]),
+    mode: v[DCOL.mode - 1] === 'Dinero' ? 'money' : 'physical',
+    point: String(v[DCOL.point - 1]),
+    barrio: String(v[DCOL.barrio - 1]),
+    items: parseItems_(v[DCOL.items - 1]),
+    value: Number(v[DCOL.value - 1]) || 0,
+    slot: String(v[DCOL.slot - 1] || ''),
+    at: iso_(v[DCOL.at - 1]),
+    receivedAt: iso_(v[DCOL.received - 1]),
+    deliveredAt: iso_(v[DCOL.delivered - 1]),
+  }
+}
+
+function transferFromRow_(v) {
+  return {
+    code: String(v[TCOL.code - 1]),
+    state: String(v[TCOL.state - 1]),
+    from: String(v[TCOL.from - 1]),
+    to: String(v[TCOL.to - 1]),
+    items: parseItems_(v[TCOL.items - 1]),
+    at: iso_(v[TCOL.sent - 1]),
+    receivedAt: iso_(v[TCOL.received - 1]),
+  }
+}
+
+/** Lo que tiene un punto ahora: { item: cantidad } */
+function stockOf_(point) {
+  var out = {}
+  var rows = rowsFor_(point)
+  for (var i = 0; i < rows.length; i++) out[rows[i].item] = rows[i].qty
+  return out
+}
+
+/** Suma (o resta, con cantidades negativas) al inventario de un punto. Devuelve sus filas. */
+function addStock_(point, deltas, origin) {
+  var now = stockOf_(point)
+  var items = []
+  for (var id in deltas) items.push({ item: id, qty: (now[id] || 0) + deltas[id] })
+  var rows = write_(point, items, origin)
+  remember_(point, rows)
+  return rows
+}
+
+/** Anota un evento para el mapa en vivo de todos los dispositivos. */
+function event_(kind, point, extra) {
+  try {
+    var cache = CacheService.getScriptCache()
+    var list = JSON.parse(cache.get('events') || '[]')
+    var e = { id: kind + ':' + (extra && extra.code ? extra.code : Date.now()), kind: kind, point: point.id, at: new Date().toISOString() }
+    if (extra && extra.to) e.to = extra.to
+    list.push(e)
+    if (list.length > EVENTS_KEEP) list = list.slice(list.length - EVENTS_KEEP)
+    cache.put('events', JSON.stringify(list), EVENTS_SECONDS)
+  } catch (err) {}
+}
+
+function events_() {
+  try {
+    return JSON.parse(CacheService.getScriptCache().get('events') || '[]')
+  } catch (e) {
+    return []
+  }
+}
+
+var CODE_RE = /^NX-[A-Z0-9]{4,8}$/
+
+/** Un donante confirmó un aporte. Si el código ya existe, no se duplica. */
+function donate_(body) {
+  var r = body.record || {}
+  var code = String(r.code || '').toUpperCase()
+  if (!CODE_RE.test(code)) throw new Error('Código de aporte inválido')
+  var point = pointById_(r.point)
+  if (!point) throw new Error('Punto de acopio desconocido: ' + r.point)
+  var items = cleanItems_(r.items)
+  if (!Object.keys(items).length) throw new Error('El aporte no trae insumos')
+  var existing = findCode_(DONATIONS_TAB, code)
+  if (existing) return { record: donationFromRow_(existing.values) }
+
+  var money = r.mode === 'money'
+  var now = new Date()
+  var sh = logSheet_(DONATIONS_TAB)
+  var row = []
+  row[DCOL.code - 1] = code
+  row[DCOL.state - 1] = money ? 'Recibido' : 'Agendado'
+  row[DCOL.mode - 1] = money ? 'Dinero' : 'Físico'
+  row[DCOL.point - 1] = point.id
+  row[DCOL.barrio - 1] = String(r.barrio || '').slice(0, 60)
+  row[DCOL.label - 1] = itemsLabel_(items)
+  row[DCOL.value - 1] = Math.max(0, Math.round(Number(r.value) || 0))
+  row[DCOL.slot - 1] = String(r.slot || '').slice(0, 120)
+  row[DCOL.at - 1] = now
+  row[DCOL.received - 1] = money ? now : ''
+  row[DCOL.delivered - 1] = ''
+  row[DCOL.items - 1] = JSON.stringify(items)
+  sh.appendRow(row)
+  // en dinero, el equipo compra los insumos y quedan en el punto de una vez
+  var rows = money ? addStock_(point, items, 'Donación') : null
+  event_(money ? 'recibido' : 'aporte', point, { code: code })
+  return { record: donationFromRow_(row), rows: rows }
+}
+
+/** El punto recibió un aporte físico (escaneó el QR o escribió el código). */
+function receive_(body) {
+  var code = String(body.code || '').toUpperCase().trim()
+  var point = pointById_(body.point)
+  if (!point) throw new Error('Punto de acopio desconocido: ' + body.point)
+  var hit = findCode_(DONATIONS_TAB, code)
+  if (!hit) throw new Error('No encontramos el aporte ' + code)
+  var rec = donationFromRow_(hit.values)
+  if (rec.point !== point.id) {
+    var other = pointById_(rec.point)
+    throw new Error('Este aporte es para ' + (other ? other.name : 'otro punto'))
+  }
+  if (rec.state !== 'Agendado') return { record: rec, already: true, rows: rowsFor_(point) }
+  var now = new Date()
+  hit.sh.getRange(hit.row, DCOL.state).setValue('Recibido')
+  hit.sh.getRange(hit.row, DCOL.received).setValue(now)
+  var rows = addStock_(point, rec.items, 'Donación')
+  rec.state = 'Recibido'
+  rec.receivedAt = now.toISOString()
+  event_('recibido', point, { code: code })
+  return { record: rec, rows: rows }
+}
+
+/** Las familias recogieron lo de un aporte. */
+function deliver_(body) {
+  var code = String(body.code || '').toUpperCase().trim()
+  var point = pointById_(body.point)
+  if (!point) throw new Error('Punto de acopio desconocido: ' + body.point)
+  var hit = findCode_(DONATIONS_TAB, code)
+  if (!hit) throw new Error('No encontramos el aporte ' + code)
+  var rec = donationFromRow_(hit.values)
+  if (rec.point !== point.id) throw new Error('Este aporte es de otro punto')
+  if (rec.state === 'Entregado') return { record: rec, already: true }
+  if (rec.state !== 'Recibido') throw new Error('Primero hay que recibir el aporte en el punto')
+  var now = new Date()
+  hit.sh.getRange(hit.row, DCOL.state).setValue('Entregado')
+  hit.sh.getRange(hit.row, DCOL.delivered).setValue(now)
+  rec.state = 'Entregado'
+  rec.deliveredAt = now.toISOString()
+  event_('entregado', point, { code: code })
+  return { record: rec }
+}
+
+/** Un punto envía insumos a otro: salen de su inventario ya mismo, y quedan En camino. */
+function transfer_(body) {
+  var from = pointById_(body.from)
+  var to = pointById_(body.to)
+  if (!from || !to || from.id === to.id) throw new Error('Elige un punto de destino distinto')
+  var want = cleanItems_(body.items)
+  var have = stockOf_(from)
+  var items = {}
+  for (var id in want) if ((have[id] || 0) > 0) items[id] = Math.min(want[id], have[id])
+  if (!Object.keys(items).length) throw new Error('No hay insumos para enviar')
+  var code = String(body.code || '').toUpperCase()
+  if (!/^TR-[A-Z0-9]{4,8}$/.test(code)) throw new Error('Código de traslado inválido')
+  var existing = findCode_(TRANSFERS_TAB, code)
+  if (existing) return { transfer: transferFromRow_(existing.values), rows: rowsFor_(from) }
+  var minus = {}
+  for (var k in items) minus[k] = -items[k]
+  var rows = addStock_(from, minus, 'Traslado')
+  var now = new Date()
+  var row = []
+  row[TCOL.code - 1] = code
+  row[TCOL.state - 1] = 'En camino'
+  row[TCOL.from - 1] = from.id
+  row[TCOL.to - 1] = to.id
+  row[TCOL.label - 1] = itemsLabel_(items)
+  row[TCOL.sent - 1] = now
+  row[TCOL.received - 1] = ''
+  row[TCOL.items - 1] = JSON.stringify(items)
+  logSheet_(TRANSFERS_TAB).appendRow(row)
+  event_('traslado', from, { code: code, to: to.id })
+  return { transfer: transferFromRow_(row), rows: rows }
+}
+
+/** El punto de destino recibió un traslado: entra a su inventario. */
+function transferReceive_(body) {
+  var code = String(body.code || '').toUpperCase().trim()
+  var point = pointById_(body.point)
+  if (!point) throw new Error('Punto de acopio desconocido: ' + body.point)
+  var hit = findCode_(TRANSFERS_TAB, code)
+  if (!hit) throw new Error('No encontramos el traslado ' + code)
+  var t = transferFromRow_(hit.values)
+  if (t.to !== point.id) throw new Error('Este traslado va para otro punto')
+  if (t.state !== 'En camino') return { transfer: t, already: true, rows: rowsFor_(point) }
+  var now = new Date()
+  hit.sh.getRange(hit.row, TCOL.state).setValue('Recibido')
+  hit.sh.getRange(hit.row, TCOL.received).setValue(now)
+  var rows = addStock_(point, t.items, 'Traslado')
+  t.state = 'Recibido'
+  t.receivedAt = now.toISOString()
+  event_('traslado-recibido', point, { code: code })
+  return { transfer: t, rows: rows }
+}
+
+/** Consulta pública de un aporte o un traslado por su código. */
+function lookup_(code) {
+  code = String(code || '').toUpperCase().trim()
+  if (/^TR-/.test(code)) {
+    var t = findCode_(TRANSFERS_TAB, code)
+    return t ? { transfer: transferFromRow_(t.values) } : null
+  }
+  var d = findCode_(DONATIONS_TAB, code)
+  return d ? { record: donationFromRow_(d.values) } : null
+}
+
+/** Lo pendiente de un punto: aportes por recibir y por entregar, y traslados que llegan o salieron. */
+function queue_(point) {
+  var out = { scheduled: [], toDeliver: [], incoming: [], outgoing: [] }
+  var ds = recentRows_(DONATIONS_TAB)
+  for (var i = ds.length - 1; i >= 0; i--) {
+    if (String(ds[i][DCOL.point - 1]) !== point.id) continue
+    var st = String(ds[i][DCOL.state - 1])
+    if (st === 'Agendado') out.scheduled.push(donationFromRow_(ds[i]))
+    else if (st === 'Recibido') out.toDeliver.push(donationFromRow_(ds[i]))
+  }
+  var ts = recentRows_(TRANSFERS_TAB)
+  for (var j = ts.length - 1; j >= 0; j--) {
+    if (String(ts[j][TCOL.state - 1]) !== 'En camino') continue
+    if (String(ts[j][TCOL.to - 1]) === point.id) out.incoming.push(transferFromRow_(ts[j]))
+    else if (String(ts[j][TCOL.from - 1]) === point.id) out.outgoing.push(transferFromRow_(ts[j]))
+  }
+  return out
+}
+
+/** La lista de un punto, de la memoria si está (cada cambio de aportes o traslados la borra). */
+function queueFast_(point) {
+  var key = 'queue:' + point.id
+  try {
+    var hit = CacheService.getScriptCache().get(key)
+    if (hit) return JSON.parse(hit)
+  } catch (e) {}
+  var q = queue_(point)
+  try {
+    CacheService.getScriptCache().put(key, JSON.stringify(q), CACHE_SECONDS)
+  } catch (e) {}
+  return q
+}
+
+function forgetQueues_() {
+  try {
+    CacheService.getScriptCache().removeAll(POINTS.map(function (p) { return 'queue:' + p.id }))
+  } catch (e) {}
+}
+
+
 function doGet(e) {
   try {
     ensure_()
     var action = (e && e.parameter && e.parameter.action) || 'read'
-    if (action === 'all') return json_({ ok: true, points: allRowsFast_(), serverTime: new Date().toISOString() })
+    if (action === 'all') return json_({ ok: true, points: allRowsFast_(), events: events_(), serverTime: new Date().toISOString() })
+    if (action === 'aporte') {
+      var found = lookup_(e.parameter.code)
+      if (!found) return json_({ ok: false, notFound: true, error: 'No encontramos ese código' })
+      found.ok = true
+      found.serverTime = new Date().toISOString()
+      return json_(found)
+    }
     if (action !== 'read') return json_({ ok: false, error: 'Acción no soportada: ' + action })
     var point = pointById_(e.parameter.point)
     if (!point) return json_({ ok: false, error: 'Punto de acopio desconocido: ' + e.parameter.point })
-    return json_({ ok: true, rows: rowsFast_(point), serverTime: new Date().toISOString() })
+    return json_({ ok: true, rows: rowsFast_(point), queue: queueFast_(point), serverTime: new Date().toISOString() })
   } catch (err) {
-    return json_({ ok: false, error: String(err) })
+    return json_({ ok: false, error: errorText_(err) })
   }
 }
 
@@ -556,13 +934,21 @@ function doPost(e) {
   try {
     ensure_()
   } catch (err) {
-    return json_({ ok: false, error: String(err) })
+    return json_({ ok: false, error: errorText_(err) })
   }
   var lock = LockService.getScriptLock()
   try {
     // dos voluntarios pueden guardar al mismo tiempo; las escrituras van en fila
     lock.waitLock(20000)
     var body = JSON.parse((e && e.postData && e.postData.contents) || '{}')
+    var handlers = { donate: donate_, receive: receive_, deliver: deliver_, transfer: transfer_, transferReceive: transferReceive_ }
+    if (handlers[body.action]) {
+      var out = handlers[body.action](body)
+      forgetQueues_()
+      out.ok = true
+      out.serverTime = new Date().toISOString()
+      return json_(out)
+    }
     if (body.action !== 'set') return json_({ ok: false, error: 'Acción no soportada: ' + body.action })
     var point = pointById_(body.point)
     if (!point) return json_({ ok: false, error: 'Punto de acopio desconocido: ' + body.point })
@@ -573,7 +959,7 @@ function doPost(e) {
     remember_(point, rows)
     return json_({ ok: true, rows: rows, serverTime: new Date().toISOString() })
   } catch (err) {
-    return json_({ ok: false, error: String(err) })
+    return json_({ ok: false, error: errorText_(err) })
   } finally {
     try {
       lock.releaseLock()
@@ -588,6 +974,8 @@ function doPost(e) {
 function onEdit(e) {
   if (!e || !e.range) return
   var sh = e.range.getSheet()
+  // a hand edit of a donation or a transfer: the points' lists are read again
+  if (sh.getName() === DONATIONS_TAB || sh.getName() === TRANSFERS_TAB) return forgetQueues_()
   var zone = null
   for (var i = 0; i < POINTS.length; i++) if (POINTS[i].tab === sh.getName()) zone = POINTS[i]
   if (!zone) return
@@ -603,4 +991,9 @@ function onEdit(e) {
     if (!sh.getRange(r, COL.id).getValue()) continue
     sh.getRange(r, COL.at, 1, 2).setValues([[now, 'Hoja']])
   }
+}
+
+/** El mensaje de un error, sin el "Error: " que le antepone Apps Script. */
+function errorText_(err) {
+  return String((err && err.message) || err).replace(/^Error:\s*/, '')
 }

@@ -28,6 +28,23 @@ tablero del punto), `Hoja` (alguien la editó a mano) o `Donación` (un donante
 confirmó un aporte). Una columna oculta, `id`, une cada fila con el insumo de
 la aplicación, así que las filas se pueden reordenar sin romper nada.
 
+- **Aportes**: una fila por aporte de un donante, con su código (`NX-…`), su
+  estado, el punto, lo que trae, el valor y la franja en que lo llevará.
+
+  | Estado | Qué significa |
+  | --- | --- |
+  | Agendado | Un aporte para llevar en persona. Todavía **no** cuenta en el inventario. |
+  | Recibido | El punto lo recibió: escaneó su QR o escribió el código. Ahí se suma al inventario. Un aporte en dinero entra ya Recibido, porque el equipo compra los insumos. |
+  | Entregado | Las familias lo recogieron. El punto lo marca en su tablero. |
+
+- **Traslados**: una fila por envío de un punto a otro (`TR-…`). Sale del
+  inventario del punto que lo envía en cuanto se envía, queda **En camino**, y
+  entra en el inventario del otro punto cuando este lo marca **Recibido**.
+
+Estas dos pestañas se crean solas la primera vez que se usan, y la aplicación
+las escribe sola. No se guarda ningún dato personal (ni nombre ni teléfono):
+cualquiera que tenga un código puede ver el estado de ese aporte, y nada más.
+
 ## Instalarlo o actualizarlo
 
 1. Abre la hoja y entra a **Extensiones → Apps Script**. Borra lo que haya, pega
@@ -57,6 +74,17 @@ la aplicación, así que las filas se pueden reordenar sin romper nada.
    Mientras actualices el script con «Administrar implementaciones → Nueva
    versión», la URL no cambia y no hay que tocar nada más.
 
+### Al actualizar a la versión con aportes y traslados
+
+Basta con los pasos 1 y 3: pegar el `Codigo.gs` nuevo y publicar una **nueva
+versión** de la implementación existente. La URL no cambia y no hay que tocar los
+`.env`. No hace falta volver a ejecutar `organizarHoja`: las pestañas
+«Aportes» y «Traslados» aparecen con el primer aporte.
+
+Si la aplicación nueva llega a usarse antes de actualizar el script, nada se
+rompe: los aportes se suman al inventario como antes. Solo falta el seguimiento,
+y quien busque su código verá que todavía no está activo.
+
 ## Qué lee y escribe la aplicación
 
 - El tablero de un punto lee y escribe su pestaña.
@@ -64,9 +92,18 @@ la aplicación, así que las filas se pueden reordenar sin romper nada.
   donante es exactamente la hoja: «Se necesitan» es tope − cantidad, insumo por
   insumo; el nivel de la zona y los «Faltan» del mapa salen del estado de sus
   insumos; y «Urgente» es lo que está en crítico.
-- Cuando un donante confirma un aporte, se suma a la cantidad del punto
-  (Origen: `Donación`), así que el tablero del punto, la hoja y el siguiente
-  donante lo ven a la vez.
+- Cuando un donante confirma un aporte, queda en «Aportes». Si es en dinero, se
+  suma de una vez a la cantidad del punto (Origen: `Donación`). Si lo lleva en
+  persona, se suma cuando el punto lo recibe. Así el tablero del punto, la hoja y
+  el siguiente donante lo ven a la vez.
+- Un traslado resta del punto que lo envía y suma al que lo recibe (Origen:
+  `Traslado`).
+- La lectura de un punto trae también su lista de pendientes: aportes por
+  recibir y por entregar, y traslados que le llegan o que envió.
+- La lectura de todos los puntos trae los últimos aportes y traslados, para el
+  mapa en vivo.
+- `?action=aporte&code=NX-…` devuelve el estado de un aporte. Es lo que abre el
+  QR de cada aporte.
 
 ## Tiempo real
 

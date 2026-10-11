@@ -15,7 +15,7 @@ import { Depot, DEPOT_BOUNDS } from '../three/Depot.js'
 import { HOUSE_MODELS, ASSETS } from '../data/assets.js'
 import { ZONES, NEED_WORD, buildBarrio, zoneLevel, zoneNeeds, applyDonation, barrioCovered, useStock, refreshBarrioNeeds } from '../data/zones.js'
 import { CATEGORIES, SUPPLIES, money } from '../data/catalog.js'
-import { validateCredentials, pointForZone } from '../data/collectionPoints.js'
+import { validateCredentials, pointForZone, COLLECTION_POINTS } from '../data/collectionPoints.js'
 import { Labels, Bubble } from '../ui/Labels.js'
 import { ZoneCard, DonorPanel, InventoryPanel, isNarrow } from '../ui/panels.js'
 import { InventoryStore } from './inventoryStore.js'
@@ -27,8 +27,13 @@ import { stockState } from '../data/inventory.js'
 import { Progress, STEPS } from '../ui/Progress.js'
 import { icon, hydrateIcons } from '../ui/icons.js'
 import { Toast, Dialog } from '../ui/feedback.js'
+import { TrackView } from '../ui/track.js'
+import { ledger, localQueue } from './donations.js'
+import { setLite } from '../lite/detect.js'
 import { makeNeighbour } from '../three/neighbour.js'
 import { session } from './session.js'
+
+const COLLECTION_POINTS_BY_ID = Object.fromEntries(COLLECTION_POINTS.map((p) => [p.id, p]))
 import { Audio } from './audio.js'
 
 /**
@@ -134,6 +139,8 @@ export class App {
 
         this.toast = new Toast(this.$('.toast'), { reducedMotion: this.reducedMotion })
         this.dialog = new Dialog(this.$('.dialog-backdrop'), { reducedMotion: this.reducedMotion })
+        // ¿Dónde está mi ayuda?: from the first screen, the end of a donation, or a donation's QR link
+        this.track = new TrackView(this.$('.track'), { reducedMotion: this.reducedMotion, audio: this.audio })
         const opts = { reducedMotion: this.reducedMotion, audio: this.audio, toast: this.toast, dialog: this.dialog }
         const panelEl = this.$('.supply-panel')
         this.zoneCard = new ZoneCard(this.$('.zone-card'), opts, {
@@ -146,6 +153,7 @@ export class App {
             onClose: () => this.closePoint(),
             onStep: (step) => this.#onDonorStep(step),
             onConfirm: (barrio, basket, record) => this.registerSupport(barrio, basket, record),
+            onTrack: (code) => this.track.show(code),
             onExitMap: () => this.returnToMap(),
             // whatever goes into the basket appears on the stand's counter
             onBasket: (basket) => this.hood?.setDisplay(basket),
@@ -166,6 +174,12 @@ export class App {
         session.stock = this.board
         this.board.on(() => this.#onStock())
         this.board.start()
+        // donations made offline go out as soon as the sheet answers again
+        this.board.on(() => ledger.flush())
+        ledger.flush()
+        // what is done on this device shows on the live map at once; the rest arrives with the sheet
+        ledger.on((e) => this.board.event({ ...e, id: `${e.kind}:${e.code}`, at: new Date().toISOString() }))
+        this.board.onEvent((e) => this.#live(e))
 
         this.state = 'boot'
         this.intro = { p: 0, target: 0, auto: false }
@@ -207,6 +221,9 @@ export class App {
         setTimeout(() => {
             this.setState('role')
             this.$('.role-donor').focus({ preventScroll: true })
+            // opened from a donation's QR or link: show where that donation is
+            const code = new URLSearchParams(location.search).get('aporte')
+            if (code) this.track.show(code)
         }, 80)
         this.world = this.#loadWorld().catch((err) => {
             console.error(err)
@@ -387,7 +404,7 @@ export class App {
         session.point = point
         // the board is live from this moment: the sheet is read while the camera descends
         this.inventory?.stop()
-        this.inventory = new InventoryStore({ pointId: point.id })
+        this.inventory = new InventoryStore({ pointId: point.id, localQueue })
         this.inventory.start()
         form.querySelectorAll('input').forEach((i) => i.removeAttribute('aria-invalid'))
         gsap.to(form, {
@@ -1134,9 +1151,18 @@ export class App {
     registerSupport(barrio, basket, record) {
         // the panel plays the completion sound as it moves to its last step
         const served = applyDonation(barrio, basket)
-        // the donation goes onto the point's shelves and into the sheet, so the point's board,
-        // the sheet and the next donor all count it
-        this.board.donate(pointForZone(barrio.zone.id).id, basket)
+        // The donation is recorded in the sheet, where it can be followed by its code. In money,
+        // the team buys the supplies and they count in the point's stock at once (shown here
+        // straight away; the sheet adds them itself). Brought in person, they count only when the
+        // point receives them and scans the donation's QR.
+        const pointId = pointForZone(barrio.zone.id).id
+        if (record.mode === 'money') this.board.donate(pointId, basket, { push: false })
+        ledger.donate({ ...record, point: pointId }).then((out) => {
+            if (out.rows) this.board.applyRows(pointId, out.rows)
+            // a sheet with the previous script: the donation goes into the stock straight away, as before
+            if (out.unsupported) record.mode === 'money' ? this.board.resend(pointId, basket.keys()) : this.board.donate(pointId, basket)
+            else if (!out.ok) console.warn('[NEXOS] La hoja no registró el aporte:', out.error)
+        })
         session.donations.push(record)
         // what was left stays on the counter, and the families come in line to take their share of it
         this.hood.commitDisplay()
@@ -1148,6 +1174,30 @@ export class App {
             `[NEXOS] Aporte ${record.code} (${record.mode === 'physical' ? 'entrega física' : 'dinero, demostración'}) · ${barrio.name} · ${money(record.value)} · ${served.length} ${served.length === 1 ? 'familia' : 'familias'}`,
             Object.fromEntries([...basket].map(([k, v]) => [SUPPLIES[k].label, v]))
         )
+    }
+
+    /**
+     * Live map: a donation or a transfer just happened somewhere. On the map of Cali it pulses
+     * over its zone and a short line says what it was; elsewhere it passes quietly.
+     */
+    #live(e) {
+        const onMap = ['city', 'zone'].includes(this.state)
+        if (onMap) this.city?.pulse(e)
+        const zone = (pointId) => ZONES.find((z) => z.id === COLLECTION_POINTS_BY_ID[pointId]?.zone)?.name ?? ''
+        const text = {
+            aporte: `Nuevo aporte agendado · ${zone(e.point)}`,
+            recibido: `Llegó un aporte al punto · ${zone(e.point)}`,
+            entregado: `Las familias recogieron un aporte · ${zone(e.point)}`,
+            traslado: `Traslado en camino · ${zone(e.point)} → ${zone(e.to)}`,
+            'traslado-recibido': `Traslado recibido · ${zone(e.point)}`,
+        }[e.kind]
+        const note = this.$('.live-note')
+        if (!note || !text || !onMap) return
+        note.querySelector('.live-text').textContent = text
+        note.hidden = false
+        gsap.killTweensOf(note)
+        gsap.fromTo(note, { opacity: 0, y: -6 }, { opacity: 1, y: 0, duration: this.reducedMotion ? 0.01 : 0.35 })
+        gsap.to(note, { opacity: 0, duration: 0.5, delay: 4.5, onComplete: () => (note.hidden = true) })
     }
 
     /**
@@ -1610,6 +1660,8 @@ export class App {
         )
 
         this.ui.querySelectorAll('.role-btn').forEach((b) => b.addEventListener('click', () => this.chooseRole(b.dataset.role)))
+        this.ui.querySelector('.js-track')?.addEventListener('click', () => this.track.show())
+        this.ui.querySelector('.js-lite')?.addEventListener('click', () => setLite(true))
         this.$('.login-card').addEventListener('submit', (e) => this.#submitLogin(e))
         this.$('.js-login-back').addEventListener('click', () => this.#loginBack())
         this.$('.back-btn').addEventListener('click', () => this.back())

@@ -50,6 +50,10 @@ export class StockBoard {
             }
         }
         this.listeners = new Set()
+        /** Live map: donations and transfers as they happen anywhere (see onEvent). */
+        this.eventListeners = new Set()
+        this.seenEvents = new Set()
+        this.since = Date.now()
         this.status = endpoint ? 'sync' : 'local'
         this.failures = 0
         this.stopped = true
@@ -62,6 +66,20 @@ export class StockBoard {
 
     #emit() {
         for (const fn of this.listeners) fn(this)
+    }
+
+    /** fn({ kind, point, to? }) for every donation or transfer that happens from now on, on any device. */
+    onEvent(fn) {
+        this.eventListeners.add(fn)
+        return () => this.eventListeners.delete(fn)
+    }
+
+    /** Something happened (seen in the sheet, or done on this device): tell the map, once. */
+    event(e) {
+        if (!e?.id || this.seenEvents.has(e.id)) return
+        this.seenEvents.add(e.id)
+        if ((Date.parse(e.at ?? '') || Date.now()) < this.since - 5000) return
+        for (const fn of this.eventListeners) fn(e)
     }
 
     /* ---------------- reading ---------------- */
@@ -197,6 +215,7 @@ export class StockBoard {
             if (!data?.ok || !data.points) throw new Error(data?.error || 'La hoja no devolvió datos')
             let changed = false
             for (const [pointId, rows] of Object.entries(data.points)) changed = this.#apply(pointId, rows, seen) || changed
+            for (const e of data.events ?? []) this.event(e)
             this.#ok()
             if (changed) this.#emit()
         } catch (err) {
@@ -266,16 +285,37 @@ export class StockBoard {
         return true
     }
 
-    /** A confirmed donation: what it brings goes onto the point's shelves, and to the sheet. */
-    donate(pointId, basket) {
+    /**
+     * A confirmed donation: what it brings goes onto the point's shelves, and to the sheet.
+     * With `push: false` it only shows here: the sheet adds it itself (app/donations.js).
+     */
+    donate(pointId, basket, { push = true } = {}) {
         if (!this.points[pointId]) return
         let changed = false
-        for (const [itemId, n] of basket) if (SUPPLIES[itemId] && n > 0) changed = this.#set(pointId, itemId, this.qty(pointId, itemId) + n) || changed
+        for (const [itemId, n] of basket) if (SUPPLIES[itemId] && n > 0) changed = this.#set(pointId, itemId, this.qty(pointId, itemId) + n, { push }) || changed
         if (!changed) return
         writeLocalStock(pointId, this.points[pointId])
         this.#persist()
         this.#emit()
         this.#schedulePush()
+    }
+
+    /** Send these supplies' counts as they are here now (they were changed with `push: false`). */
+    resend(pointId, itemIds) {
+        if (!this.endpoint || !this.points[pointId]) return
+        if (!this.pending.has(pointId)) this.pending.set(pointId, new Map())
+        for (const id of itemIds) {
+            if (!SUPPLIES[id]) continue
+            this.pending.get(pointId).set(id, this.qty(pointId, id))
+            this.pendingAt.set(`${pointId}:${id}`, Date.now())
+        }
+        this.#persist()
+        this.#schedulePush()
+    }
+
+    /** Rows the sheet sent back after changing a point's stock itself. */
+    applyRows(pointId, rows) {
+        if (this.#apply(pointId, rows, this.edits)) this.#emit()
     }
 
     /**
