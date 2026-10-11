@@ -47,14 +47,21 @@ export class LiteApp {
         this.root = document.createElement('main')
         this.root.className = 'lite'
         document.body.appendChild(this.root)
-        // the overlays this version shares with the full one
-        document.body.insertAdjacentHTML(
-            'beforeend',
-            `<section class="track" aria-labelledby="track-title" hidden><div class="track-card" role="dialog" aria-modal="true" aria-labelledby="track-title"></div></section>
-             <div class="toast glass lite-toast" role="status" aria-live="polite" hidden></div>`
-        )
-        this.track = new TrackView(document.querySelector('.track'), {})
-        this.toast = new Toast(document.querySelector('.lite-toast'), {})
+        // the overlays this version shares with the full one (the full version's own copies sit
+        // inside its hidden interface, so these are made here and used directly)
+        const track = document.createElement('section')
+        track.className = 'track'
+        track.hidden = true
+        track.setAttribute('aria-labelledby', 'track-title')
+        track.innerHTML = '<div class="track-card" role="dialog" aria-modal="true" aria-labelledby="track-title"></div>'
+        const toast = document.createElement('div')
+        toast.className = 'toast glass lite-toast'
+        toast.hidden = true
+        toast.setAttribute('role', 'status')
+        toast.setAttribute('aria-live', 'polite')
+        document.body.append(track, toast)
+        this.track = new TrackView(track, {})
+        this.toast = new Toast(toast, {})
 
         this.board = new StockBoard()
         useStock(this.board)
@@ -193,12 +200,12 @@ export class LiteApp {
                 <article class="lite-card lite-zone" style="--zone:${z.color}">
                     <div class="lite-zone-head">
                         <span class="lite-zone-dot" aria-hidden="true"></span>
-                        <h2>${esc(z.name)} <small>· Barrio ${esc(z.barrio)}</small></h2>
+                        <div class="lite-zone-name"><h2>${esc(z.name)}</h2><small>Barrio ${esc(z.barrio)}</small></div>
                         <span class="need-pill" data-level="${level}">${esc(NEED_WORD[level])}</span>
                     </div>
                     <p class="lite-muted">${icon('pin')} ${esc(p.name)} · ${esc(p.address)}</p>
                     <p class="lite-needs">${zoneNeeds(z, this.theme)
-                        .map(([cat, l]) => `<span class="need-chip" data-level="${l}">${icon(CATEGORIES[cat].icon)} ${esc(CATEGORIES[cat].label)}</span>`)
+                        .map(([cat, l]) => `<span class="lite-chip" data-level="${l}">${icon(CATEGORIES[cat].icon)} ${esc(CATEGORIES[cat].label)}</span>`)
                         .join('')}</p>
                     ${critical.length ? `<p class="lite-urgent">${icon('alert')} Urgente: ${critical.map((s) => esc(s.label)).join(', ')}</p>` : ''}
                     <button class="btn btn-primary js-zone" type="button" data-zone="${z.id}">Donar en ${esc(z.name)} ${icon('chevron-right')}</button>
@@ -506,7 +513,7 @@ export class LiteApp {
                     <button class="btn btn-primary receive-scan js-scan" type="button">${icon('camera')} Escanear QR</button>
                     <form class="pending-form js-receive-form" novalidate>
                         <label class="sr-only" for="lite-code">Código del aporte o del traslado</label>
-                        <input id="lite-code" name="code" type="text" placeholder="O escribe el código: NX-… o TR-…" autocapitalize="characters" autocomplete="off" spellcheck="false">
+                        <input id="lite-code" name="code" type="text" placeholder="O escribe el código (NX-… o TR-…)" autocapitalize="characters" autocomplete="off" spellcheck="false">
                         <button class="btn btn-secondary" type="submit">Recibir</button>
                     </form>
                     <p class="form-error js-receive-error" role="alert" hidden></p>
@@ -558,7 +565,7 @@ export class LiteApp {
         const sync = this.root.querySelector('.js-sync')
         if (sync) sync.textContent = !st.ready ? 'cargando…' : st.status === 'local' ? 'guardado en este dispositivo' : st.failures >= 2 ? 'sin conexión, se guarda aquí' : st.unsaved ? 'guardando…' : 'guardado'
         // the stock list: redrawn only when a number changed, and never under the person's finger
-        const key = JSON.stringify(st.stock)
+        const key = JSON.stringify(st.stock) + st.ready
         if (key !== this.stockKey && !this.root.querySelector('.js-stock input:focus')) {
             this.stockKey = key
             const box = this.root.querySelector('.js-stock')

@@ -151,3 +151,15 @@ Para regenerarlos después de cambiar el guía, desde `starter/`:
 ```
 "C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python tools/exportar_npcs.py -- static/assets/characters/guia.glb fuentes_3d/npcs
 ```
+
+## Modelos livianos para el celular
+
+`tools/optimizar_glb.py` cambia a JPEG las texturas PNG que vienen dentro de un `.glb`
+(las que no usan transparencia). La geometría y los materiales no se tocan: solo las
+imágenes. Las casas «dos pisos», «techo ondulado» y «teja» pasaron de 4–6 MB a ~1 MB cada
+una sin diferencia visible. Conviene correrlo cada vez que se exporte un modelo nuevo con
+texturas PNG. Desde `starter/`:
+
+```
+"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python tools/optimizar_glb.py -- static/assets/houses/casa-teja.glb
+```

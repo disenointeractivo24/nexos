@@ -2551,7 +2551,8 @@ canvas.items {
 .lite-overlay.scan-sheet, .lite-overlay.xfer-sheet { position: fixed; z-index: 50; border-radius: 0; }
 .lite-toast { z-index: 60; }
 @media (max-width: 520px) {
-    .lite-link span { display: none; }
+    .lite-link > span:not([data-icon]) { display: none; }
+    .lite-link { min-width: 44px; justify-content: center; }
     .lite-row { flex-wrap: wrap; }
     .lite-row .stepper { margin-left: auto; }
 }
@@ -2588,3 +2589,95 @@ canvas.items {
 .board-head .step-toggle[hidden] + .help-btn { margin-left: auto; }
 .lite [role="tabpanel"][hidden] { display: none; }
 .lite .board-tabs { margin: 0; }
+
+/* Light version: an ordinary page that scrolls with a finger (the 3D app locks the page for the map) */
+html.is-lite,
+.is-lite body { height: auto; min-height: 100%; overflow-x: hidden; overflow-y: auto; touch-action: manipulation; overscroll-behavior-y: auto; -webkit-overflow-scrolling: touch; }
+
+/* iPhone zooms into any field whose text is under 16px when it is tapped: never let it */
+@media (pointer: coarse) {
+    input, textarea, select { font-size: max(16px, 1em) !important; }
+}
+.lite-zone-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.lite-zone-name h2 { margin: 0; font-size: 20px; line-height: 1.15; color: var(--navy); }
+.lite-zone-name small { font-size: 14px; color: #5F6368; }
+.lite-zone-head { align-items: flex-start; }
+.lite-zone-dot { margin-top: 6px; }
+.lite-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 14px; font-weight: 600; padding: 5px 10px; border-radius: var(--radius-pill); background: #F3F5F8; color: var(--navy); white-space: nowrap; }
+.lite-chip [data-icon] { width: 16px; height: 16px; flex: none; }
+.lite-chip[data-level="alta"] { background: #F9E1E1; color: #8A1F1F; }
+.lite-chip[data-level="media"] { background: #FFF4DF; color: #7A4B00; }
+.lite-zone .btn { width: 100%; justify-content: center; }
+/* the notch and the home bar on iPhone */
+.lite-top { padding-top: max(10px, env(safe-area-inset-top)); padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+.lite-sticky { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.lite { padding-bottom: max(120px, calc(90px + env(safe-area-inset-bottom))); }
+/* phones: nothing in the light version may push the page wider than the screen */
+.lite-body { grid-template-columns: minmax(0, 1fr); }
+.lite-body > * { min-width: 0; }
+.lite-row .stepper { gap: 6px; }
+.lite-row .stepper button { width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; border-radius: 12px; }
+.lite-row .stepper input { width: 54px; min-width: 0; padding: 0 4px; }
+.lite-row-text small { overflow-wrap: anywhere; }
+@media (max-width: 520px) {
+    .lite-sticky { flex-wrap: wrap; row-gap: 8px; }
+    .lite-sticky span { flex-basis: 100%; margin: 0; }
+    .lite-sticky .btn, .lite-actions .btn { flex: 1 1 0; justify-content: center; min-width: 0; }
+    .lite-actions .js-back { margin-right: 0; }
+}
+
+/* Phones: the point's board takes the lower half at most, so the shelves above it, with the
+   boxes moving as the stock changes, are always in view. The board scrolls inside itself. */
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    .supply-panel.is-board { max-height: min(54dvh, calc(100% - 290px)); }
+    .supply-panel.is-board .board-tabs { margin: 2px 0 4px; }
+    .supply-panel.is-board .board-tab { min-height: 44px; }
+    .stock-tools { flex-direction: row; justify-content: flex-end; margin-bottom: 8px; }
+    .stock-tools p { display: none; }
+    .stock-tools .btn { min-height: 40px; padding: 0 14px; font-size: 15px; }
+    .receive-card { padding: 14px; gap: 8px; margin-bottom: 10px; }
+    .receive-card p { font-size: 15px; }
+    .receive-scan { min-height: 50px; }
+    .scan-box { width: min(300px, 100%, 30dvh); }
+    .scan-sheet { gap: 10px; padding: 14px; }
+}
+.pending-form input::placeholder, .track-search input::placeholder { text-transform: none; letter-spacing: 0; font-weight: 500; }
+@media (max-width: 520px) {
+    .pending-form input { flex-basis: 100%; }
+    .pending-form .btn { flex: 1 1 auto; }
+}
+@media (max-width: 760px) and (max-height: 720px) {
+    .supply-panel.is-board .board-foot .summary { display: none; }
+    .supply-panel.is-board .board-tab { min-height: 40px; }
+}
+
+/* Phones: the end of a donation shows what matters first (the code and its QR) without a long scroll */
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    .supply-panel[data-step="done"] .done-mark { width: 52px; height: 52px; }
+    .supply-panel[data-step="done"] .done-mark [data-icon] { width: 28px; height: 28px; }
+    .supply-panel[data-step="done"] .done h3 { font-size: 22px; margin-top: 6px; }
+    .supply-panel[data-step="done"] .done p { font-size: 16px; margin-top: 8px; }
+    .supply-panel[data-step="done"] .done-code { margin-top: 10px !important; padding: 8px 16px; }
+    .supply-panel[data-step="done"] .done-code b { font-size: 24px; }
+    .supply-panel[data-step="done"] .done-qr .qr-img { width: 104px; height: 104px; }
+    .supply-panel[data-step="done"] .supply-foot { flex-direction: row; }
+    .supply-panel[data-step="done"] .supply-foot .btn { flex: 1 1 0; min-width: 0; padding: 0 10px; font-size: 16px; }
+    .supply-panel[data-step="done"] .supply-foot .foot-spacer { display: none; }
+}
+.track-card { background: #fff; }
+.track { padding-top: max(var(--gutter), env(safe-area-inset-top)); padding-bottom: max(var(--gutter), env(safe-area-inset-bottom)); }
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    .track { padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); }
+    .track-card { max-height: calc(100dvh - max(12px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom))); }
+}
+
+/* iPhone: the notch, the rounded corners and the home bar (viewport-fit=cover). The insets are 0
+   on screens without them, so nothing moves there. */
+.topbar { top: calc(var(--gutter) + env(safe-area-inset-top)); left: calc(var(--gutter) + env(safe-area-inset-left)); }
+.back-btn { top: calc(var(--gutter) + env(safe-area-inset-top)); right: calc(var(--gutter) + env(safe-area-inset-right)); }
+.guide-dock { bottom: calc(var(--gutter) + env(safe-area-inset-bottom)); left: calc(var(--gutter) + env(safe-area-inset-left)); }
+.toast { bottom: calc(var(--gutter) + 8px + env(safe-area-inset-bottom)); }
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    .zone-card { padding-bottom: env(safe-area-inset-bottom); }
+    .supply-panel .supply-foot, .supply-panel .board-foot { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+}

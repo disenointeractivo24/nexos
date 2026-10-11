@@ -8,11 +8,17 @@ import { shaderTime } from './stylize.js'
  * Renderer, scene, camera, lights, sky and the frame loop.
  * One renderer; the city and the neighborhood are groups toggled in/out.
  */
+/**
+ * Phones: a touch screen of phone size draws fewer pixels (the difference does not show at
+ * that size) and smaller shadow maps, which keeps the frame rate up and the phone cool.
+ */
+export const PHONE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 820
+
 export class Stage {
     constructor(canvas) {
         this.canvas = canvas
         this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75))
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, PHONE ? 1.5 : 1.75))
         this.renderer.outputColorSpace = THREE.SRGBColorSpace
         this.renderer.toneMapping = THREE.NeutralToneMapping
         this.renderer.toneMappingExposure = 1.04
@@ -124,6 +130,7 @@ export class Stage {
 
     /** Fit the sun's shadow camera around an area (city or neighborhood). */
     setShadowFrame(center, radius, { mapSize = 2048, normalBias } = {}) {
+        if (PHONE) mapSize = Math.min(mapSize, 1024)
         const s = this.sun
         s.target.position.copy(center)
         s.position.copy(center).addScaledVector(this.sunDir, radius * 3)

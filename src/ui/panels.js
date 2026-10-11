@@ -1006,7 +1006,7 @@ export class InventoryPanel extends Panel {
                         <button class="btn btn-primary receive-scan js-scan" type="button">${icon('camera')} Escanear QR</button>
                         <form class="pending-form js-receive-form" novalidate>
                             <label class="sr-only" for="receive-code">Código del aporte o del traslado</label>
-                            <input id="receive-code" name="code" type="text" placeholder="O escribe el código: NX-… o TR-…" autocapitalize="characters" autocomplete="off" spellcheck="false">
+                            <input id="receive-code" name="code" type="text" placeholder="O escribe el código (NX-… o TR-…)" autocapitalize="characters" autocomplete="off" spellcheck="false">
                             <button class="btn btn-secondary" type="submit">Recibir</button>
                         </form>
                         <p class="form-error js-receive-error" role="alert" hidden></p>
