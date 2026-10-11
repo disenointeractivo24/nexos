@@ -51,6 +51,10 @@ const BODY = 0.35
 const KERB = 0.3
 const STEP = 0.5
 const CORNER = 0.9
+/** Cell size of the walking grid paths are searched on (m). */
+const GRID = 0.4
+/** The eight moves on the grid: [dx, dz, length]. */
+const MOVES = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]]
 
 /** Ground surface styles (painted into the ground texture) */
 const STYLES = {
@@ -73,6 +77,68 @@ function mixHex(a, b, k) {
     const [r2, g2, b2] = p(b)
     const c = (x, y) => Math.round(x + (y - x) * k)
     return `rgb(${c(r1, r2)},${c(g1, g2)},${c(b1, b2)})`
+}
+
+/** The ground walkers can reach in a barrio, as bounds a little beyond every path. */
+function walkSpan(paths, circles, yard) {
+    const s = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity }
+    const grow = (x, z, r) => {
+        s.minX = Math.min(s.minX, x - r)
+        s.maxX = Math.max(s.maxX, x + r)
+        s.minZ = Math.min(s.minZ, z - r)
+        s.maxZ = Math.max(s.maxZ, z + r)
+    }
+    for (const p of paths) for (const [x, z] of [p.a, p.b]) grow(x, z, p.w + 3)
+    for (const c of circles) grow(c.x, c.z, c.r + 3)
+    if (yard) grow(yard.x, yard.z, yard.hx + yard.hz + 3)
+    return s
+}
+
+/** A binary min-heap of grid cells, keyed by estimated cost (for findPath). */
+class MinHeap {
+    constructor() {
+        this.items = []
+        this.keys = []
+    }
+    get size() {
+        return this.items.length
+    }
+    push(item, key) {
+        const it = this.items, k = this.keys
+        let i = it.length
+        it.push(item)
+        k.push(key)
+        while (i > 0) {
+            const p = (i - 1) >> 1
+            if (k[p] <= key) break
+            it[i] = it[p]
+            k[i] = k[p]
+            i = p
+        }
+        it[i] = item
+        k[i] = key
+    }
+    pop() {
+        const it = this.items, k = this.keys
+        const top = it[0]
+        const item = it.pop(), key = k.pop()
+        if (it.length) {
+            let i = 0
+            for (;;) {
+                const l = 2 * i + 1, r = l + 1
+                let m = i, mk = key
+                if (l < it.length && k[l] < mk) (m = l), (mk = k[l])
+                if (r < it.length && k[r] < mk) m = r
+                if (m === i) break
+                it[i] = it[m]
+                k[i] = k[m]
+                i = m
+            }
+            it[i] = item
+            k[i] = key
+        }
+        return top
+    }
 }
 
 function segDist(x, z, a, b) {
@@ -213,14 +279,78 @@ export class NeighborhoodScene {
     }
 
     /**
-     * Place in the line at the counter: 0 is at the counter itself, each next
-     * person stands one step further out, straight back from the stand.
+     * Place in the line at the counter: 0 is at the counter itself, each next person
+     * stands one step further back. A line forms along the way people come in, so it
+     * runs out along the stand's own path and on down the street it meets (bending at
+     * a corner if it is long), never across a wall or a lawn.
      */
     queueSpot(i) {
+        const line = this.#queueLine()
+        let d = Math.max(0, i * QUEUE_GAP)
+        for (let k = 1; k < line.length; k++) {
+            const seg = line[k].distanceTo(line[k - 1])
+            if (d <= seg || k === line.length - 1) {
+                const p = line[k - 1].clone().lerp(line[k], Math.min(d, seg) / seg)
+                if (d > seg) p.add(line[k].clone().sub(line[k - 1]).setLength(d - seg))
+                p.y = this.heightAt(p.x, p.z)
+                return p
+            }
+            d -= seg
+        }
+        return line[0].clone()
+    }
+
+    /** Which way the person at place `i` faces: towards the one ahead (the stand, at the front). */
+    queueYaw(i) {
         const a = this.content.acopio
-        const p = a.door.clone().addScaledVector(new THREE.Vector3(Math.sin(a.yaw), 0, Math.cos(a.yaw)), i * QUEUE_GAP)
-        p.y = this.heightAt(p.x, p.z)
-        return p
+        const here = this.queueSpot(i)
+        const ahead = i <= 0.5 ? a.center : this.queueSpot(i - 0.5)
+        return Math.atan2(ahead.x - here.x, ahead.z - here.z)
+    }
+
+    /** The line's course: the stand's path, then on along the street most in line with it. */
+    #queueLine() {
+        const c = this.content
+        if (c.queueLine) return c.queueLine
+        const a = c.acopio
+        const L = c.layout
+        const at = (n) => v3(L.nodes[n][0], L.nodes[n][1], 0)
+        const flat = a.door.clone().setY(0)
+        const pts = [flat]
+        let node = L.acopio?.link
+        let prev = null
+        let dir = new THREE.Vector3(Math.sin(a.yaw), 0, Math.cos(a.yaw))
+        let len = 0
+        const want = QUEUE_GAP * 13
+        if (node && at(node).distanceTo(flat) > 0.5) {
+            const p = at(node)
+            // the stand's own path only counts if it leads away from the stand
+            if (p.clone().sub(flat).normalize().dot(dir) > 0.2) {
+                len += p.distanceTo(flat)
+                dir = p.clone().sub(flat).normalize()
+                pts.push(p)
+            } else node = null
+        }
+        while (node && len < want) {
+            const here = at(node)
+            let best = null, bestDot = 0.5
+            for (const [p, q] of L.edges) {
+                const n = p === node ? q : q === node ? p : null
+                if (!n || n === prev) continue
+                const d = at(n).sub(here).normalize().dot(dir)
+                if (d > bestDot) (best = n), (bestDot = d)
+            }
+            if (!best) break
+            const next = at(best)
+            len += next.distanceTo(here)
+            dir = next.clone().sub(here).normalize()
+            pts.push(next)
+            prev = node
+            node = best
+        }
+        // if the streets end first, the line carries straight on
+        if (len < want) pts.push(pts[pts.length - 1].clone().addScaledVector(dir, want - len))
+        return (c.queueLine = pts)
     }
 
     /** Anchor for the collection point's floating label. */
@@ -406,13 +536,184 @@ export class NeighborhoodScene {
             way.push(steps[best])
             i = best
         }
-        // round the corners: ease in a little before each turn and out a little after it
+        return this.#rounded(way)
+    }
+
+    /**
+     * The way a person would walk from one place to another in the barrio: the shortest
+     * one that keeps to the paved ground and clear of everything solid and of `avoid`
+     * (people standing about), pulled taut so it runs straight wherever it can, and
+     * with its corners rounded off. Paths are searched on a grid over the walkable
+     * ground (A*), so nothing in the way is ever walked through, whatever the streets.
+     *
+     * @param avoid [{x, z, r}] people to keep clear of
+     * @returns [Vector3] from `from` to `to`, or null if there is no way through
+     */
+    findPath(from, to, { avoid = [] } = {}) {
+        const g = this.#walkGrid()
+        if (!g) return null
+        const { nx, nz, S, minX, minZ } = g
+        const free = g.free.slice()
+        // people block the ground around them, unless they stand where this walk starts or ends
+        for (const c of avoid) {
+            const r = c.r + BODY
+            if (Math.hypot(from.x - c.x, from.z - c.z) < r || Math.hypot(to.x - c.x, to.z - c.z) < r) continue
+            const x0 = Math.max(0, Math.floor((c.x - r - minX) / S)), x1 = Math.min(nx - 1, Math.ceil((c.x + r - minX) / S))
+            const z0 = Math.max(0, Math.floor((c.z - r - minZ) / S)), z1 = Math.min(nz - 1, Math.ceil((c.z + r - minZ) / S))
+            for (let iz = z0; iz <= z1; iz++)
+                for (let ix = x0; ix <= x1; ix++) if (Math.hypot(minX + ix * S - c.x, minZ + iz * S - c.z) < r) free[iz * nx + ix] = 0
+        }
+        const start = this.#nearestFree(g, free, from)
+        const goal = this.#nearestFree(g, free, to)
+        if (start < 0 || goal < 0) return null
+
+        const n = nx * nz
+        const cost = new Float32Array(n).fill(Infinity)
+        const came = new Int32Array(n).fill(-1)
+        const done = new Uint8Array(n)
+        const gx = goal % nx, gz = (goal / nx) | 0
+        const guess = (i) => {
+            const dx = Math.abs((i % nx) - gx), dz = Math.abs(((i / nx) | 0) - gz)
+            return (Math.max(dx, dz) + (Math.SQRT2 - 1) * Math.min(dx, dz)) * S
+        }
+        const heap = new MinHeap()
+        cost[start] = 0
+        heap.push(start, guess(start))
+        while (heap.size) {
+            const u = heap.pop()
+            if (u === goal) break
+            if (done[u]) continue
+            done[u] = 1
+            const ux = u % nx, uz = (u / nx) | 0
+            for (const [dx, dz, len] of MOVES) {
+                const vx = ux + dx, vz = uz + dz
+                if (vx < 0 || vz < 0 || vx >= nx || vz >= nz) continue
+                const v = vz * nx + vx
+                if (!(free[v] & 1) || done[v]) continue
+                // no squeezing diagonally between two blocked cells
+                if (dx && dz && (!(free[uz * nx + vx] & 1) || !(free[vz * nx + ux] & 1))) continue
+                const c = cost[u] + len * S * (g.cost[u] + g.cost[v]) * 0.5
+                if (c < cost[v]) {
+                    cost[v] = c
+                    came[v] = u
+                    heap.push(v, c + guess(v))
+                }
+            }
+        }
+        if (goal !== start && came[goal] < 0) return null
+        const cells = [goal]
+        while (cells[0] !== start) cells.unshift(came[cells[0]])
+        const at = (i) => new THREE.Vector3(minX + (i % nx) * S, 0, minZ + ((i / nx) | 0) * S)
+        const pts = [from.clone(), ...cells.map(at), to.clone()]
+
+        // pull it taut: from each point, straight on to the farthest one in plain sight
+        const way = [pts[0]]
+        for (let i = 0; i < pts.length - 1; ) {
+            let best = i + 1
+            for (let j = i + 2, misses = 0; j < pts.length && misses < 16; j++) {
+                if (this.#clearCells(g, free, pts[i], pts[j])) {
+                    best = j
+                    misses = 0
+                } else misses++
+            }
+            way.push(pts[best])
+            i = best
+        }
+        return this.#rounded(way)
+    }
+
+    /** The walking grid: which cells a person may stand in, and what each costs to cross. */
+    #walkGrid() {
+        const w = this.content?.walk
+        if (!w) return null
+        if (w.grid) return w.grid
+        const { distToPaths, solids, forecourt, span } = w
+        const S = GRID
+        const nx = Math.ceil((span.maxX - span.minX) / S) + 1
+        const nz = Math.ceil((span.maxZ - span.minZ) / S) + 1
+        // Each cell: bit 1 = a person fits there; bit 2 = it is paved and roomy, so straight lines
+        // may run across it. Open ground off the paths can be walked too, but costs far more, so
+        // it is used only to get round something in the way, the way anyone steps onto the grass.
+        const free = new Uint8Array(nx * nz)
+        const cost = new Float32Array(nx * nz).fill(1)
+        const tight = BODY + 0.1
+        // the body, plus room for the grid's own coarseness (a straight line can pass a cell's corner)
+        const roomy = BODY + 0.3
+        const clearance = (x, z) => {
+            let best = Infinity
+            for (const o of solids.boxes) {
+                const dx = x - o.x, dz = z - o.z
+                const c = Math.cos(o.yaw), s = Math.sin(o.yaw)
+                const ex = Math.abs(dx * c - dz * s) - o.hx, ez = Math.abs(dx * s + dz * c) - o.hz
+                best = Math.min(best, Math.hypot(Math.max(ex, 0), Math.max(ez, 0)) + Math.min(Math.max(ex, ez), 0))
+            }
+            for (const k of solids.circles) best = Math.min(best, Math.hypot(x - k.x, z - k.z) - k.r)
+            return best
+        }
+        for (let iz = 0; iz < nz; iz++) {
+            for (let ix = 0; ix < nx; ix++) {
+                const x = span.minX + ix * S, z = span.minZ + iz * S
+                const room = clearance(x, z)
+                if (room < tight) continue
+                const i = iz * nx + ix
+                const yard = forecourt && this.#inBox(forecourt, x, z, 0)
+                const d = distToPaths(x, z)
+                const paved = yard || d <= -KERB
+                free[i] = 1 | (paved && room >= roomy ? 2 : 0)
+                // a little dearer near the paved edge and close to things; much dearer on the grass
+                if (!paved) cost[i] = 5
+                else if (!yard) cost[i] = 1 + 0.6 * Math.max(0, 1 - (-d - KERB) / 1.2)
+                if (room < roomy) cost[i] += 1
+            }
+        }
+        return (w.grid = { minX: span.minX, minZ: span.minZ, nx, nz, S, free, cost })
+    }
+
+    /** The free cell nearest a point (the point's own cell if it is free), or -1. */
+    #nearestFree(g, free, p) {
+        const { nx, nz, S, minX, minZ } = g
+        const cx = Math.round((p.x - minX) / S), cz = Math.round((p.z - minZ) / S)
+        for (let r = 0; r <= 12; r++) {
+            let best = -1, bestD = Infinity
+            for (let iz = cz - r; iz <= cz + r; iz++) {
+                for (let ix = cx - r; ix <= cx + r; ix++) {
+                    if (Math.max(Math.abs(ix - cx), Math.abs(iz - cz)) !== r) continue
+                    if (ix < 0 || iz < 0 || ix >= nx || iz >= nz || !(free[iz * nx + ix] & 1)) continue
+                    const d = Math.hypot(minX + ix * S - p.x, minZ + iz * S - p.z)
+                    if (d < bestD) {
+                        bestD = d
+                        best = iz * nx + ix
+                    }
+                }
+            }
+            if (best >= 0) return best
+        }
+        return -1
+    }
+
+    /** Is the straight line a→b over paved, roomy cells only? (its very ends may stand anywhere) */
+    #clearCells(g, free, a, b) {
+        const { nx, nz, S, minX, minZ } = g
+        const d = Math.hypot(b.x - a.x, b.z - a.z)
+        const n = Math.max(1, Math.ceil(d / (S * 0.4)))
+        for (let k = 1; k < n; k++) {
+            const t = k / n
+            if (t * d < 0.4 || (1 - t) * d < 0.4) continue
+            const ix = Math.round((a.x + (b.x - a.x) * t - minX) / S)
+            const iz = Math.round((a.z + (b.z - a.z) * t - minZ) / S)
+            if (ix < 0 || iz < 0 || ix >= nx || iz >= nz || !(free[iz * nx + ix] & 2)) return false
+        }
+        return true
+    }
+
+    /** Corners rounded off: ease in a little before each turn and out a little after it. */
+    #rounded(way) {
         const out = [way[0]]
         for (let i = 1; i < way.length - 1; i++) {
             const a = way[i - 1], p = way[i], b = way[i + 1]
-            const into = Math.min(CORNER, p.distanceTo(a) * 0.45)
-            const away = Math.min(CORNER, p.distanceTo(b) * 0.45)
-            out.push(p.clone().lerp(a, into / p.distanceTo(a)), p, p.clone().lerp(b, away / p.distanceTo(b)))
+            const da = p.distanceTo(a), db = p.distanceTo(b)
+            if (da < 1e-3 || db < 1e-3) continue
+            out.push(p.clone().lerp(a, Math.min(CORNER, da * 0.45) / da), p, p.clone().lerp(b, Math.min(CORNER, db * 0.45) / db))
         }
         out.push(way[way.length - 1])
         for (const p of out) p.y = this.heightAt(p.x, p.z)
@@ -944,8 +1245,8 @@ export class NeighborhoodScene {
             const mid = local(0, (back + front) / 2)
             solids.boxes.push({ x: mid.x, z: mid.z, yaw: L.acopio.yaw, hx: half, hz: (front - back) / 2 })
             const far = 3.6 + QUEUE_GAP * 9
-            const yard = local(0, (front + far) / 2)
-            forecourt = { x: yard.x, z: yard.z, yaw: L.acopio.yaw, hx: half + 2.2, hz: (far - front) / 2 }
+            const yard = local(0, (back + far) / 2)
+            forecourt = { x: yard.x, z: yard.z, yaw: L.acopio.yaw, hx: half + 2.2, hz: (far - back) / 2 }
         }
 
         /* ---- landmark feature ---- */
@@ -971,8 +1272,8 @@ export class NeighborhoodScene {
         blocked.push({ x: L.start[0], z: L.start[1] + 2, r: 3.5 })
         // street furniture first, so the bushes and trees keep clear of it
         this.#streetLife(L, group, houses, blocked, distToPaths, rand, gy, solids)
-        const occluders = this.#vegetation(L, group, blocked, distToPaths, rand, disposables, gy)
-        if (L.look.walls) this.#walls(L, paths, links, group, gy, L.acopio)
+        const occluders = this.#vegetation(L, group, blocked, distToPaths, rand, disposables, gy, solids)
+        if (L.look.walls) this.#walls(L, paths, links, group, gy, L.acopio, solids)
         await yieldFrame()
 
         /* ---- emergency context cues ---- */
@@ -1020,7 +1321,7 @@ export class NeighborhoodScene {
             disposables,
             heightAt: terrain && heightAt ? (x, z) => terrain(x, z) + heightAt(x, z) : (terrain ?? heightAt),
             lamps,
-            walk: { distToPaths, solids, forecourt },
+            walk: { distToPaths, solids, forecourt, span: walkSpan(allPaths, circles, forecourt) },
             update: (dt, t) => updaters.forEach((u) => u(dt, t)),
         }
     }
@@ -1599,7 +1900,7 @@ export class NeighborhoodScene {
 
     /* ---------------- plants ---------------- */
 
-    #vegetation(L, group, blocked, distToPaths, rand, disposables, gy = () => 0) {
+    #vegetation(L, group, blocked, distToPaths, rand, disposables, gy = () => 0, solids = { circles: [] }) {
         const isBlocked = (x, z, pad = 0) => blocked.some((b) => Math.hypot(x - b.x, z - b.z) < b.r + pad)
         const trees = []
         const CORE = 34 // radius of the barrio proper; planting inside it stays sparse
@@ -1653,6 +1954,7 @@ export class NeighborhoodScene {
         const leafColors = (this.theme.skin?.leaf ?? WORLD.leaf).map((c) => new THREE.Color(c))
         const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0)
         trees.forEach(([x, z, s], i) => {
+            solids.circles.push({ x, z, r: 0.35 * s })
             const y = gy(x, z)
             q.setFromAxisAngle(up, rand() * Math.PI * 2)
             m.compose(p.set(x, y + s * 1.5, z), q, sc.set(s * 1.35, s * 1.25, s * 1.35))
@@ -1684,6 +1986,7 @@ export class NeighborhoodScene {
         if (palms.length) {
             const palmMesh = new THREE.InstancedMesh(palmGeometry(), stylize(sharedMaterial('nb:palm', { vertexColors: true, roughness: 0.95 }), { sway: 0, rim: 0.18 }), palms.length)
             palms.forEach(([x, z, s], i) => {
+                solids.circles.push({ x, z, r: 0.3 * s })
                 q.setFromAxisAngle(up, rand() * Math.PI * 2)
                 m.compose(p.set(x, gy(x, z), z), q, sc.set(s * 1.25, s * 1.45, s * 1.25))
                 palmMesh.setMatrixAt(i, m)
@@ -1719,6 +2022,7 @@ export class NeighborhoodScene {
         const bushColors = ['#7C9B66', '#87A56F', '#6F8E5E', '#8FAA78'].map((c) => new THREE.Color(c))
         const flowers = []
         bushes.forEach(([x, z, s, y], i) => {
+            solids.circles.push({ x, z, r: 0.75 * s })
             const by = y + gy(x, z)
             q.setFromAxisAngle(up, rand() * Math.PI * 2)
             m.compose(p.set(x, by, z), q, sc.set(s, s * 0.9, s))
@@ -1835,7 +2139,7 @@ export class NeighborhoodScene {
     }
 
     /** Low whitewashed walls with a terracotta cap along a lane (colonial barrios). */
-    #walls(L, paths, links, group, gy = () => 0, acopio = null) {
+    #walls(L, paths, links, group, gy = () => 0, acopio = null, solids = { boxes: [] }) {
         for (const p of paths) {
             if (p.style === 'road' || p.a[1] > 11) continue
             const dx = p.b[0] - p.a[0], dz = p.b[1] - p.a[1]
@@ -1851,6 +2155,7 @@ export class NeighborhoodScene {
                     w.position.set(x, gy(x, z), z)
                     w.rotation.y = Math.atan2(-uz, ux)
                     group.add(w)
+                    solids.boxes.push({ x, z, yaw: w.rotation.y, hx: 1.3, hz: 0.25 })
                 }
             }
         }

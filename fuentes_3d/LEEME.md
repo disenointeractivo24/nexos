@@ -115,3 +115,39 @@ texturas). Se exportan con el mismo script de los props, hacia `static/assets/bu
 - `punto-de-acopio.glb` es el puesto del barrio (lo que el donante deja va sobre su
   escritorio) y el de la vista del punto de acopio (`setStand` en `src/three/Depot.js`,
   donde su escritorio, estantería y cajas se ocultan para mostrar el inventario en vivo).
+
+## Vecinos (NPC)
+
+`npcs/` tiene los modelos de los vecinos para texturizar, uno por edad:
+`npc_adulto.fbx`, `npc_adolescente.fbx`, `npc_nino.fbx` y `npc_mayor.fbx`, cada uno
+con una vista previa `.png`.
+
+Todos son el cuerpo del guía, con su misma geometría y su mismo rig (`body`, `head`,
+`armL`, `armR`, `legL` y `legR`), sin casco ni maletín. Lo añadido va en piezas
+aparte, cada una colgada de su articulación:
+
+- ropa: camiseta (torso y mangas), pantalón (cadera y perneras) y zapatos. Son capas
+  de tela que siguen la forma del cuerpo, con corte recto y grosor. La piel queda
+  debajo;
+- pelo: una sola malla limpia en quads, con sus propias UV;
+- orejas.
+
+Hay cinco materiales, que en Substance son cinco conjuntos de textura: `Piel`,
+`Camiseta`, `Pantalon`, `Zapatos` y `Pelo`.
+
+| Edad | Tamaño | Ropa | Pelo |
+|---|---|---|---|
+| adulto | 100 % | manga corta, pantalón largo | corto con flequillo |
+| adolescente | 87 % | manga corta, pantalón largo | flequillo largo con copete |
+| niño | 62 %, cabeza un poco más grande | manga corta, pantaloneta | corte de tazón |
+| mayor | 100 % | manga larga, pantalón largo | canoso, calvo arriba; el pelo rodea la nuca |
+
+La postura encorvada y el paso lento de los mayores los pone la aplicación, no el
+modelo. La aplicación ya viste a los vecinos con estos mismos cortes, pintados con
+colores. Cuando estén las texturas, se cambian por estos modelos.
+
+Para regenerarlos después de cambiar el guía, desde `starter/`:
+
+```
+"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python tools/exportar_npcs.py -- static/assets/characters/guia.glb fuentes_3d/npcs
+```

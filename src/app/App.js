@@ -265,7 +265,7 @@ export class App {
         this.families = new Families({
             parent: this.hood.group,
             reducedMotion: this.reducedMotion,
-            makePerson: guideT.source === 'glb' ? (n) => makeNeighbour(this.loader, guideT, n) : null,
+            makePerson: guideT.source === 'glb' ? (n, age) => makeNeighbour(this.loader, guideT, n, age) : null,
         })
         this.portrait = new GuideCharacter(this.loader.instanceSync(guideT), guideT.animations, { reducedMotion: this.reducedMotion, face: true, lively: true })
         this.portrait.place(new THREE.Vector3(), 0.32)
@@ -1066,7 +1066,7 @@ export class App {
         const { points } = this.hood.route(this.currentNode, 'acopio')
         points[0] = this.guide.position.clone().setY(0)
         const around = (stand.asidePath ?? [stand.aside]).map((p) => p.clone())
-        const way = this.hood.smoothPath([...points, ...around])
+        const way = this.hood.findPath(points[0], stand.aside) ?? this.hood.smoothPath([...points, ...around])
         // the camera closes in on the stand as the guide walks to it, arriving together,
         // so the barrio and the counter read as one continuous place
         const arrived = this.guide.walk(way)
