@@ -2,10 +2,11 @@ name: Deploy to GitHub Pages
 
 # The published app is always main, at the site's root. The version being tried out
 # (branch funciones-nuevas) is built beside it, at /prueba/, so it can be opened on a
-# phone without touching the published one.
+# phone without touching the published one. Pages only deploys from main, so the trial
+# version goes out with the next run on main (a push to main, or "Run workflow").
 on:
   push:
-    branches: [main, funciones-nuevas]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
