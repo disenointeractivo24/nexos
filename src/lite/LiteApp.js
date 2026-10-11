@@ -489,28 +489,47 @@ export class LiteApp {
     #point() {
         const z = ZONES.find((zz) => zz.id === this.point.zone)
         return `
-            <h1 class="lite-title">Inventario · ${esc(z?.name ?? '')}</h1>
+            <h1 class="lite-title">${esc(z?.name ?? '')}</h1>
             <p class="lite-muted">${esc(this.point.name)} · <span class="js-sync"></span></p>
-            <section class="lite-card pending">
-                <h2>${icon('box')} Pendientes <span class="pending-count js-pending-count"></span></h2>
-                <form class="pending-form js-receive-form" novalidate>
-                    <label class="sr-only" for="lite-code">Código del aporte o del traslado</label>
-                    <input id="lite-code" name="code" type="text" placeholder="Código NX-… o TR-…" autocapitalize="characters" autocomplete="off" spellcheck="false">
-                    <button class="btn btn-primary" type="submit">Recibir</button>
-                    <button class="btn btn-secondary js-scan" type="button">${icon('camera')} Escanear QR</button>
-                    <button class="btn btn-secondary js-transfer" type="button">${icon('truck')} Enviar a otro punto</button>
-                </form>
-                <p class="form-error js-receive-error" role="alert" hidden></p>
-                <div class="js-pending-lists"></div>
-            </section>
-            <section class="lite-card">
-                <h2>${icon('basket')} Lo que hay en el punto</h2>
+            <div class="board-tabs" role="tablist" aria-label="Secciones del punto">
+                <button class="board-tab js-tab" type="button" role="tab" id="lt-stock" data-tab="stock" aria-controls="lv-stock">${icon('basket')} Inventario</button>
+                <button class="board-tab js-tab" type="button" role="tab" id="lt-receive" data-tab="receive" aria-controls="lv-receive">${icon('qr')} Recibir<span class="tab-badge js-pending-count" hidden></span></button>
+            </div>
+            <section class="lite-card" id="lv-stock" role="tabpanel" aria-labelledby="lt-stock">
+                <div class="stock-tools"><p>Cuenta lo que hay en el punto.</p><button class="btn btn-secondary js-transfer" type="button">${icon('truck')} Enviar a otro punto</button></div>
                 <div class="lite-list js-stock"></div>
+            </section>
+            <section id="lv-receive" role="tabpanel" aria-labelledby="lt-receive" hidden>
+                <div class="receive-card">
+                    <h3>Recibir un aporte o un traslado</h3>
+                    <p>Escanea el QR que trae el donante, o escribe su código. Lo recibido se suma solo al inventario.</p>
+                    <button class="btn btn-primary receive-scan js-scan" type="button">${icon('camera')} Escanear QR</button>
+                    <form class="pending-form js-receive-form" novalidate>
+                        <label class="sr-only" for="lite-code">Código del aporte o del traslado</label>
+                        <input id="lite-code" name="code" type="text" placeholder="O escribe el código: NX-… o TR-…" autocapitalize="characters" autocomplete="off" spellcheck="false">
+                        <button class="btn btn-secondary" type="submit">Recibir</button>
+                    </form>
+                    <p class="form-error js-receive-error" role="alert" hidden></p>
+                </div>
+                <div class="lite-card js-pending-lists"></div>
             </section>
             <div class="lite-actions"><button class="btn btn-secondary js-logout" type="button">${icon('logout')} Salir</button></div>`
     }
 
+    /** Inventario and Recibir, one at a time, as in the full version. */
+    #tab(tab) {
+        this.pointTab = tab
+        for (const t of this.root.querySelectorAll('.js-tab')) {
+            t.setAttribute('aria-selected', String(t.dataset.tab === tab))
+            t.tabIndex = t.dataset.tab === tab ? 0 : -1
+        }
+        this.root.querySelector('#lv-stock').hidden = tab !== 'stock'
+        this.root.querySelector('#lv-receive').hidden = tab !== 'receive'
+    }
+
     bind_point() {
+        this.root.querySelectorAll('.js-tab').forEach((t) => t.addEventListener('click', () => this.#tab(t.dataset.tab)))
+        this.#tab(this.pointTab ?? 'stock')
         const form = this.root.querySelector('.js-receive-form')
         form.addEventListener('submit', (e) => {
             e.preventDefault()
@@ -584,7 +603,9 @@ export class LiteApp {
         const toReceive = [...(q.scheduled ?? []).map((d) => row('heart', d, d.slot || 'Entrega agendada', 'receive', 'Recibir')), ...(q.incoming ?? []).map((t) => row('truck', t, `Traslado desde ${name(t.from)}`, 'receive', 'Recibir'))]
         const toDeliver = (q.toDeliver ?? []).map((d) => row('home', d, d.mode === 'money' ? 'Aporte en dinero' : 'Recibido en el punto', 'deliver', 'Entregado'))
         const out = (q.outgoing ?? []).map((t) => row('truck', t, `En camino a ${name(t.to)}`))
-        this.root.querySelector('.js-pending-count').textContent = [toReceive.length && `${toReceive.length} por recibir`, toDeliver.length && `${toDeliver.length} por entregar`].filter(Boolean).join(' · ') || 'Nada pendiente'
+        const badge = this.root.querySelector('.js-pending-count')
+        badge.hidden = !(toReceive.length + toDeliver.length)
+        badge.textContent = toReceive.length + toDeliver.length
         const lists = this.root.querySelector('.js-pending-lists')
         lists.innerHTML =
             group('Por recibir', toReceive, 'Nada por recibir por ahora.') +

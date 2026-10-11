@@ -2558,3 +2558,33 @@ canvas.items {
 
 .role-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; margin-top: 14px; }
 .role-links .role-track { margin: 0; }
+
+/* Collection point board: Inventario and Recibir as two tabs */
+.board-tabs { display: flex; gap: 6px; padding: 0 4px; margin: 4px 0 10px; border-bottom: 2px solid rgba(1, 30, 65, 0.08); }
+.board-tab { position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 18px; margin-bottom: -2px; border: 0; border-bottom: 3px solid transparent; background: none; font: inherit; font-size: 18px; font-weight: 700; color: #5F6368; cursor: pointer; border-radius: 12px 12px 0 0; }
+.board-tab [data-icon] { width: 22px; height: 22px; }
+.board-tab:hover { color: var(--navy); background: rgba(1, 30, 65, 0.05); }
+.board-tab[aria-selected="true"] { color: var(--navy); border-bottom-color: var(--red); }
+.board-tab:focus-visible { outline: 3px solid var(--red); outline-offset: -3px; }
+.tab-badge { min-width: 24px; height: 24px; padding: 0 7px; display: inline-grid; place-items: center; border-radius: var(--radius-pill); background: var(--red); color: #fff; font-size: 14px; font-weight: 800; }
+.tab-badge[hidden] { display: none; }
+.board-view[hidden] { display: none; }
+.step-toggle[hidden] { display: none; }
+.stock-tools { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.stock-tools p { margin: 0; flex: 1; font-size: 16px; color: #4E5663; }
+.stock-tools .btn { flex: none; }
+.receive-card { display: grid; gap: 10px; justify-items: start; padding: 18px; margin-bottom: 14px; border-radius: var(--radius-md); background: #fff; border: 1px solid rgba(1, 30, 65, 0.08); }
+.receive-card h3 { margin: 0; font-size: 21px; color: var(--navy); }
+.receive-card p { margin: 0; font-size: 16px; color: #4E5663; }
+.receive-scan { min-height: 56px; padding: 0 24px; font-size: 18px; }
+.receive-card .pending-form { width: 100%; margin: 0; }
+.receive-card .form-error { margin: 0; }
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    .board-tab { flex: 1; justify-content: center; padding: 0 10px; font-size: 16px; }
+    .stock-tools { flex-direction: column; align-items: stretch; }
+    .receive-scan { width: 100%; justify-content: center; }
+}
+/* on the Recibir tab the units/boxes switch is hidden: the buttons stay at the right */
+.board-head .step-toggle[hidden] + .help-btn { margin-left: auto; }
+.lite [role="tabpanel"][hidden] { display: none; }
+.lite .board-tabs { margin: 0; }

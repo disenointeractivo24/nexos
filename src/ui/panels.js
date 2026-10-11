@@ -163,7 +163,7 @@ function tile3D(panel, tileEl, itemId, clipEl) {
             return
         }
         const obj = cloneMaterials(panel.loader.instanceSync(t))
-        panel.items.add(`tile:${itemId}`, stage, obj, { clipEl, getAlpha: () => panel.state.alpha })
+        panel.items.add(`tile:${itemId}`, stage, obj, { clipEl, getAlpha: () => (tileEl.offsetParent ? panel.state.alpha : 0) })
     })
 }
 
@@ -985,22 +985,34 @@ export class InventoryPanel extends Panel {
                 <button class="icon-btn help-btn js-help" type="button" aria-label="Ayuda: cómo usar el inventario" title="Ayuda">${icon('help')}</button>
                 <button class="icon-btn js-close" type="button" aria-label="Cerrar el inventario" title="Cerrar">${icon('x')}</button>
             </div>
+            <div class="board-tabs" role="tablist" aria-label="Secciones del punto">
+                <button class="board-tab js-tab" type="button" role="tab" id="tab-stock" data-tab="stock" aria-controls="view-stock">${icon('basket')} Inventario</button>
+                <button class="board-tab js-tab" type="button" role="tab" id="tab-receive" data-tab="receive" aria-controls="view-receive">${icon('qr')} Recibir<span class="tab-badge js-receive-badge" hidden></span></button>
+            </div>
             <div class="supply-body step-enter">
-                <details class="pending js-pending" open>
-                    <summary class="pending-sum"><span class="pending-title">${icon('box')} Pendientes</span><span class="pending-count js-pending-count"></span></summary>
-                    <form class="pending-form js-receive-form" novalidate>
-                        <label class="sr-only" for="receive-code">Código del aporte o del traslado</label>
-                        <input id="receive-code" name="code" type="text" placeholder="Código NX-… o TR-…" autocapitalize="characters" autocomplete="off" spellcheck="false">
-                        <button class="btn btn-primary" type="submit">Recibir</button>
-                        <button class="btn btn-secondary js-scan" type="button">${icon('camera')} Escanear QR</button>
+                <section class="board-view" id="view-stock" role="tabpanel" aria-labelledby="tab-stock">
+                    <div class="stock-tools">
+                        <p>Cuenta lo que hay en el punto: toca <b>−</b> y <b>+</b>, o escribe la cantidad.</p>
                         <button class="btn btn-secondary js-transfer" type="button">${icon('truck')} Enviar a otro punto</button>
-                    </form>
-                    <p class="form-error js-receive-error" role="alert" hidden></p>
+                    </div>
+                    <div class="stock-grid" role="group" aria-label="Inventario del punto de acopio">
+                        ${this.supplies.map((s) => this.#card(s)).join('')}
+                    </div>
+                </section>
+                <section class="board-view" id="view-receive" role="tabpanel" aria-labelledby="tab-receive" hidden>
+                    <div class="receive-card">
+                        <h3>Recibir un aporte o un traslado</h3>
+                        <p>Escanea el QR que trae el donante, o escribe su código. Lo recibido se suma solo al inventario.</p>
+                        <button class="btn btn-primary receive-scan js-scan" type="button">${icon('camera')} Escanear QR</button>
+                        <form class="pending-form js-receive-form" novalidate>
+                            <label class="sr-only" for="receive-code">Código del aporte o del traslado</label>
+                            <input id="receive-code" name="code" type="text" placeholder="O escribe el código: NX-… o TR-…" autocapitalize="characters" autocomplete="off" spellcheck="false">
+                            <button class="btn btn-secondary" type="submit">Recibir</button>
+                        </form>
+                        <p class="form-error js-receive-error" role="alert" hidden></p>
+                    </div>
                     <div class="pending-lists js-pending-lists"></div>
-                </details>
-                <div class="stock-grid" role="group" aria-label="Inventario del punto de acopio">
-                    ${this.supplies.map((s) => this.#card(s)).join('')}
-                </div>
+                </section>
             </div>
             <div class="board-foot">
                 <p class="sync-chip js-sync" role="status" aria-live="polite"></p>
@@ -1029,6 +1041,17 @@ export class InventoryPanel extends Panel {
         this.el.querySelector('.js-help').addEventListener('click', () => this.#help())
         this.el.querySelector('.js-close').addEventListener('click', () => this.onClose())
         this.queueKey = null
+        this.el.querySelectorAll('.js-tab').forEach((t) => {
+            t.addEventListener('click', () => this.#showTab(t.dataset.tab))
+            // arrow keys move between the tabs, as in any tab bar
+            t.addEventListener('keydown', (e) => {
+                if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+                const next = t.dataset.tab === 'stock' ? 'receive' : 'stock'
+                this.#showTab(next)
+                this.el.querySelector(`.js-tab[data-tab="${next}"]`).focus()
+            })
+        })
+        this.#showTab(this.tab ?? 'stock', { quiet: true })
         const form = this.el.querySelector('.js-receive-form')
         form.addEventListener('submit', (e) => {
             e.preventDefault()
@@ -1167,6 +1190,28 @@ export class InventoryPanel extends Panel {
         this.onShortages?.(short)
     }
 
+    /**
+     * Two tabs, so neither job crowds the other: counting the stock (Inventario), and taking in
+     * what arrives (Recibir: donations and transfers, and handing them out to the families).
+     */
+    #showTab(tab, { quiet = false } = {}) {
+        this.tab = tab
+        if (!quiet) this.audio.play('tap')
+        for (const t of this.el.querySelectorAll('.js-tab')) {
+            const on = t.dataset.tab === tab
+            t.setAttribute('aria-selected', String(on))
+            t.tabIndex = on ? 0 : -1
+        }
+        this.el.querySelector('#view-stock').hidden = tab !== 'stock'
+        this.el.querySelector('#view-receive').hidden = tab !== 'receive'
+        // units or boxes only matters while counting
+        const toggle = this.el.querySelector('.step-toggle')
+        if (toggle) toggle.hidden = tab !== 'stock'
+        const title = this.el.querySelector('#supply-title')
+        if (title) title.innerHTML = tab === 'stock' ? 'Inventario<span class="board-title-more"> del punto</span>' : 'Recibir<span class="board-title-more"> en el punto</span>'
+        this.el.querySelector('.supply-body').scrollTop = 0
+    }
+
     /* ---------------- donations and transfers waiting for this point ---------------- */
 
     /** The lists, redrawn only when they change (the form above them is left alone). */
@@ -1178,8 +1223,14 @@ export class InventoryPanel extends Panel {
         const toReceive = [...(q.scheduled ?? []), ...(q.incoming ?? [])]
         const toDeliver = q.toDeliver ?? []
         const outgoing = q.outgoing ?? []
-        const count = this.el.querySelector('.js-pending-count')
-        if (count) count.textContent = [toReceive.length && `${toReceive.length} por recibir`, toDeliver.length && `${toDeliver.length} por entregar`].filter(Boolean).join(' · ') || 'Nada pendiente'
+        // the Recibir tab says how much waits there, so it is seen from the inventory too
+        const badge = this.el.querySelector('.js-receive-badge')
+        const waiting = toReceive.length + toDeliver.length
+        if (badge) {
+            badge.hidden = !waiting
+            badge.textContent = waiting
+            badge.setAttribute('aria-label', [toReceive.length && `${toReceive.length} por recibir`, toDeliver.length && `${toDeliver.length} por entregar`].filter(Boolean).join(', '))
+        }
         const name = (id) => COLLECTION_POINTS.find((p) => p.id === id)?.name.replace('Punto de acopio ', '') ?? id
         const items = (it) =>
             Object.entries(it ?? {})
