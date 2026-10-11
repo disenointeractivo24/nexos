@@ -6,7 +6,7 @@ import { ZONES, zoneNeeds, zoneLevel, NEED_WORD, barrioNeeds } from '../data/zon
 import { pointForZone, mapEmbedUrl, directionsUrl } from '../data/collectionPoints.js'
 import { session } from '../app/session.js'
 import { cloneMaterials } from '../three/GuideCharacter.js'
-import { helpList } from './feedback.js'
+import { helpList, busyButton } from './feedback.js'
 import { deliveryWindows } from '../data/delivery.js'
 import { newCode, trackUrl, ledger, readCode } from '../app/donations.js'
 import { qrSvg, scanQr } from './qr.js'
@@ -1055,15 +1055,15 @@ export class InventoryPanel extends Panel {
         const form = this.el.querySelector('.js-receive-form')
         form.addEventListener('submit', (e) => {
             e.preventDefault()
-            this.#receive(form.querySelector('input').value)
+            this.#receive(form.querySelector('input').value, { button: form.querySelector('[type="submit"]') })
         })
         this.el.querySelector('.js-scan').addEventListener('click', () => this.#scan())
         this.el.querySelector('.js-transfer').addEventListener('click', () => this.#transferSheet())
         this.el.querySelector('.js-pending-lists').addEventListener('click', (e) => {
             const b = e.target.closest('[data-action]')
             if (!b) return
-            if (b.dataset.action === 'deliver') this.#deliver(b.dataset.code)
-            else this.#receive(b.dataset.code)
+            if (b.dataset.action === 'deliver') this.#deliver(b.dataset.code, b)
+            else this.#receive(b.dataset.code, { confirm: true, button: b })
         })
         bindStepToggle(this.el, (byBox) => {
             this.byBox = byBox
@@ -1109,13 +1109,24 @@ export class InventoryPanel extends Panel {
         this.audio.play('tap')
         this.dialog?.ask({
             icon: 'help',
-            title: 'Cómo usar el inventario',
-            body: helpList([
-                'Cada tarjeta es un insumo. Usa <b>−</b> y <b>+</b> para contar unidades; con <b>Caja</b> (en el celular) o los botones <b>caja</b>, cuentas cajas completas.',
-                'Si ya sabes el número, <b>toca la cantidad y escríbela</b>.',
-                'Colores: <b class="t-critico">rojo</b> es crítico (menos del 30 %), <b class="t-estable">amarillo</b> estable y <b class="t-abastecido">verde</b> abastecido.',
-                'Todo se guarda solo en la hoja de Google; arriba ves si ya quedó guardado. Si te equivocas, toca <b>Deshacer</b> en el aviso de abajo.',
-            ]),
+            title: this.tab === 'receive' ? 'Cómo recibir y entregar' : 'Cómo usar el inventario',
+            body:
+                this.tab === 'receive'
+                    ? helpList([
+                          'Cuando llegue un donante, toca <b>Escanear QR</b> y apunta a su código: el aporte queda recibido y se suma solo al inventario.',
+                          'Si no trae el QR, escribe su código (empieza por <b>NX-</b>) y toca <b>Recibir</b>. Los traslados de otros puntos empiezan por <b>TR-</b>.',
+                          'En <b>Por recibir</b> están los aportes agendados y los traslados en camino. Al tocar <b>Recibir</b> te pedimos confirmar qué llegó.',
+                          'Cuando las familias recojan un aporte, tócalo en <b>Por entregar a las familias</b> y elige <b>Entregado</b>.',
+                          'Si te equivocas, toca <b>Deshacer</b> en el aviso de abajo: el inventario vuelve a como estaba.',
+                      ])
+                    : helpList([
+                          'Cada tarjeta es un insumo. Usa <b>−</b> y <b>+</b> para contar unidades; con <b>Caja</b> (en el celular) o los botones <b>caja</b>, cuentas cajas completas.',
+                          'Si ya sabes el número, <b>toca la cantidad y escríbela</b>.',
+                          'Colores: <b class="t-critico">rojo</b> es crítico (menos del 30 %), <b class="t-estable">amarillo</b> estable y <b class="t-abastecido">verde</b> abastecido.',
+                          '<b>Enviar a otro punto</b> manda lo que te sobra a quien le falta: te sugerimos cuánto, lo revisas y confirmas. Sale de tu inventario al enviarlo.',
+                          'Para recibir donaciones o traslados, abre la pestaña <b>Recibir</b>.',
+                          'Todo se guarda solo en la hoja de Google; abajo ves si ya quedó guardado. Si te equivocas, toca <b>Deshacer</b> en el aviso.',
+                      ]),
             actions: [{ label: 'Entendido', value: true, kind: 'primary' }],
         })
     }
@@ -1266,7 +1277,12 @@ export class InventoryPanel extends Panel {
     }
 
     /** A donation or a transfer arrived (typed, tapped or scanned): into the stock it goes. */
-    async #receive(text) {
+    /**
+     * A donation or a transfer arrived (typed, tapped or scanned): into the stock it goes.
+     * Tapped on the list, it first asks whether that is really what arrived (a scan is proof
+     * enough). While the sheet answers the button says so; afterwards it can be undone.
+     */
+    async #receive(text, { confirm = false, button = null } = {}) {
         const err = this.el.querySelector('.js-receive-error')
         const input = this.el.querySelector('.js-receive-form input')
         const code = readCode(text)
@@ -1280,7 +1296,28 @@ export class InventoryPanel extends Panel {
             input?.focus()
             return
         }
+        if (confirm) {
+            const q = this.store.queue ?? {}
+            const it = [...(q.scheduled ?? []), ...(q.incoming ?? [])].find((x) => x.code === code)
+            const yes = await this.dialog?.ask({
+                icon: 'box',
+                title: '¿Llegó esto al punto?',
+                body: `<p><b>${esc(code)}</b>${it?.from ? ` · traslado desde ${esc(COLLECTION_POINTS.find((p) => p.id === it.from)?.name ?? '')}` : ''}</p>
+                       <ul class="dialog-items">${Object.entries(it?.items ?? {})
+                           .filter(([id]) => SUPPLIES[id])
+                           .map(([id, n]) => `<li><b>${n}</b> × ${esc(SUPPLIES[id].label)}</li>`)
+                           .join('')}</ul>
+                       <p>Revisa que esté completo: al confirmar se suma al inventario.</p>`,
+                actions: [
+                    { label: 'Todavía no', value: false },
+                    { label: 'Sí, recibir', value: true, kind: 'primary' },
+                ],
+            })
+            if (!yes) return
+        }
+        const busy = busyButton(button, 'Recibiendo…')
         const out = code.startsWith('TR-') ? await ledger.transferReceive(code, this.point.id) : await ledger.receive(code, this.point.id)
+        busy()
         if (!out.ok) {
             this.audio.play('error')
             if (err) {
@@ -1300,20 +1337,42 @@ export class InventoryPanel extends Panel {
             this.toast?.show(`<b>${code}</b> ya se había recibido. No se sumó otra vez.`, { duration: 4000 })
         } else {
             this.audio.play('confirm')
-            this.toast?.show(`<b>${code}</b> recibido: ${list} se sumaron al inventario.`, { duration: 5000 })
+            this.toast?.show(`<b>${code}</b> recibido: ${list} se sumaron al inventario.`, {
+                duration: 7000,
+                action: 'Deshacer',
+                onAction: async () => {
+                    const back = code.startsWith('TR-') ? await ledger.transferUnreceive(code, this.point.id) : await ledger.unreceive(code, this.point.id)
+                    if (!back.ok) return this.toast.show(esc(back.error), { duration: 4500 })
+                    this.audio.play('remove')
+                    this.toast.show(`Se deshizo: <b>${code}</b> volvió a Por recibir y salió del inventario.`, { duration: 3500 })
+                    if (back.rows) this.store.take(back.rows)
+                },
+            })
         }
         if (out.rows) this.store.take(out.rows)
     }
 
-    async #deliver(code) {
+    async #deliver(code, button = null) {
+        const busy = busyButton(button, 'Guardando…')
         const out = await ledger.deliver(code, this.point.id)
+        busy()
         if (!out.ok) {
             this.audio.play('error')
             this.toast?.show(esc(out.error), { duration: 4000 })
             return
         }
         this.audio.play('confirm')
-        this.toast?.show(`<b>${esc(code)}</b> entregado a las familias.`, { duration: 3500 })
+        this.toast?.show(`<b>${esc(code)}</b> entregado a las familias.`, {
+            duration: 7000,
+            action: 'Deshacer',
+            onAction: async () => {
+                const back = await ledger.undeliver(code, this.point.id)
+                if (!back.ok) return this.toast.show(esc(back.error), { duration: 4500 })
+                this.audio.play('remove')
+                this.toast.show(`Se deshizo: <b>${esc(code)}</b> volvió a Por entregar.`, { duration: 3500 })
+                this.store.take([])
+            },
+        })
         this.store.take([])
     }
 
@@ -1420,23 +1479,63 @@ export class InventoryPanel extends Panel {
             })
         )
         sheet.querySelector('input[name="dest"]:checked')?.focus()
-        sheet.querySelector('.js-xfer-send').addEventListener('click', async (e) => {
+        // "Enviar" first shows what will go where; only "Confirmar envío" sends it
+        const picking = [sheet.querySelector('.xfer-dest'), sheet.querySelector('.js-xfer-items'), sheet.querySelector('.xfer-foot')]
+        const review = document.createElement('div')
+        review.className = 'xfer-review'
+        review.hidden = true
+        sheet.querySelector('.js-xfer-error').before(review)
+        sheet.querySelector('.js-xfer-send').addEventListener('click', () => {
             const items = Object.fromEntries(Object.entries(qty).filter(([, n]) => n > 0))
             if (!Object.keys(items).length) return this.audio.play('error')
-            e.currentTarget.disabled = true
-            const out = await ledger.transfer(me, dest.id, items)
-            if (!out.ok) {
-                e.currentTarget.disabled = false
-                this.audio.play('error')
-                const err = sheet.querySelector('.js-xfer-error')
-                err.textContent = out.error
-                err.hidden = false
-                return
-            }
-            close()
-            this.audio.play('confirm')
-            this.toast?.show(`Traslado <b>${out.transfer.code}</b> en camino a ${esc(zoneName(dest))}.`, { duration: 5000 })
-            if (out.rows) this.store.take(out.rows)
+            this.audio.play('tap')
+            review.innerHTML = `
+                <h4>Revisa el envío</h4>
+                <p>Para <b>${esc(zoneName(dest))}</b> · ${esc(dest.name)}</p>
+                <ul class="dialog-items">${Object.entries(items)
+                    .map(([id, n]) => `<li><b>${n}</b> × ${esc(SUPPLIES[id].label)} <small>(te quedan ${mine(id) - n})</small></li>`)
+                    .join('')}</ul>
+                <p class="xfer-note">${icon('info')} Sale de tu inventario ahora y entra en el de ${esc(zoneName(dest))} cuando lo reciban. Mientras siga en camino, puedes anularlo.</p>
+                <div class="xfer-foot">
+                    <button class="btn btn-secondary js-xfer-edit" type="button">${icon('chevron-left')} Cambiar</button>
+                    <button class="btn btn-primary js-xfer-confirm" type="button">${icon('truck')} Confirmar envío</button>
+                </div>`
+            hydrateIcons(review)
+            picking.forEach((el) => (el.hidden = true))
+            review.hidden = false
+            review.querySelector('.js-xfer-confirm').focus()
+            review.querySelector('.js-xfer-edit').addEventListener('click', () => {
+                review.hidden = true
+                picking.forEach((el) => (el.hidden = false))
+                sheet.querySelector('.js-xfer-send').focus()
+            })
+            review.querySelector('.js-xfer-confirm').addEventListener('click', async (e) => {
+                const busy = busyButton(e.currentTarget, 'Enviando…')
+                const out = await ledger.transfer(me, dest.id, items)
+                busy()
+                if (!out.ok) {
+                    this.audio.play('error')
+                    const err = sheet.querySelector('.js-xfer-error')
+                    err.textContent = out.error
+                    err.hidden = false
+                    return
+                }
+                close()
+                this.audio.play('confirm')
+                const tcode = out.transfer.code
+                this.toast?.show(`Traslado <b>${tcode}</b> en camino a ${esc(zoneName(dest))}.`, {
+                    duration: 7000,
+                    action: 'Deshacer',
+                    onAction: async () => {
+                        const back = await ledger.transferCancel(tcode, me)
+                        if (!back.ok) return this.toast.show(esc(back.error), { duration: 4500 })
+                        this.audio.play('remove')
+                        this.toast.show(`Se anuló <b>${tcode}</b>: los insumos volvieron a tu inventario.`, { duration: 3500 })
+                        if (back.rows) this.store.take(back.rows)
+                    },
+                })
+                if (out.rows) this.store.take(out.rows)
+            })
         })
     }
 

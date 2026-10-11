@@ -36,10 +36,16 @@ la aplicación, así que las filas se pueden reordenar sin romper nada.
   | Agendado | Un aporte para llevar en persona. Todavía **no** cuenta en el inventario. |
   | Recibido | El punto lo recibió: escaneó su QR o escribió el código. Ahí se suma al inventario. Un aporte en dinero entra ya Recibido, porque el equipo compra los insumos. |
   | Entregado | Las familias lo recogieron. El punto lo marca en su tablero. |
+  | Cancelado | El donante ya no lo lleva y lo canceló desde «Sigue tu aporte». El punto deja de esperarlo. |
+
+  Si el punto se equivoca, puede **deshacer** desde el aviso que aparece: un aporte
+  recibido vuelve a Agendado (y sale del inventario), uno entregado vuelve a Recibido.
 
 - **Traslados**: una fila por envío de un punto a otro (`TR-…`). Sale del
   inventario del punto que lo envía en cuanto se envía, queda **En camino**, y
-  entra en el inventario del otro punto cuando este lo marca **Recibido**.
+  entra en el inventario del otro punto cuando este lo marca **Recibido**. Mientras
+  sigue en camino, el punto que lo envió puede anularlo (**Cancelado**) y los
+  insumos vuelven a su inventario.
 
 Estas dos pestañas se crean solas la primera vez que se usan, y la aplicación
 las escribe sola. No se guarda ningún dato personal (ni nombre ni teléfono):

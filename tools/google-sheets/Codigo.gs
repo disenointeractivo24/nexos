@@ -25,6 +25,9 @@
  *   POST { action:'deliver', code, point }        las familias lo recogieron
  *   POST { action:'transfer', code, from, to, items }      un traslado sale del punto
  *   POST { action:'transferReceive', code, point }         y entra en el otro
+ *   POST { action:'cancel', code }                el donante cancela una entrega agendada
+ *   Deshacer (el punto se equivocó): 'unreceive' y 'undeliver' { code, point },
+ *   'transferCancel' { code, point: el que envió }, 'transferUnreceive' { code, point: el que recibió }
  *
  * Los aportes y los traslados se anotan en las pestañas "Aportes" y "Traslados"
  * (se crean solas la primera vez que se usan).
@@ -568,8 +571,8 @@ var DONATION_HEADERS = ['Código', 'Estado', 'Modo', 'Punto', 'Barrio', 'Insumos
 var DCOL = { code: 1, state: 2, mode: 3, point: 4, barrio: 5, label: 6, value: 7, slot: 8, at: 9, received: 10, delivered: 11, items: 12 }
 var TRANSFER_HEADERS = ['Código', 'Estado', 'Desde', 'Hacia', 'Insumos', 'Enviado', 'Recibido', 'items']
 var TCOL = { code: 1, state: 2, from: 3, to: 4, label: 5, sent: 6, received: 7, items: 8 }
-var DONATION_STATES = ['Agendado', 'Recibido', 'Entregado']
-var TRANSFER_STATES = ['En camino', 'Recibido']
+var DONATION_STATES = ['Agendado', 'Recibido', 'Entregado', 'Cancelado']
+var TRANSFER_STATES = ['En camino', 'Recibido', 'Cancelado']
 /** Lo que el mapa en vivo alcanza a mostrar: los últimos eventos, durante unos minutos. */
 var EVENTS_KEEP = 40
 var EVENTS_SECONDS = 900
@@ -775,6 +778,7 @@ function receive_(body) {
     var other = pointById_(rec.point)
     throw new Error('Este aporte es para ' + (other ? other.name : 'otro punto'))
   }
+  if (rec.state === 'Cancelado') throw new Error('El donante canceló este aporte: no se puede recibir')
   if (rec.state !== 'Agendado') return { record: rec, already: true, rows: rowsFor_(point) }
   var now = new Date()
   hit.sh.getRange(hit.row, DCOL.state).setValue('Recibido')
@@ -847,6 +851,7 @@ function transferReceive_(body) {
   if (!hit) throw new Error('No encontramos el traslado ' + code)
   var t = transferFromRow_(hit.values)
   if (t.to !== point.id) throw new Error('Este traslado va para otro punto')
+  if (t.state === 'Cancelado') throw new Error('El punto que lo envió anuló este traslado')
   if (t.state !== 'En camino') return { transfer: t, already: true, rows: rowsFor_(point) }
   var now = new Date()
   hit.sh.getRange(hit.row, TCOL.state).setValue('Recibido')
@@ -855,6 +860,100 @@ function transferReceive_(body) {
   t.state = 'Recibido'
   t.receivedAt = now.toISOString()
   event_('traslado-recibido', point, { code: code })
+  return { transfer: t, rows: rows }
+}
+
+/* ---- cancelar y deshacer ---- */
+
+/** Busca un aporte de este punto, o falla con un mensaje claro. */
+function ownDonation_(body) {
+  var code = String(body.code || '').toUpperCase().trim()
+  var point = pointById_(body.point)
+  if (!point) throw new Error('Punto de acopio desconocido: ' + body.point)
+  var hit = findCode_(DONATIONS_TAB, code)
+  if (!hit) throw new Error('No encontramos el aporte ' + code)
+  var rec = donationFromRow_(hit.values)
+  if (rec.point !== point.id) throw new Error('Este aporte es de otro punto')
+  return { hit: hit, rec: rec, point: point }
+}
+
+/** El donante ya no puede llevarlo: una entrega agendada queda Cancelada. */
+function cancel_(body) {
+  var code = String(body.code || '').toUpperCase().trim()
+  var hit = findCode_(DONATIONS_TAB, code)
+  if (!hit) throw new Error('No encontramos el aporte ' + code)
+  var rec = donationFromRow_(hit.values)
+  if (rec.state === 'Cancelado') return { record: rec, already: true }
+  if (rec.mode === 'money') throw new Error('Un aporte en dinero no se puede cancelar desde aquí')
+  if (rec.state !== 'Agendado') throw new Error('Este aporte ya se recibió en el punto: no se puede cancelar')
+  hit.sh.getRange(hit.row, DCOL.state).setValue('Cancelado')
+  rec.state = 'Cancelado'
+  return { record: rec }
+}
+
+/** El punto marcó Recibido por error: vuelve a Agendado y sale del inventario. */
+function unreceive_(body) {
+  var o = ownDonation_(body)
+  if (o.rec.state === 'Agendado') return { record: o.rec, already: true, rows: rowsFor_(o.point) }
+  if (o.rec.mode === 'money') throw new Error('Un aporte en dinero entra recibido: no se puede deshacer')
+  if (o.rec.state !== 'Recibido') throw new Error('Ya se entregó a las familias: primero deshaz la entrega')
+  o.hit.sh.getRange(o.hit.row, DCOL.state).setValue('Agendado')
+  o.hit.sh.getRange(o.hit.row, DCOL.received).setValue('')
+  var minus = {}
+  for (var id in o.rec.items) minus[id] = -o.rec.items[id]
+  var rows = addStock_(o.point, minus, 'App')
+  o.rec.state = 'Agendado'
+  o.rec.receivedAt = null
+  return { record: o.rec, rows: rows }
+}
+
+/** El punto marcó Entregado por error: vuelve a Recibido. */
+function undeliver_(body) {
+  var o = ownDonation_(body)
+  if (o.rec.state === 'Recibido') return { record: o.rec, already: true }
+  if (o.rec.state !== 'Entregado') throw new Error('Este aporte no está entregado')
+  o.hit.sh.getRange(o.hit.row, DCOL.state).setValue('Recibido')
+  o.hit.sh.getRange(o.hit.row, DCOL.delivered).setValue('')
+  o.rec.state = 'Recibido'
+  o.rec.deliveredAt = null
+  return { record: o.rec }
+}
+
+/** Quien envió un traslado lo anula mientras sigue en camino: los insumos vuelven a su inventario. */
+function transferCancel_(body) {
+  var code = String(body.code || '').toUpperCase().trim()
+  var point = pointById_(body.point)
+  if (!point) throw new Error('Punto de acopio desconocido: ' + body.point)
+  var hit = findCode_(TRANSFERS_TAB, code)
+  if (!hit) throw new Error('No encontramos el traslado ' + code)
+  var t = transferFromRow_(hit.values)
+  if (t.from !== point.id) throw new Error('Solo el punto que lo envió puede anularlo')
+  if (t.state === 'Cancelado') return { transfer: t, already: true, rows: rowsFor_(point) }
+  if (t.state !== 'En camino') throw new Error('El otro punto ya lo recibió: pídele que deshaga la recepción')
+  hit.sh.getRange(hit.row, TCOL.state).setValue('Cancelado')
+  var rows = addStock_(point, t.items, 'Traslado')
+  t.state = 'Cancelado'
+  return { transfer: t, rows: rows }
+}
+
+/** El punto de destino marcó Recibido por error: vuelve a En camino y sale de su inventario. */
+function transferUnreceive_(body) {
+  var code = String(body.code || '').toUpperCase().trim()
+  var point = pointById_(body.point)
+  if (!point) throw new Error('Punto de acopio desconocido: ' + body.point)
+  var hit = findCode_(TRANSFERS_TAB, code)
+  if (!hit) throw new Error('No encontramos el traslado ' + code)
+  var t = transferFromRow_(hit.values)
+  if (t.to !== point.id) throw new Error('Este traslado va para otro punto')
+  if (t.state === 'En camino') return { transfer: t, already: true, rows: rowsFor_(point) }
+  if (t.state !== 'Recibido') throw new Error('Este traslado no está recibido')
+  hit.sh.getRange(hit.row, TCOL.state).setValue('En camino')
+  hit.sh.getRange(hit.row, TCOL.received).setValue('')
+  var minus = {}
+  for (var id in t.items) minus[id] = -t.items[id]
+  var rows = addStock_(point, minus, 'Traslado')
+  t.state = 'En camino'
+  t.receivedAt = null
   return { transfer: t, rows: rows }
 }
 
@@ -941,7 +1040,10 @@ function doPost(e) {
     // dos voluntarios pueden guardar al mismo tiempo; las escrituras van en fila
     lock.waitLock(20000)
     var body = JSON.parse((e && e.postData && e.postData.contents) || '{}')
-    var handlers = { donate: donate_, receive: receive_, deliver: deliver_, transfer: transfer_, transferReceive: transferReceive_ }
+    var handlers = {
+      donate: donate_, receive: receive_, deliver: deliver_, transfer: transfer_, transferReceive: transferReceive_,
+      cancel: cancel_, unreceive: unreceive_, undeliver: undeliver_, transferCancel: transferCancel_, transferUnreceive: transferUnreceive_,
+    }
     if (handlers[body.action]) {
       var out = handlers[body.action](body)
       forgetQueues_()

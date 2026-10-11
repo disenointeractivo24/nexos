@@ -16,8 +16,8 @@ const itemsLine = (items) =>
         .map(([id, n]) => `${n} × ${SUPPLIES[id].label}`)
         .join(', ')
 
-/** What each state is called for a person following their donation. */
-const STATE_WORD = { Agendado: 'Agendado', Recibido: 'En el punto', Entregado: 'Entregado', 'En camino': 'En camino' }
+/** What each state is called: the same words the collection point sees. */
+const STATE_WORD = { Agendado: 'Agendado', Recibido: 'Recibido', Entregado: 'Entregado', 'En camino': 'En camino', Cancelado: 'Cancelado' }
 
 /**
  * "¿Dónde está mi ayuda?": follow a donation (or a transfer) by its code.
@@ -164,6 +164,31 @@ export class TrackView {
         out.innerHTML = data.transfer ? this.#transfer(data.transfer) : await this.#donation(data.record, data)
         hydrateIcons(out)
         out.querySelector('.js-refresh')?.addEventListener('click', () => this.#find(code))
+        // cancelling asks once more, right where the button was
+        out.querySelector('.js-cancel')?.addEventListener('click', () => {
+            out.querySelector('.js-cancel-ask').hidden = false
+            out.querySelector('.js-cancel').hidden = true
+            out.querySelector('.js-cancel-no').focus()
+        })
+        out.querySelector('.js-cancel-no')?.addEventListener('click', () => {
+            out.querySelector('.js-cancel-ask').hidden = true
+            out.querySelector('.js-cancel').hidden = false
+            out.querySelector('.js-cancel').focus()
+        })
+        out.querySelector('.js-cancel-yes')?.addEventListener('click', async (e) => {
+            e.currentTarget.disabled = true
+            e.currentTarget.textContent = 'Cancelando…'
+            const res = await ledger.cancel(code)
+            if (!res.ok) {
+                this.audio?.play('error')
+                const err = this.card.querySelector('.js-error')
+                err.textContent = res.error
+                err.hidden = false
+                return this.#find(code)
+            }
+            this.audio?.play('tap')
+            this.#find(code)
+        })
         out.querySelector('.js-save-qr')?.addEventListener('click', async () => {
             const a = document.createElement('a')
             a.href = await qrPng(trackUrl(code))
@@ -179,7 +204,8 @@ export class TrackView {
         const zone = ZONES.find((z) => z.id === p?.zone)
         const physical = r.mode !== 'money'
         const order = ['Agendado', 'Recibido', 'Entregado']
-        const at = order.indexOf(r.state)
+        const cancelled = r.state === 'Cancelado'
+        const at = cancelled ? 0 : order.indexOf(r.state)
         const steps = physical
             ? [
                   ['Aporte agendado', [when(r.at), r.slot ? `Entrega: ${r.slot}` : ''].filter(Boolean).join(' · ')],
@@ -192,14 +218,16 @@ export class TrackView {
                   ['Entregado a las familias', r.deliveredAt ? when(r.deliveredAt) : 'Cuando las familias lo recojan en el punto.'],
               ]
         const qr = physical && r.state === 'Agendado' ? await qrSvg(trackUrl(r.code)) : ''
+        const canCancel = physical && r.state === 'Agendado' && !pending
         return `
             <div class="track-card-head">
                 <b class="track-code">${esc(r.code)}</b>
                 <span class="state-pill" data-state="${esc(r.state)}">${esc(STATE_WORD[r.state] ?? r.state)}</span>
             </div>
             ${pending || offline || unsupported ? `<p class="done-offline">${icon('info')} ${unsupported ? 'El seguimiento todavía no está activo en la hoja de los puntos: esto es lo que guardó este dispositivo.' : pending ? 'Tu aporte está guardado en este dispositivo y llegará a la hoja apenas haya conexión.' : 'Sin conexión: esto es lo último que sabemos.'}</p>` : ''}
-            <ol class="timeline">
-                ${steps
+            ${cancelled ? `<p class="track-cancelled">${icon('x')} Cancelaste esta entrega. El punto ya no la espera.</p>` : ''}
+            <ol class="timeline${cancelled ? ' is-cancelled' : ''}">
+                ${(cancelled ? steps.slice(0, 1) : steps)
                     .map(
                         ([title, detail], i) => `
                     <li class="${i < at ? 'is-done' : i === at ? 'is-done is-now' : ''}">
@@ -218,13 +246,27 @@ export class TrackView {
                     <button class="btn btn-secondary js-save-qr" type="button">${icon('download')} Guardar QR</button></div>
                 </div>`
                 : ''}
-            <div class="track-actions"><button class="btn btn-secondary js-refresh" type="button">${icon('refresh')} Actualizar</button></div>`
+            <div class="track-actions">
+                ${canCancel
+                    ? `<button class="btn btn-secondary btn-danger-text js-cancel" type="button">${icon('x')} Cancelar entrega</button>
+                       <span class="track-ask js-cancel-ask" hidden>¿Cancelar esta entrega? El punto ya no la esperará.
+                         <button class="btn btn-secondary js-cancel-no" type="button">No, mantener</button>
+                         <button class="btn btn-danger js-cancel-yes" type="button">Sí, cancelar</button></span>`
+                    : ''}
+                <button class="btn btn-secondary js-refresh" type="button">${icon('refresh')} Actualizar</button>
+            </div>`
     }
 
     #transfer(t) {
         const from = pointOf(t.from)
         const to = pointOf(t.to)
         const done = t.state === 'Recibido'
+        if (t.state === 'Cancelado') {
+            return `
+            <div class="track-card-head"><b class="track-code">${esc(t.code)}</b><span class="state-pill" data-state="Cancelado">Cancelado</span></div>
+            <p class="track-cancelled">${icon('x')} ${esc(from?.name ?? t.from)} anuló este traslado: los insumos volvieron a su inventario.</p>
+            <div class="info-block">${icon('truck')}<div><span class="info-label">Qué se iba a enviar</span><b>${esc(itemsLine(t.items))}</b></div></div>`
+        }
         return `
             <div class="track-card-head">
                 <b class="track-code">${esc(t.code)}</b>

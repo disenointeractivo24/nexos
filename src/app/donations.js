@@ -204,6 +204,21 @@ class Ledger {
         return this.#act({ action: 'deliver', code: readCode(code), point })
     }
 
+    /** The donor cannot bring it after all: a scheduled donation is cancelled. */
+    cancel(code) {
+        return this.#act({ action: 'cancel', code: readCode(code) })
+    }
+
+    /** Undo a receipt made by mistake: back to Agendado, and out of the point's stock. */
+    unreceive(code, point) {
+        return this.#act({ action: 'unreceive', code: readCode(code), point })
+    }
+
+    /** Undo a hand-out marked by mistake: back to Recibido. */
+    undeliver(code, point) {
+        return this.#act({ action: 'undeliver', code: readCode(code), point })
+    }
+
     /* ---------------- transfers ---------------- */
 
     /** Send supplies to another point: they leave this point's stock now. */
@@ -214,6 +229,16 @@ class Ledger {
     /** A transfer arrived: into this point's stock. */
     transferReceive(code, point) {
         return this.#act({ action: 'transferReceive', code: readCode(code), point })
+    }
+
+    /** The sending point calls a transfer back while it is on its way: its stock returns. */
+    transferCancel(code, point) {
+        return this.#act({ action: 'transferCancel', code: readCode(code), point })
+    }
+
+    /** Undo receiving a transfer: back on its way, and out of this point's stock. */
+    transferUnreceive(code, point) {
+        return this.#act({ action: 'transferUnreceive', code: readCode(code), point })
     }
 
     /** Point actions need an answer to be trusted, so they are not queued: offline, they fail. */
@@ -228,11 +253,9 @@ class Ledger {
                 return { ok: false, offline: !!err.offline, error: err.offline ? 'Sin conexión. Inténtalo de nuevo en un momento.' : err.message }
             }
         }
-        if (!out.ok) out.error = plain(out.error)
-        if (out.ok && !out.already) {
-            const kind = { receive: 'recibido', deliver: 'entregado', transfer: 'traslado', transferReceive: 'traslado-recibido' }[body.action]
-            this.#emit({ kind, point: body.point ?? body.from, to: body.to, code: body.code })
-        }
+        if (!out.ok) out.error = /no soportada/i.test(out.error ?? '') ? 'Esto necesita la versión nueva del script de la hoja.' : plain(out.error)
+        const kind = { receive: 'recibido', deliver: 'entregado', transfer: 'traslado', transferReceive: 'traslado-recibido' }[body.action]
+        if (out.ok && !out.already && kind) this.#emit({ kind, point: body.point ?? body.from, to: body.to, code: body.code })
         if (out.ok && out.record && loadQueue(MINE)[out.record.code]) this.#remember(out.record)
         return out
     }
@@ -270,6 +293,53 @@ function localDonate(rec) {
 function localAct(body) {
     const l = loadLedger()
     const now = new Date().toISOString()
+    const minus = (items) => Object.fromEntries(Object.entries(items).map(([k, v]) => [k, -v]))
+    if (body.action === 'transferCancel' || body.action === 'transferUnreceive') {
+        const t = l.transfers[body.code]
+        if (!t) return { ok: false, error: `No encontramos el traslado ${body.code}` }
+        if (body.action === 'transferCancel') {
+            if (t.from !== body.point) return { ok: false, error: 'Solo el punto que lo envió puede anularlo' }
+            if (t.state === 'Cancelado') return { ok: true, transfer: t, already: true }
+            if (t.state !== 'En camino') return { ok: false, error: 'El otro punto ya lo recibió: pídele que deshaga la recepción' }
+            t.state = 'Cancelado'
+            saveLedger(l)
+            return { ok: true, transfer: t, rows: addStock(body.point, t.items) }
+        }
+        if (t.to !== body.point) return { ok: false, error: 'Este traslado va para otro punto' }
+        if (t.state === 'En camino') return { ok: true, transfer: t, already: true }
+        if (t.state !== 'Recibido') return { ok: false, error: 'Este traslado no está recibido' }
+        Object.assign(t, { state: 'En camino', receivedAt: null })
+        saveLedger(l)
+        return { ok: true, transfer: t, rows: addStock(body.point, minus(t.items)) }
+    }
+    if (body.action === 'cancel') {
+        const rec = l.donations[body.code]
+        if (!rec) return { ok: false, error: `No encontramos el aporte ${body.code}` }
+        if (rec.state === 'Cancelado') return { ok: true, record: rec, already: true }
+        if (rec.mode === 'money') return { ok: false, error: 'Un aporte en dinero no se puede cancelar desde aquí' }
+        if (rec.state !== 'Agendado') return { ok: false, error: 'Este aporte ya se recibió en el punto: no se puede cancelar' }
+        rec.state = 'Cancelado'
+        saveLedger(l)
+        return { ok: true, record: rec }
+    }
+    if (body.action === 'unreceive' || body.action === 'undeliver') {
+        const rec = l.donations[body.code]
+        if (!rec) return { ok: false, error: `No encontramos el aporte ${body.code}` }
+        if (rec.point !== body.point) return { ok: false, error: 'Este aporte es de otro punto' }
+        if (body.action === 'undeliver') {
+            if (rec.state === 'Recibido') return { ok: true, record: rec, already: true }
+            if (rec.state !== 'Entregado') return { ok: false, error: 'Este aporte no está entregado' }
+            Object.assign(rec, { state: 'Recibido', deliveredAt: null })
+            saveLedger(l)
+            return { ok: true, record: rec }
+        }
+        if (rec.state === 'Agendado') return { ok: true, record: rec, already: true }
+        if (rec.mode === 'money') return { ok: false, error: 'Un aporte en dinero entra recibido: no se puede deshacer' }
+        if (rec.state !== 'Recibido') return { ok: false, error: 'Ya se entregó a las familias: primero deshaz la entrega' }
+        Object.assign(rec, { state: 'Agendado', receivedAt: null })
+        saveLedger(l)
+        return { ok: true, record: rec, rows: addStock(body.point, minus(rec.items)) }
+    }
     if (body.action === 'transfer') {
         const have = readLocalStock(body.from)
         const items = {}
@@ -284,6 +354,7 @@ function localAct(body) {
         const t = l.transfers[body.code]
         if (!t) return { ok: false, error: `No encontramos el traslado ${body.code}` }
         if (t.to !== body.point) return { ok: false, error: 'Este traslado va para otro punto' }
+        if (t.state === 'Cancelado') return { ok: false, error: 'El punto que lo envió anuló este traslado' }
         if (t.state !== 'En camino') return { ok: true, transfer: t, already: true }
         Object.assign(t, { state: 'Recibido', receivedAt: now })
         saveLedger(l)
@@ -293,6 +364,7 @@ function localAct(body) {
     if (!rec) return { ok: false, error: `No encontramos el aporte ${body.code}` }
     if (rec.point !== body.point) return { ok: false, error: 'Este aporte es para otro punto' }
     if (body.action === 'receive') {
+        if (rec.state === 'Cancelado') return { ok: false, error: 'El donante canceló este aporte: no se puede recibir' }
         if (rec.state !== 'Agendado') return { ok: true, record: rec, already: true }
         Object.assign(rec, { state: 'Recibido', receivedAt: now })
         saveLedger(l)

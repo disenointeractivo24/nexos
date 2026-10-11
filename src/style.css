@@ -2681,3 +2681,38 @@ html.is-lite,
     .zone-card { padding-bottom: env(safe-area-inset-bottom); }
     .supply-panel .supply-foot, .supply-panel .board-foot { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
 }
+.state-pill[data-state="Cancelado"] { background: #ECEDEF; color: #5F6368; }
+.track-cancelled { display: flex; gap: 8px; align-items: center; margin: 0; padding: 10px 12px; border-radius: 12px; background: #F4F5F7; color: #4E5663; font-size: 16px; }
+.track-cancelled [data-icon] { width: 18px; height: 18px; flex: none; }
+.track-actions { flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn-danger-text { color: #A3262F; margin-right: auto; }
+.track-ask { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; background: #FDECEC; color: #8A1F1F; font-size: 15px; font-weight: 600; }
+.track-ask[hidden] { display: none; }
+/* confirm what arrived, and the review before a transfer leaves */
+.dialog-items { list-style: none; margin: 8px 0; padding: 10px 12px; display: grid; gap: 4px; border-radius: 12px; background: #F4F5F7; font-size: 17px; }
+.dialog-items small { color: #6B7280; }
+.xfer-review { display: grid; gap: 10px; }
+.xfer-review h4 { margin: 0; font-size: 20px; color: var(--navy); }
+.xfer-review p { margin: 0; font-size: 16px; color: #4E5663; }
+.xfer-note { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: #EEF3F9; }
+.xfer-note [data-icon] { width: 18px; height: 18px; flex: none; margin-top: 2px; }
+.xfer-review .xfer-foot { position: static; margin: 0; padding: 8px 0 0; border: 0; }
+.xfer-review .xfer-foot .js-xfer-confirm { margin-left: auto; }
+.btn[aria-busy="true"] { cursor: progress; opacity: 0.85; }
+.btn .sync-spin { width: 16px; height: 16px; margin-right: 6px; border-width: 2px; }
+/* light version: where you are in the donation, your last zone, units or boxes */
+.lite-steps { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 14px; color: #5F6368; }
+.lite-steps b { margin-left: 6px; color: var(--navy); }
+.lite-step { width: 26px; height: 6px; border-radius: 3px; background: #D5DBE3; }
+.lite-step.is-done { background: var(--navy); }
+.lite-step.is-now { background: var(--red); }
+.lite-last { color: var(--red-press); font-weight: 700; }
+.lite .step-toggle { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--radius-pill); background: rgba(1, 30, 65, 0.08); }
+.lite .step-toggle button { min-height: 40px; padding: 0 14px; border: 0; border-radius: var(--radius-pill); background: none; font: inherit; font-size: 15px; font-weight: 700; color: #5F6368; cursor: pointer; }
+.lite .step-toggle button[aria-checked="true"] { background: #fff; color: var(--navy); box-shadow: 0 1px 4px rgba(1, 30, 65, 0.18); }
+.lite .stock-tools { justify-content: space-between; }
+.lite .xfer-review { padding-bottom: env(safe-area-inset-bottom); }
+@media (max-width: 520px) {
+    .xfer-review .xfer-foot .btn { flex: 1 1 0; min-width: 0; white-space: nowrap; padding: 0 10px; font-size: 16px; justify-content: center; }
+    .xfer-review .xfer-foot .js-xfer-confirm, .xfer-review .xfer-foot .js-confirm { margin-left: 0; }
+}

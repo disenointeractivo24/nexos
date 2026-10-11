@@ -1,8 +1,8 @@
 import { icon, hydrateIcons } from '../ui/icons.js'
-import { Toast } from '../ui/feedback.js'
+import { Toast, Dialog, helpList, busyButton } from '../ui/feedback.js'
 import { TrackView } from '../ui/track.js'
 import { qrSvg, scanQr } from '../ui/qr.js'
-import { CATEGORIES, SUPPLIES, money } from '../data/catalog.js'
+import { CATEGORIES, SUPPLIES, money, perBox } from '../data/catalog.js'
 import { stockCap, stockState } from '../data/inventory.js'
 import { ZONES, NEED_WORD, zoneNeeds, zoneLevel, useStock } from '../data/zones.js'
 import { COLLECTION_POINTS, pointForZone, validateCredentials, directionsUrl } from '../data/collectionPoints.js'
@@ -14,6 +14,14 @@ import { ledger, localQueue, newCode, trackUrl, readCode } from '../app/donation
 import { setLite, liteSuggested } from './detect.js'
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+/** The zone this device donated to last, to mark it in the list. */
+const lastZone = () => {
+    try {
+        return localStorage.getItem('nexos.lite.zone')
+    } catch {
+        return null
+    }
+}
 const zoneOfPoint = (id) => ZONES.find((z) => z.id === COLLECTION_POINTS.find((p) => p.id === id)?.zone)
 const itemsLine = (items) =>
     Object.entries(items ?? {})
@@ -59,9 +67,14 @@ export class LiteApp {
         toast.hidden = true
         toast.setAttribute('role', 'status')
         toast.setAttribute('aria-live', 'polite')
-        document.body.append(track, toast)
+        const dialog = document.createElement('div')
+        dialog.className = 'dialog-backdrop'
+        dialog.hidden = true
+        dialog.innerHTML = '<div class="dialog glass" role="alertdialog" aria-modal="true" aria-labelledby="dialog-title"></div>'
+        document.body.append(track, toast, dialog)
         this.track = new TrackView(track, {})
         this.toast = new Toast(toast, {})
+        this.dialog = new Dialog(dialog, {})
 
         this.board = new StockBoard()
         useStock(this.board)
@@ -114,6 +127,7 @@ export class LiteApp {
                 <button class="lite-brand js-home" type="button" aria-label="NEXOS, inicio">NE<span class="brand-x">X</span>OS</button>
                 <span class="lite-tag">Versión ligera</span>
                 <button class="lite-link js-track-open" type="button">${icon('search')}<span>Sigue tu aporte</span></button>
+                <button class="lite-link js-help" type="button" aria-label="Ayuda" title="Ayuda">${icon('help')}<span>Ayuda</span></button>
                 <button class="lite-link js-full" type="button" title="Abrir el mapa en 3D">${icon('map')}<span>Ver en 3D</span></button>
             </header>`
     }
@@ -122,6 +136,50 @@ export class LiteApp {
         this.root.querySelector('.js-home').addEventListener('click', () => this.go(this.point ? 'point' : 'home'))
         this.root.querySelector('.js-track-open').addEventListener('click', () => this.track.show())
         this.root.querySelector('.js-full').addEventListener('click', () => setLite(false))
+        this.root.querySelector('.js-help').addEventListener('click', () => this.#help())
+    }
+
+    /** Help about what is on screen: donating, or the point's two tabs. */
+    #help() {
+        const point = this.screen === 'point'
+        const receive = point && this.pointTab === 'receive'
+        const steps = !point
+            ? [
+                  'Elige una <b>zona</b>: primero aparecen las que más lo necesitan, con lo que les falta.',
+                  'Arma tu <b>cesta</b> con − y +. Solo puedes aportar lo que al punto le falta.',
+                  'Elige si lo <b>llevas al punto</b> (eliges cuándo) o si aportas <b>en dinero</b> (demostración).',
+                  'Revisa el <b>resumen</b> y confirma. Recibes un código y, si lo llevas, un QR para mostrar en el punto.',
+                  'Con <b>Sigue tu aporte</b> ves en qué va tu donación, y puedes cancelar una entrega agendada.',
+              ]
+            : receive
+              ? [
+                    'Toca <b>Escanear QR</b> y apunta al código del donante: queda recibido y se suma al inventario.',
+                    'Sin QR, escribe su código (<b>NX-</b>…) y toca <b>Recibir</b>. Los traslados empiezan por <b>TR-</b>.',
+                    'En <b>Por recibir</b> están los aportes agendados y los traslados; al tocar <b>Recibir</b> confirmas qué llegó.',
+                    'Cuando las familias recojan un aporte, toca <b>Entregado</b>.',
+                    'Si te equivocas, toca <b>Deshacer</b> en el aviso.',
+                ]
+              : [
+                    'Cuenta lo que hay en el punto con − y +, o escribe la cantidad. Con <b>Caja</b>, los botones cuentan cajas completas.',
+                    'Rojo es crítico (menos del 30 %), amarillo estable y verde abastecido.',
+                    '<b>Enviar a otro punto</b> manda lo que te sobra a quien le falta: lo revisas antes de confirmar.',
+                    'Para recibir donaciones o traslados, abre la pestaña <b>Recibir</b>.',
+                ]
+        this.dialog.ask({
+            icon: 'help',
+            title: !point ? 'Cómo donar' : receive ? 'Cómo recibir y entregar' : 'Cómo usar el inventario',
+            body: helpList(steps),
+            actions: [{ label: 'Entendido', value: true, kind: 'primary' }],
+        })
+    }
+
+    /** Where the person is in the donation: step n of 3 or 4. */
+    #steps(n) {
+        const names = this.mode === 'money' ? ['Tu cesta', 'Forma de aporte', 'Resumen'] : ['Tu cesta', 'Forma de aporte', 'Datos de entrega', 'Resumen']
+        const i = Math.min(n, names.length) - 1
+        return `<p class="lite-steps" aria-label="Paso ${i + 1} de ${names.length}: ${names[i]}">
+            ${names.map((_, k) => `<span class="lite-step${k < i ? ' is-done' : k === i ? ' is-now' : ''}"></span>`).join('')}
+            <b>Paso ${i + 1} de ${names.length}</b> · ${names[i]}</p>`
     }
 
     #back(to, label = 'Volver') {
@@ -200,7 +258,7 @@ export class LiteApp {
                 <article class="lite-card lite-zone" style="--zone:${z.color}">
                     <div class="lite-zone-head">
                         <span class="lite-zone-dot" aria-hidden="true"></span>
-                        <div class="lite-zone-name"><h2>${esc(z.name)}</h2><small>Barrio ${esc(z.barrio)}</small></div>
+                        <div class="lite-zone-name"><h2>${esc(z.name)}</h2><small>Barrio ${esc(z.barrio)}${z.id === lastZone() ? ' · <b class="lite-last">Tu última zona</b>' : ''}</small></div>
                         <span class="need-pill" data-level="${level}">${esc(NEED_WORD[level])}</span>
                     </div>
                     <p class="lite-muted">${icon('pin')} ${esc(p.name)} · ${esc(p.address)}</p>
@@ -227,7 +285,13 @@ export class LiteApp {
         this.root.querySelectorAll('.js-zone').forEach((b) =>
             b.addEventListener('click', () => {
                 if (this.zone?.id !== b.dataset.zone) this.basket = new Map()
+                this.mode = null
                 this.zone = ZONES.find((z) => z.id === b.dataset.zone)
+                try {
+                    localStorage.setItem('nexos.lite.zone', this.zone.id)
+                } catch {
+                    /* storage unavailable: nothing to remember */
+                }
                 this.go('basket')
             })
         )
@@ -249,6 +313,7 @@ export class LiteApp {
             .filter((s) => this.#max(s.id) > 0)
             .sort((a, b) => Number(this.board.isCritical(this.zone.id, b.id)) - Number(this.board.isCritical(this.zone.id, a.id)) || order.indexOf(a.category) - order.indexOf(b.category))
         return `
+            ${this.#steps(1)}
             <h1 class="lite-title">Tu cesta para ${esc(this.zone.name)}</h1>
             <p class="lite-muted">${icon('pin')} ${esc(p.name)}. Solo puedes aportar lo que al punto le falta.</p>
             <div class="lite-list">
@@ -320,6 +385,7 @@ export class LiteApp {
     #method() {
         const t = this.#totals()
         return `
+            ${this.#steps(2)}
             <h1 class="lite-title">¿Cómo quieres aportar?</h1>
             <p class="lite-muted">${t.units} ${t.units === 1 ? 'unidad' : 'unidades'} · valor equivalente ${money(t.value)}</p>
             <div class="lite-choices">
@@ -345,6 +411,7 @@ export class LiteApp {
         const d = this.details
         const windows = deliveryWindows()
         return `
+            ${this.#steps(3)}
             <h1 class="lite-title">¿Cuándo lo llevas?</h1>
             <p class="lite-muted">Tus datos se quedan en este dispositivo: solo sirven para que el punto te reconozca.</p>
             <form class="lite-form donor-form" novalidate>
@@ -386,6 +453,7 @@ export class LiteApp {
         const w = deliveryWindows().find((x) => x.id === this.details.window)
         const physical = this.mode === 'physical'
         return `
+            ${this.#steps(4)}
             <h1 class="lite-title">Resumen del aporte</h1>
             <section class="lite-card">
                 <ul class="mini-list">${[...this.basket].map(([id, q]) => `<li><span>${q} × ${esc(SUPPLIES[id].label)}</span><span>${money(q * SUPPLIES[id].value)}</span></li>`).join('')}</ul>
@@ -423,6 +491,13 @@ export class LiteApp {
         const basket = new Map(this.basket)
         if (record.mode === 'money') this.board.donate(p.id, basket, { push: false })
         ledger.donate(record).then((out) => {
+            if (out.queued && this.screen === 'done') {
+                this.root.querySelector('.lite-done')?.insertAdjacentHTML(
+                    'beforeend',
+                    `<p class="done-offline">${icon('info')} Sin conexión en este momento: tu aporte quedó guardado en este dispositivo y se envía solo apenas vuelva la conexión.</p>`
+                )
+                hydrateIcons(this.root)
+            }
             if (out.rows) this.board.applyRows(p.id, out.rows)
             // a sheet with the previous script: the donation goes into the stock straight away, as before
             if (out.unsupported) record.mode === 'money' ? this.board.resend(p.id, basket.keys()) : this.board.donate(p.id, basket)
@@ -479,7 +554,7 @@ export class LiteApp {
             const point = validateCredentials(form.code.value.trim().toUpperCase(), form.pin.value.trim())
             const err = this.root.querySelector('.js-error')
             if (!point) {
-                err.textContent = 'El código o la clave no coinciden.'
+                err.textContent = 'El código o la clave no coinciden. El código es como ACOPIO-NORTE y la clave tiene 4 números.'
                 err.hidden = false
                 return
             }
@@ -503,7 +578,13 @@ export class LiteApp {
                 <button class="board-tab js-tab" type="button" role="tab" id="lt-receive" data-tab="receive" aria-controls="lv-receive">${icon('qr')} Recibir<span class="tab-badge js-pending-count" hidden></span></button>
             </div>
             <section class="lite-card" id="lv-stock" role="tabpanel" aria-labelledby="lt-stock">
-                <div class="stock-tools"><p>Cuenta lo que hay en el punto.</p><button class="btn btn-secondary js-transfer" type="button">${icon('truck')} Enviar a otro punto</button></div>
+                <div class="stock-tools">
+                    <div class="step-toggle lite-by" role="radiogroup" aria-label="Los botones suman o quitan">
+                        <button type="button" role="radio" class="js-by" data-by="unit" aria-checked="${!this.byBox}">Unidad</button>
+                        <button type="button" role="radio" class="js-by" data-by="box" aria-checked="${!!this.byBox}">Caja</button>
+                    </div>
+                    <button class="btn btn-secondary js-transfer" type="button">${icon('truck')} Enviar a otro punto</button>
+                </div>
                 <div class="lite-list js-stock"></div>
             </section>
             <section id="lv-receive" role="tabpanel" aria-labelledby="lt-receive" hidden>
@@ -540,9 +621,15 @@ export class LiteApp {
         const form = this.root.querySelector('.js-receive-form')
         form.addEventListener('submit', (e) => {
             e.preventDefault()
-            this.#receive(form.querySelector('input').value)
+            this.#receive(form.querySelector('input').value, { button: form.querySelector('[type="submit"]') })
         })
         this.root.querySelector('.js-scan').addEventListener('click', () => this.#scan())
+        this.root.querySelectorAll('.js-by').forEach((b) =>
+            b.addEventListener('click', () => {
+                this.byBox = b.dataset.by === 'box'
+                this.root.querySelectorAll('.js-by').forEach((o) => o.setAttribute('aria-checked', String(o === b)))
+            })
+        )
         this.root.querySelector('.js-transfer').addEventListener('click', () => this.#transfer())
         this.root.querySelector('.js-logout').addEventListener('click', () => {
             this.store.stop()
@@ -552,8 +639,8 @@ export class LiteApp {
         })
         this.root.querySelector('.js-pending-lists').addEventListener('click', (e) => {
             const b = e.target.closest('[data-action]')
-            if (b?.dataset.action === 'deliver') this.#deliver(b.dataset.code)
-            else if (b) this.#receive(b.dataset.code)
+            if (b?.dataset.action === 'deliver') this.#deliver(b.dataset.code, b)
+            else if (b) this.#receive(b.dataset.code, { confirm: true, button: b })
         })
         this.stockKey = this.queueKey = null
         this.#pointSync()
@@ -587,8 +674,10 @@ export class LiteApp {
             hydrateIcons(box)
             box.querySelectorAll('.lite-row').forEach((row) => {
                 const id = row.dataset.item
-                row.querySelector('.js-minus').addEventListener('click', () => st.set(id, st.get(id) - 1))
-                row.querySelector('.js-plus').addEventListener('click', () => st.set(id, st.get(id) + 1))
+                // with "Caja" the buttons count whole boxes, as in the full version
+                const step = () => (this.byBox ? perBox(id) : 1)
+                row.querySelector('.js-minus').addEventListener('click', () => st.set(id, st.get(id) - step()))
+                row.querySelector('.js-plus').addEventListener('click', () => st.set(id, st.get(id) + step()))
                 const input = row.querySelector('.js-qty')
                 input.addEventListener('focus', () => input.select())
                 input.addEventListener('change', () => {
@@ -621,7 +710,8 @@ export class LiteApp {
         hydrateIcons(lists)
     }
 
-    async #receive(text) {
+    /** As in the full version: a tap on the list asks what arrived; busy while the sheet answers; undo after. */
+    async #receive(text, { confirm = false, button = null } = {}) {
         const err = this.root.querySelector('.js-receive-error')
         const code = readCode(text)
         err.hidden = true
@@ -630,7 +720,26 @@ export class LiteApp {
             err.hidden = false
             return
         }
+        if (confirm) {
+            const q = this.store.queue ?? {}
+            const it = [...(q.scheduled ?? []), ...(q.incoming ?? [])].find((x) => x.code === code)
+            const yes = await this.dialog.ask({
+                icon: 'box',
+                title: '¿Llegó esto al punto?',
+                body: `<p><b>${esc(code)}</b></p><ul class="dialog-items">${Object.entries(it?.items ?? {})
+                    .filter(([id]) => SUPPLIES[id])
+                    .map(([id, n]) => `<li><b>${n}</b> × ${esc(SUPPLIES[id].label)}</li>`)
+                    .join('')}</ul><p>Revisa que esté completo: al confirmar se suma al inventario.</p>`,
+                actions: [
+                    { label: 'Todavía no', value: false },
+                    { label: 'Sí, recibir', value: true, kind: 'primary' },
+                ],
+            })
+            if (!yes) return
+        }
+        const busy = busyButton(button, 'Recibiendo…')
         const out = code.startsWith('TR-') ? await ledger.transferReceive(code, this.point.id) : await ledger.receive(code, this.point.id)
+        busy()
         if (!out.ok) {
             err.textContent = out.error
             err.hidden = false
@@ -638,14 +747,37 @@ export class LiteApp {
         }
         this.root.querySelector('.js-receive-form input').value = ''
         const what = itemsLine((out.record ?? out.transfer).items)
-        this.toast.show(out.already ? `<b>${code}</b> ya se había recibido. No se sumó otra vez.` : `<b>${code}</b> recibido: ${esc(what)} se sumaron al inventario.`, { duration: 5000 })
+        if (out.already) this.toast.show(`<b>${code}</b> ya se había recibido. No se sumó otra vez.`, { duration: 4000 })
+        else
+            this.toast.show(`<b>${code}</b> recibido: ${esc(what)} se sumaron al inventario.`, {
+                duration: 7000,
+                action: 'Deshacer',
+                onAction: async () => {
+                    const back = code.startsWith('TR-') ? await ledger.transferUnreceive(code, this.point.id) : await ledger.unreceive(code, this.point.id)
+                    if (!back.ok) return this.toast.show(esc(back.error), { duration: 4500 })
+                    this.toast.show(`Se deshizo: <b>${code}</b> volvió a Por recibir y salió del inventario.`, { duration: 3500 })
+                    if (back.rows) this.store.take(back.rows)
+                },
+            })
         if (out.rows) this.store.take(out.rows)
     }
 
-    async #deliver(code) {
+    async #deliver(code, button = null) {
+        const busy = busyButton(button, 'Guardando…')
         const out = await ledger.deliver(code, this.point.id)
-        this.toast.show(out.ok ? `<b>${esc(code)}</b> entregado a las familias.` : esc(out.error), { duration: 4000 })
-        if (out.ok) this.store.take([])
+        busy()
+        if (!out.ok) return this.toast.show(esc(out.error), { duration: 4000 })
+        this.toast.show(`<b>${esc(code)}</b> entregado a las familias.`, {
+            duration: 7000,
+            action: 'Deshacer',
+            onAction: async () => {
+                const back = await ledger.undeliver(code, this.point.id)
+                if (!back.ok) return this.toast.show(esc(back.error), { duration: 4500 })
+                this.toast.show(`Se deshizo: <b>${esc(code)}</b> volvió a Por entregar.`, { duration: 3500 })
+                this.store.take([])
+            },
+        })
+        this.store.take([])
     }
 
     async #scan() {
@@ -726,20 +858,51 @@ export class LiteApp {
                 })
             )
             sheet.querySelectorAll('.js-close').forEach((b) => b.addEventListener('click', () => sheet.remove()))
-            sheet.querySelector('.js-send').addEventListener('click', async (e) => {
+            sheet.querySelector('.js-send').addEventListener('click', () => {
                 const items = Object.fromEntries(Object.entries(qty).filter(([, n]) => n > 0))
-                e.currentTarget.disabled = true
-                const out = await ledger.transfer(me, dest.id, items)
-                if (!out.ok) {
-                    const err = sheet.querySelector('.js-err')
-                    err.textContent = out.error
-                    err.hidden = false
-                    e.currentTarget.disabled = false
-                    return
-                }
-                sheet.remove()
-                this.toast.show(`Traslado <b>${out.transfer.code}</b> en camino a ${esc(zname(dest))}.`, { duration: 5000 })
-                if (out.rows) st.take(out.rows)
+                if (!Object.keys(items).length) return
+                // first what will go where; only "Confirmar envío" sends it
+                sheet.innerHTML = `
+                    <div class="xfer-review">
+                        <h4>Revisa el envío</h4>
+                        <p>Para <b>${esc(zname(dest))}</b> · ${esc(dest.name)}</p>
+                        <ul class="dialog-items">${Object.entries(items)
+                            .map(([id, n]) => `<li><b>${n}</b> × ${esc(SUPPLIES[id].label)} <small>(te quedan ${st.get(id) - n})</small></li>`)
+                            .join('')}</ul>
+                        <p class="xfer-note">${icon('info')} Sale de tu inventario ahora y entra en el de ${esc(zname(dest))} cuando lo reciban. Mientras siga en camino, puedes anularlo.</p>
+                        <p class="form-error js-err" role="alert" hidden></p>
+                        <div class="xfer-foot">
+                            <button class="btn btn-secondary js-edit" type="button">${icon('chevron-left')} Cambiar</button>
+                            <button class="btn btn-primary js-confirm" type="button">${icon('truck')} Confirmar envío</button>
+                        </div>
+                    </div>`
+                hydrateIcons(sheet)
+                sheet.querySelector('.js-confirm').focus()
+                sheet.querySelector('.js-edit').addEventListener('click', draw)
+                sheet.querySelector('.js-confirm').addEventListener('click', async (e) => {
+                    const busy = busyButton(e.currentTarget, 'Enviando…')
+                    const out = await ledger.transfer(me, dest.id, items)
+                    busy()
+                    if (!out.ok) {
+                        const err = sheet.querySelector('.js-err')
+                        err.textContent = out.error
+                        err.hidden = false
+                        return
+                    }
+                    sheet.remove()
+                    const tcode = out.transfer.code
+                    this.toast.show(`Traslado <b>${tcode}</b> en camino a ${esc(zname(dest))}.`, {
+                        duration: 7000,
+                        action: 'Deshacer',
+                        onAction: async () => {
+                            const back = await ledger.transferCancel(tcode, me)
+                            if (!back.ok) return this.toast.show(esc(back.error), { duration: 4500 })
+                            this.toast.show(`Se anuló <b>${tcode}</b>: los insumos volvieron a tu inventario.`, { duration: 3500 })
+                            if (back.rows) st.take(back.rows)
+                        },
+                    })
+                    if (out.rows) st.take(out.rows)
+                })
             })
             sum()
         }
