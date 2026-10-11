@@ -45,6 +45,12 @@ const DISPLAY_BOX = 0.47
 const DISPLAY_GAP = { x: 0.48, z: 0.42 }
 /** Space between people waiting in line at the counter. */
 const QUEUE_GAP = 1.1
+/** Walkers: how wide a person is (m, from the centre), how far inside the paved edge their
+ *  centre stays, the step a route is cut into, and the radius corners are rounded to. */
+const BODY = 0.35
+const KERB = 0.3
+const STEP = 0.5
+const CORNER = 0.9
 
 /** Ground surface styles (painted into the ground texture) */
 const STYLES = {
@@ -365,6 +371,84 @@ export class NeighborhoodScene {
         return { nodes: keys, points: keys.map(pos) }
     }
 
+    /**
+     * The way a person would really walk a route: across, wherever the ground allows,
+     * instead of out to each street's centre line and back again.
+     *
+     * The route is cut into short steps and, from where the walker stands, they head
+     * straight for the farthest later step they can reach without leaving the paved
+     * ground (streets, garden paths, squares, the stand's forecourt) or brushing anything
+     * solid: houses, the stand, lamps, street furniture, benches, water, and `avoid`,
+     * the people standing about. The corners left are rounded off, as a person turns.
+     *
+     * @param points  the route, e.g. from route()
+     * @param avoid   [{x, z, r}] people to keep clear of
+     * @returns [Vector3] the path to walk, from the same start to the same end
+     */
+    smoothPath(points, { avoid = [] } = {}) {
+        if (!this.content?.walk || points.length < 2) return points.map((p) => p.clone())
+        const steps = [points[0].clone()]
+        for (let i = 1; i < points.length; i++) {
+            const a = points[i - 1], b = points[i]
+            const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / STEP))
+            for (let k = 1; k <= n; k++) steps.push(a.clone().lerp(b, k / n))
+        }
+        // from each place, the farthest step in plain sight; the route itself is the fallback
+        const way = [steps[0]]
+        for (let i = 0, last = steps.length - 1; i < last; ) {
+            let best = i + 1
+            for (let j = i + 2, misses = 0; j <= last && misses < 10; j++) {
+                if (this.#clearLine(steps[i], steps[j], avoid)) {
+                    best = j
+                    misses = 0
+                } else misses++
+            }
+            way.push(steps[best])
+            i = best
+        }
+        // round the corners: ease in a little before each turn and out a little after it
+        const out = [way[0]]
+        for (let i = 1; i < way.length - 1; i++) {
+            const a = way[i - 1], p = way[i], b = way[i + 1]
+            const into = Math.min(CORNER, p.distanceTo(a) * 0.45)
+            const away = Math.min(CORNER, p.distanceTo(b) * 0.45)
+            out.push(p.clone().lerp(a, into / p.distanceTo(a)), p, p.clone().lerp(b, away / p.distanceTo(b)))
+        }
+        out.push(way[way.length - 1])
+        for (const p of out) p.y = this.heightAt(p.x, p.z)
+        return out
+    }
+
+    /** Could a person walk straight from a to b? (see smoothPath) */
+    #clearLine(a, b, avoid) {
+        const d = Math.hypot(b.x - a.x, b.z - a.z)
+        const n = Math.max(1, Math.ceil(d / 0.25))
+        // something a person is already standing in (or must reach) does not block them
+        const near = (c, r) => Math.hypot(a.x - c.x, a.z - c.z) < r || Math.hypot(b.x - c.x, b.z - c.z) < r
+        const { solids } = this.content.walk
+        const circles = [...solids.circles, ...avoid].filter((c) => !near(c, c.r + BODY))
+        const boxes = solids.boxes.filter((o) => !this.#inBox(o, a.x, a.z, BODY) && !this.#inBox(o, b.x, b.z, BODY))
+        for (let k = 1; k < n; k++) {
+            const x = a.x + ((b.x - a.x) * k) / n
+            const z = a.z + ((b.z - a.z) * k) / n
+            if (!this.#paved(x, z)) return false
+            if (circles.some((c) => Math.hypot(x - c.x, z - c.z) < c.r + BODY)) return false
+            if (boxes.some((o) => this.#inBox(o, x, z, BODY))) return false
+        }
+        return true
+    }
+
+    #paved(x, z) {
+        const { distToPaths, forecourt } = this.content.walk
+        return distToPaths(x, z) <= -KERB || (forecourt && this.#inBox(forecourt, x, z, 0))
+    }
+
+    #inBox(o, x, z, pad) {
+        const dx = x - o.x, dz = z - o.z
+        const c = Math.cos(o.yaw), s = Math.sin(o.yaw)
+        return Math.abs(dx * c - dz * s) <= o.hx + pad && Math.abs(dx * s + dz * c) <= o.hz + pad
+    }
+
     /* ---------------- selection visuals ---------------- */
 
     /* ---- the collection point is the only thing that lights up ---- */
@@ -585,7 +669,7 @@ export class NeighborhoodScene {
      * along the desk top, then the ground at the front corners and at the sides.
      */
     #stand() {
-        if (!this.standTemplate) return { stand: buildCollectionPoint(), slots: DISPLAY_SLOTS, counter: { z: 1.9, y: 1.0 }, half: 3.3, front: 2.6 }
+        if (!this.standTemplate) return { stand: buildCollectionPoint(), slots: DISPLAY_SLOTS, counter: { z: 1.9, y: 1.0 }, half: 3.3, front: 2.6, back: -2.8 }
         const model = this.loader.instanceSync(this.standTemplate)
         model.scale.setScalar(STAND_SCALE)
         // a plain group holds it, so what is set on the desk is not scaled with it
@@ -605,7 +689,7 @@ export class NeighborhoodScene {
         const bounds = new THREE.Box3().setFromObject(model)
         const front = bounds.max.z
         slots.push(new THREE.Vector3(-1.9, 0, front + 0.6), new THREE.Vector3(2.1, 0, front + 0.6), new THREE.Vector3(-3.9, 0, -1.1), new THREE.Vector3(3.9, 0, -0.4))
-        return { stand, slots, counter: { z: desk.max.z + 0.3, y: top }, half: Math.max(-bounds.min.x, bounds.max.x), front }
+        return { stand, slots, counter: { z: desk.max.z + 0.3, y: top }, half: Math.max(-bounds.min.x, bounds.max.x), front, back: bounds.min.z }
     }
 
     #outer() {
@@ -707,6 +791,9 @@ export class NeighborhoodScene {
         const houses = new Map()
         const proxies = []
         const blocked = [] // {x,z,r} areas plants must avoid
+        // what a walker cannot pass through: boxes {x,z,yaw,hx,hz} and circles {x,z,r}
+        const solids = { boxes: [], circles: [] }
+        let forecourt = null
         const updaters = []
 
         // Paths: layout paths + ring (as segments) + garden paths to each labelled door
@@ -795,6 +882,7 @@ export class NeighborhoodScene {
             const front = v3(Math.sin(slot.yaw), Math.cos(slot.yaw))
             const entry = { data: h, object: obj, center: v3(slot.x, slot.z, obj.position.y), front, size, labelled: !!h.category }
             blocked.push({ x: slot.x, z: slot.z, r: Math.max(size.x, size.z) * 0.62 })
+            solids.boxes.push({ x: slot.x, z: slot.z, yaw: slot.yaw, hx: size.x / 2, hz: size.z / 2 })
             if (entry.labelled) {
                 entry.door = doors[h.slot].clone()
                 entry.door.y = gy(entry.door.x, entry.door.z)
@@ -819,7 +907,7 @@ export class NeighborhoodScene {
         if (L.acopio) {
             const ay = gy(L.acopio.x, L.acopio.z)
             const local = (x, z) => v3(L.acopio.x, L.acopio.z, ay).add(new THREE.Vector3(x, 0, z).applyAxisAngle(new THREE.Vector3(0, 1, 0), L.acopio.yaw))
-            const { stand, slots, counter, half, front } = this.#stand()
+            const { stand, slots, counter, half, front, back } = this.#stand()
             stand.position.set(L.acopio.x, ay, L.acopio.z)
             stand.rotation.y = L.acopio.yaw
             group.add(stand)
@@ -852,11 +940,17 @@ export class NeighborhoodScene {
             group.add(ring)
             blocked.push({ x: L.acopio.x, z: L.acopio.z, r: 4.6 })
             blocked.push({ x: acopioDoor.x, z: acopioDoor.z, r: 2 })
+            // the stand is solid; the open ground in front of it, where the line forms, is walkable
+            const mid = local(0, (back + front) / 2)
+            solids.boxes.push({ x: mid.x, z: mid.z, yaw: L.acopio.yaw, hx: half, hz: (front - back) / 2 })
+            const far = 3.6 + QUEUE_GAP * 9
+            const yard = local(0, (front + far) / 2)
+            forecourt = { x: yard.x, z: yard.z, yaw: L.acopio.yaw, hx: half + 2.2, hz: (far - front) / 2 }
         }
 
         /* ---- landmark feature ---- */
         let heightAt = null
-        const feat = this.#feature(L, group, blocked, updaters, disposables, rand, gy)
+        const feat = this.#feature(L, group, blocked, updaters, disposables, rand, gy, solids, distToPaths)
         if (feat?.heightAt) heightAt = feat.heightAt
 
         /* ---- lamps ---- */
@@ -867,6 +961,7 @@ export class NeighborhoodScene {
             l.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2
             group.add(l)
             blocked.push({ x, z, r: 0.9 })
+            solids.circles.push({ x, z, r: 0.3 })
             lamps.push(this.#lampLight(group, l, gy))
         }
 
@@ -875,7 +970,7 @@ export class NeighborhoodScene {
         blocked.push({ x: ox, z: oz, r: 3.4 })
         blocked.push({ x: L.start[0], z: L.start[1] + 2, r: 3.5 })
         // street furniture first, so the bushes and trees keep clear of it
-        this.#streetLife(L, group, houses, blocked, distToPaths, rand, gy)
+        this.#streetLife(L, group, houses, blocked, distToPaths, rand, gy, solids)
         const occluders = this.#vegetation(L, group, blocked, distToPaths, rand, disposables, gy)
         if (L.look.walls) this.#walls(L, paths, links, group, gy, L.acopio)
         await yieldFrame()
@@ -910,7 +1005,7 @@ export class NeighborhoodScene {
         const obstacle = this.theme.cues.barrio.includes('inspection') ? await this.loader.load('obstacle') : null
         const barrier = obstacle?.source === 'glb' ? () => this.loader.instanceSync(obstacle) : null
         const cone = this.street?.cone ? () => this.loader.instanceSync(this.street.cone) : null
-        const cues = buildBarrioCues(this.theme, { layout: L, doors: doorList, fillers, open: L.open, pathPoints, spots, heightAt: gy, rand, barrier, cone })
+        const cues = buildBarrioCues(this.theme, { layout: L, doors: doorList, fillers, open: L.open, pathPoints, spots, heightAt: gy, rand, barrier, cone, solids: solids.circles })
         group.add(cues.group)
         updaters.push(cues.update)
 
@@ -925,6 +1020,7 @@ export class NeighborhoodScene {
             disposables,
             heightAt: terrain && heightAt ? (x, z) => terrain(x, z) + heightAt(x, z) : (terrain ?? heightAt),
             lamps,
+            walk: { distToPaths, solids, forecourt },
             update: (dt, t) => updaters.forEach((u) => u(dt, t)),
         }
     }
@@ -1341,7 +1437,7 @@ export class NeighborhoodScene {
 
     /* ---------------- landmarks ---------------- */
 
-    #feature(L, parent, blocked, updaters, disposables, rand, gy = () => 0) {
+    #feature(L, parent, blocked, updaters, disposables, rand, gy = () => 0, solids = { boxes: [], circles: [] }, distToPaths = () => Infinity) {
         const f = L.feature
         const group = new THREE.Group()
         group.name = 'landmark'
@@ -1364,6 +1460,7 @@ export class NeighborhoodScene {
             b.lookAt(faceX, 0, faceZ)
             group.add(b)
             blocked.push({ x, z, r: 1.2 })
+            solids.circles.push({ x, z, r: 0.8 })
         }
         const water = () => {
             const mat = stylizeWater(new THREE.MeshStandardMaterial({ color: '#7FA9BC', roughness: 0.18, metalness: 0.05, envMapIntensity: 1.3 }), { scale: 1 })
@@ -1380,6 +1477,7 @@ export class NeighborhoodScene {
             soil.position.set(f.x, 0.45, f.z)
             for (const a of [2.2, -0.95]) bench(f.x + Math.sin(a) * (f.r - 1.6), f.z + Math.cos(a) * (f.r - 1.6), f.x, f.z)
             blocked.push({ x: f.x, z: f.z, r: 2.4, planter: true })
+            solids.circles.push({ x: f.x, z: f.z, r: 2.1 })
         }
 
         if (f.type === 'kiosk') {
@@ -1389,6 +1487,7 @@ export class NeighborhoodScene {
             bench(-2.4, -24.6, 0, -22)
             bench(2.6, -19.4, 0, -22)
             blocked.push({ x: f.x, z: f.z, r: 2.8 })
+            solids.circles.push({ x: f.x, z: f.z, r: 2.1 })
         }
 
         if (f.type === 'chapel') {
@@ -1408,6 +1507,7 @@ export class NeighborhoodScene {
                 group.add(st)
             }
             blocked.push({ x: f.x, z: f.z, r: 10 })
+            solids.circles.push({ x: f.x, z: f.z - 1, r: 3.6 })
         }
 
         if (f.type === 'canal') {
@@ -1455,6 +1555,10 @@ export class NeighborhoodScene {
             }
             // keep plants off the banks
             for (let x = -48; x <= 48; x += 6) blocked.push({ x, z: f.z, r: f.width / 2 + 1.4 })
+            // and walkers out of the water: it is crossed on the bridge only
+            const hz = f.width / 2 + 0.3
+            solids.boxes.push({ x: (bx - 1.3 - 60) / 2, z: f.z, yaw: 0, hx: (bx - 1.3 + 60) / 2, hz })
+            solids.boxes.push({ x: (bx + 1.3 + 60) / 2, z: f.z, yaw: 0, hx: (60 - bx - 1.3) / 2, hz })
             const zMin = f.z - f.width / 2 - 2.2, zMax = f.z + f.width / 2 + 2.2
             return {
                 heightAt: (x, z) => {
@@ -1480,8 +1584,15 @@ export class NeighborhoodScene {
                 pad.position.set(f.x + Math.cos(a) * rr, 0.07, f.z + Math.sin(a) * rr)
             }
             // benches on the far side, away from the collection point in front of the pond
-            for (const a of [1.7, 3.14, 4.6]) bench(f.x + Math.sin(a) * (f.r + 1.8), f.z + Math.cos(a) * (f.r + 1.8), f.x, f.z)
+            // never on a path: each bench slides round the pond until it is clear of the way
+            for (const a of [1.7, 3.14, 4.6]) {
+                const at = [0, 0.35, -0.35, 0.7, -0.7]
+                    .map((k) => [f.x + Math.sin(a + k) * (f.r + 1.8), f.z + Math.cos(a + k) * (f.r + 1.8)])
+                    .find(([x, z]) => distToPaths(x, z) > 0.9)
+                if (at) bench(at[0], at[1], f.x, f.z)
+            }
             blocked.push({ x: f.x, z: f.z, r: f.r + 1.2 })
+            solids.circles.push({ x: f.x, z: f.z, r: f.r + 0.35 })
         }
         return null
     }
@@ -1644,12 +1755,13 @@ export class NeighborhoodScene {
      * None of it is interactive and none of it is emergency-related. It exists
      * so a barrio reads as somewhere lived in rather than a diagram of houses.
      */
-    #streetLife(L, group, houses, blocked, distToPaths, rand, gy) {
+    #streetLife(L, group, houses, blocked, distToPaths, rand, gy, solids = { circles: [] }) {
         const place = (obj, x, z, yaw = 0) => {
             obj.position.set(x, gy(x, z), z)
             obj.rotation.y = yaw
             group.add(obj)
             blocked.push({ x, z, r: 0.8 })
+            solids.circles.push({ x, z, r: 0.45 })
         }
         const pot = (scale) => props.pot(rand, scale)
         const street = this.street ?? {}
@@ -1716,6 +1828,7 @@ export class NeighborhoodScene {
                 if (blocked.some((b) => Math.hypot(x - b.x, z - b.z) < b.r + room)) continue
                 place(prop(id), x, z, towardPath(x, z))
                 blocked[blocked.length - 1].r = room
+                solids.circles[solids.circles.length - 1].r = Math.max(0.45, room * 0.5)
                 n++
             }
         }

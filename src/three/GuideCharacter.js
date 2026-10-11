@@ -82,9 +82,11 @@ export class GuideCharacter {
      *   face: draw an expressive face on the head (the muñequito); lively: the larger idle
      *   gestures too (waving, stretching), for the guide rather than the neighbours
      */
-    constructor(model, animations = [], { reducedMotion = false, face = false, lively = false } = {}) {
+    /** @param idle  names from IDLE this character may play (all of them if not given) */
+    constructor(model, animations = [], { reducedMotion = false, face = false, lively = false, idle = null } = {}) {
         this.reducedMotion = reducedMotion
         this.lively = lively
+        this.idleNames = idle ?? IDLE_NAMES
         this.root = new THREE.Group()
         this.root.name = 'guide-root'
         this.model = cloneMaterials(model)
@@ -252,14 +254,16 @@ export class GuideCharacter {
         let moving = false
         if (this.path) {
             const p = this.path
+            const tan = p.curve.getTangentAt(Math.min(p.s / p.length, 0.999))
+            this.targetYaw = Math.atan2(tan.x, tan.z)
+            // facing away from the way to go, a person turns where they stand before setting
+            // off, rather than sliding sideways or backwards into the first steps
+            const align = THREE.MathUtils.clamp((Math.cos(wrapAngle(this.targetYaw - this.yaw)) - 0.35) / 0.5, 0, 1)
             const remaining = p.length - p.s
             const ramp = Math.min(1, (p.s + 0.4) / 1.4) * Math.min(1, remaining / 1.6 + 0.15)
-            this.speed = p.maxSpeed * ramp
+            this.speed = p.maxSpeed * ramp * align
             p.s = Math.min(p.length, p.s + this.speed * dt)
-            const u = p.s / p.length
-            p.curve.getPointAt(u, this.root.position)
-            const tan = p.curve.getTangentAt(Math.min(u, 0.999))
-            this.targetYaw = Math.atan2(tan.x, tan.z)
+            p.curve.getPointAt(p.s / p.length, this.root.position)
             moving = true
             if (p.s >= p.length - 1e-3) {
                 this.path = null
@@ -355,7 +359,9 @@ export class GuideCharacter {
         if (!s.name) {
             s.wait -= dt
             if (s.wait > 0) return {}
-            const names = IDLE_NAMES.filter((n) => n !== s.last && (this.lively || !IDLE[n].lively))
+            const allowed = this.idleNames.filter((n) => this.lively || !IDLE[n].lively)
+            const names = allowed.length > 1 ? allowed.filter((n) => n !== s.last) : allowed
+            if (!names.length) return {}
             let r = Math.random() * names.reduce((n, k) => n + IDLE[k].weight, 0)
             s.name = names.find((k) => (r -= IDLE[k].weight) < 0) ?? names[0]
             s.t = 0

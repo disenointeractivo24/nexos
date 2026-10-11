@@ -441,7 +441,8 @@ function ashFall({ count = 180, area = 46, height = 16 } = {}) {
  * @param ctx     { layout, doors:[Vector3], fillers:[{x,z,yaw}], open:[x,z],
  *                  pathPoints:[Vector3], spots:[{x,z}], heightAt(x,z), rand,
  *                  barrier?() → the textured obstacle model, if it loaded,
- *                  cone?() → the textured cone, if it loaded }
+ *                  cone?() → the textured cone, if it loaded,
+ *                  solids?: [{x,z,r}] filled with what walkers must go round }
  * @returns {{group: THREE.Group, update: (dt:number)=>void}}
  */
 export function buildBarrioCues(theme, ctx) {
@@ -452,10 +453,16 @@ export function buildBarrioCues(theme, ctx) {
     const [ox, oz] = ctx.open
     const ground = ctx.heightAt ?? (() => 0)
     /** Drop a prop onto the ground wherever the barrio's terrain puts it. */
+    const footprint = new THREE.Box3()
+    const size = new THREE.Vector3()
     const place = (obj, x, z, yaw = 0, lift = 0) => {
         obj.position.set(x, ground(x, z) + lift, z)
         obj.rotation.y = yaw
         group.add(obj)
+        if (ctx.solids) {
+            footprint.setFromObject(obj).getSize(size)
+            ctx.solids.push({ x, z, r: Math.max(size.x, size.z) * 0.45 })
+        }
         return obj
     }
     // free spots, used in order, so two cues never land on top of each other
@@ -491,9 +498,12 @@ export function buildBarrioCues(theme, ctx) {
         place(clothesLine(ctx.rand), p.x, p.z, ctx.rand() * Math.PI)
     }
     if (cues.includes('sandbags')) {
+        // beside the doorway, never across the path that leads to it
         ctx.doors.slice(0, 3).forEach((d, i) => {
             const side = i % 2 ? 1 : -1
-            place(sandbags(), d.x + side * 1.9, d.z - 0.9, d.yaw ?? 0)
+            const yaw = d.yaw ?? 0
+            const fx = Math.sin(yaw), fz = Math.cos(yaw)
+            place(sandbags(), d.x + fz * side * 1.9 - fx * 0.9, d.z - fx * side * 1.9 - fz * 0.9, yaw)
         })
     }
     if (cues.includes('puddles')) {

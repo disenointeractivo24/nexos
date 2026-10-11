@@ -27,6 +27,7 @@ import { stockState } from '../data/inventory.js'
 import { Progress, STEPS } from '../ui/Progress.js'
 import { icon, hydrateIcons } from '../ui/icons.js'
 import { Toast, Dialog } from '../ui/feedback.js'
+import { makeNeighbour } from '../three/neighbour.js'
 import { session } from './session.js'
 import { Audio } from './audio.js'
 
@@ -260,7 +261,12 @@ export class App {
         // the guide has a face that moves, and the larger idle gestures (waving, stretching)
         this.guide = new GuideCharacter(this.loader.instanceSync(guideT), guideT.animations, { reducedMotion: this.reducedMotion, face: true, lively: true })
         this.hood.group.add(this.guide.root)
-        this.families = new Families({ parent: this.hood.group, reducedMotion: this.reducedMotion })
+        // the neighbours are the guide's own model, dressed as residents (no helmet, no backpack)
+        this.families = new Families({
+            parent: this.hood.group,
+            reducedMotion: this.reducedMotion,
+            makePerson: guideT.source === 'glb' ? (n) => makeNeighbour(this.loader, guideT, n) : null,
+        })
         this.portrait = new GuideCharacter(this.loader.instanceSync(guideT), guideT.animations, { reducedMotion: this.reducedMotion, face: true, lively: true })
         this.portrait.place(new THREE.Vector3(), 0.32)
         this.portrait.blob.visible = false
@@ -1054,21 +1060,21 @@ export class App {
         this.hood.setSelected(true)
         this.labels.setClass('acopio', 'is-active', true)
         this.say('', 'Vamos al punto de acopio.')
+        // straight to the place beside the counter (it stays in view while supplies are left
+        // on it), round the stand's front corner, by the most direct way the streets allow
+        const stand = this.hood.acopio
         const { points } = this.hood.route(this.currentNode, 'acopio')
         points[0] = this.guide.position.clone().setY(0)
+        const around = (stand.asidePath ?? [stand.aside]).map((p) => p.clone())
+        const way = this.hood.smoothPath([...points, ...around])
         // the camera closes in on the stand as the guide walks to it, arriving together,
         // so the barrio and the counter read as one continuous place
-        const arrived = this.guide.walk(points)
+        const arrived = this.guide.walk(way)
         this.#approachCounter()
         if (!(await arrived)) return
         if (this.state !== 'walking') return
         this.currentNode = 'acopio'
-        // step aside so the counter stays in view while supplies are left on it
-        const stand = this.hood.acopio
-        const around = (stand.asidePath ?? [stand.aside]).map((p) => p.clone())
-        this.guide.walk([this.guide.position.clone(), ...around], { speed: 3.2 }).then((done) => {
-            if (done) this.guide.faceTowards(stand.counter)
-        })
+        this.guide.faceTowards(stand.counter)
         this.guide.nod()
 
         this.audio.play('open')
@@ -1135,7 +1141,8 @@ export class App {
         // what was left stays on the counter, and the families come in line to take their share of it
         this.hood.commitDisplay()
         this.guide.celebrate()
-        this.families.run(this.hood, served)
+        // the guide stands beside the stand: the neighbours walk round them
+        this.families.run(this.hood, served, { avoid: [{ x: this.guide.position.x, z: this.guide.position.z, r: 0.65 }] })
         if (served.length) this.#pullBackForFamilies()
         console.info(
             `[NEXOS] Aporte ${record.code} (${record.mode === 'physical' ? 'entrega física' : 'dinero, demostración'}) · ${barrio.name} · ${money(record.value)} · ${served.length} ${served.length === 1 ? 'familia' : 'familias'}`,

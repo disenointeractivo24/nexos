@@ -34,7 +34,7 @@ export class GuideFace {
             if (!o.isMesh) return
             const name = [o.material].flat()[0]?.name ?? ''
             if (/casco/i.test(name)) helmet = o
-            else if (!/ojos|lengua|emblema/.test(name)) skin.push(o)
+            else if (!/ojos|lengua|emblema|pelo|oreja/.test(name)) skin.push(o)
         })
         if (!skin.length) return null
         return new GuideFace(head, skin, helmet)
