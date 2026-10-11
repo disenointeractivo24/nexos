@@ -946,16 +946,19 @@ export class CityOverview {
             g.rotation.y = Math.atan2(CITY_C.x + 40 - x, CITY_C.y + 250 - z)
             this.group.add(g)
         }
-        // La Ermita — small white gothic church
+        // the landmarks are drawn here until their models arrive (see useLandmarkModels)
+        this.landmarks = {}
+        // La Ermita — small white gothic church, its front (bell tower and doors) turned to
+        // where the map's camera rests (App's CITY_VIEW, towards x 60, z 262), so it is seen face on
         {
             const g = props.ermita()
             g.position.set(-8, 0, -6)
-            g.rotation.y = 0.35
+            g.rotation.y = Math.atan2(60 + 8, 262 + 6)
             this.group.add(g)
+            this.landmarks.ermita = g
             this.exclusions.push({ x: -8, z: -6, r: 9 })
         }
-        // Torre de Cali (drawn here until its model arrives; see useLandmarkModels)
-        this.landmarks = {}
+        // Torre de Cali
         {
             const g = props.torreDeCali()
             g.position.set(24, 0, -12)

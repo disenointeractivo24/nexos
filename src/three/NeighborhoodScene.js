@@ -462,7 +462,7 @@ export class NeighborhoodScene {
             graph.get(b).push([a, d])
         }
         for (const [id, e] of houses) {
-            if (!e.labelled) continue
+            if (!e.door || !layout.slots[e.data.slot]?.link) continue
             const key = `door:${id}`
             const link = layout.slots[e.data.slot].link
             const d = d2([e.door.x, e.door.z], layout.nodes[link])
@@ -1184,6 +1184,12 @@ export class NeighborhoodScene {
             const entry = { data: h, object: obj, center: v3(slot.x, slot.z, obj.position.y), front, size, labelled: !!h.category }
             blocked.push({ x: slot.x, z: slot.z, r: Math.max(size.x, size.z) * 0.62 })
             solids.boxes.push({ x: slot.x, z: slot.z, yaw: slot.yaw, hx: size.x / 2, hz: size.z / 2 })
+            // every house has a door the families can come out of: its garden path's end if it
+            // has one, otherwise just in front of its façade (they cross the front yard to the street)
+            if (!entry.labelled) {
+                entry.door = doors[h.slot]?.clone() ?? v3(slot.x, slot.z).addScaledVector(front, Math.max(size.z / 2 + 0.9, 3))
+                entry.door.y = gy(entry.door.x, entry.door.z)
+            }
             if (entry.labelled) {
                 entry.door = doors[h.slot].clone()
                 entry.door.y = gy(entry.door.x, entry.door.z)

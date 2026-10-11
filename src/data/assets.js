@@ -161,6 +161,7 @@ export const ASSETS = {
      * tools/exportar_props.py). The landmarks are sized to the city map; the collection
      * point is the stand donors walk to and the one a point works from.
      */
+    ermita: { id: 'ermita', category: 'landmarks', label: 'La Ermita', model: '/assets/buildings/ermita.glb', procedural: null, front: '+x', fit: { height: 15.5 }, stylize: { ao: 0.15, aoHeight: 2, rim: 0.1 } },
     'torre-de-cali': { id: 'torre-de-cali', category: 'landmarks', label: 'Torre de Cali', model: '/assets/buildings/torre-de-cali.glb', procedural: null, fit: { height: 42 }, stylize: { ao: 0.15, aoHeight: 4, rim: 0.1 } },
     estadio: { id: 'estadio', category: 'landmarks', label: 'Estadio Pascual Guerrero', model: '/assets/buildings/estadio.glb', procedural: null, fit: { size: 36 }, stylize: { ao: 0.2, aoHeight: 1, rim: 0.1 } },
     'collection-point': { id: 'collection-point', category: 'buildings', label: 'Punto de acopio', model: '/assets/buildings/punto-de-acopio.glb', procedural: null, front: '+x', stylize: { ao: 0.25, aoHeight: 1.6, rim: 0.1 } },

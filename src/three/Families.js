@@ -18,8 +18,8 @@ const PERSON = 0.6
 /** Waiting in line, people only look about; no hops, steps or fidgeting. */
 const CALM = ['glance', 'lookAround']
 /** Units of supplies per person who comes to collect them, and the most the line holds. */
-const PER_PERSON = 2
-const MAX_GROUPS = 10
+const PER_PERSON = 3
+const MAX_GROUPS = 6
 /**
  * Who comes to collect: an adult alone, a mother or father with their child, an older
  * person (slower, a little stooped), a grandparent with a grandchild, a teenager.
@@ -53,7 +53,8 @@ const beside = (pos, yaw) => {
 
 /**
  * How a donation is collected: by as many people as it takes (one for every PER_PERSON
- * units, up to MAX_GROUPS, and at least one per house served when the line has room),
+ * units, up to MAX_GROUPS so the line stays short, and at least one per house served when
+ * the line has room),
  * each carrying exactly the same amount. Where it can, the count is one that divides the
  * total evenly; otherwise shares differ by one unit at most.
  *
@@ -127,6 +128,14 @@ export class Families {
      */
     run(hood, served, { avoid = [] } = {}) {
         const shares = shareOut(served)
+        // they come from all over the barrio, a different house each, picked at random
+        // (not only from the houses the donation was meant for)
+        const homes = [...hood.houses].filter(([, e]) => e.door).map(([id]) => id)
+        for (let i = homes.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1))
+            ;[homes[i], homes[j]] = [homes[j], homes[i]]
+        }
+        if (homes.length) shares.forEach((s, k) => (s.houseId = homes[k % homes.length]))
         if (!shares.length || !hood.acopio) return Promise.resolve()
 
         // The order is decided before anyone leaves home: whoever is nearest (at their own
@@ -176,8 +185,9 @@ export class Families {
     #way(hood, from, to, avoid, houseId) {
         const found = hood.findPath(from, to, { avoid })
         if (found) return found
+        // a house without a garden path is not on the street graph: straight there, then
         const street = hood.route(`door:${houseId}`, 'acopio').points
-        return hood.smoothPath([from, ...street.slice(1, -1), to], { avoid })
+        return hood.smoothPath(street.length > 1 ? [from, ...street.slice(1, -1), to] : [from, to], { avoid })
     }
 
     /** Resolves the next time the line moves (someone was served, or everyone went home). */
