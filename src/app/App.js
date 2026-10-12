@@ -54,7 +54,8 @@ import { Audio } from './audio.js'
  * clouds while the person chooses a role, so there is no dead pause after it.
  */
 
-const CITY_VIEW = { pos: new THREE.Vector3(60, 232, 262), target: new THREE.Vector3(14, 0, 14) }
+// Cali runs long from north to south: seen a little more from above, and set off to the right of the guide
+const CITY_VIEW = { pos: new THREE.Vector3(-50, 340, 304), target: new THREE.Vector3(-30, 0, 30) }
 const INTRO_CURVE = new THREE.CatmullRomCurve3([
     new THREE.Vector3(8, 720, 70),
     new THREE.Vector3(26, 520, 150),

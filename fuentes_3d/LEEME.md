@@ -164,6 +164,15 @@ texturas PNG. Desde `starter/`:
 "C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python tools/optimizar_glb.py -- static/assets/houses/casa-teja.glb
 ```
 
+### Forma de la ciudad
+
+`mapa_cali/Zonificacion-SITM-MIO.svg` es el mapa de zonas del MIO. Sus contornos están copiados en
+`src/data/caliMap.js` (cada zona del MIO con la zona de la aplicación a la que pertenece: norte =
+Menga y Calima, centro = Centro y Prado, oriente = Aguablanca y Ciudad Córdoba, sur = Valle del Lilí
+y Guadalupe, oeste = Cañaveralejo). El mapa de la aplicación los dibuja en una cuadrícula y suaviza
+los bordes, así que la ciudad tiene la forma de Cali sin copiarla al detalle. Si cambia el SVG, hay
+que volver a copiar los contornos de cada `<path>` en ese archivo.
+
 ### Casas del mapa de Cali
 
 El mapa de Cali usa las mismas casas de los barrios, en una versión liviana: cerca de mil casas

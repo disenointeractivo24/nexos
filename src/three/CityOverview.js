@@ -3,6 +3,7 @@ import gsap from 'gsap'
 import { COLLECTION_POINTS } from '../data/collectionPoints.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { ZONES } from '../data/zones.js'
+import { CALI_ZONES, CALI_FRAME } from '../data/caliMap.js'
 import { WORLD, HOUSE_SCHEMES, sharedMaterial } from './materials.js'
 import { canopyGeometry, trunkGeometry, palmGeometry } from './procedural/nature.js'
 import { canvasTexture, crossTexture } from './procedural/textures.js'
@@ -72,18 +73,76 @@ function fbm(x, y) {
 
 /* ---------------- geography ---------------- */
 const CITY_C = new THREE.Vector2(14, 4)
-function cityRadius(theta) {
-    return 114 * (1 + 0.09 * Math.sin(3 * theta + 0.7) + 0.05 * Math.sin(5 * theta + 2.1))
+
+/**
+ * Cali drawn into a square grid a metre a side (see caliMap.js): `inside` is the city with
+ * its edges softened over a few metres (what urbanMask reads), `zone` the zone of each cell
+ * (an index into ZONES, -1 outside). Built once, the first time it is needed.
+ */
+const SHAPE = { x0: -180, z0: -180, size: 360 }
+let shape = null
+function caliShape() {
+    if (shape) return shape
+    const S = SHAPE.size
+    const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(S, S) : Object.assign(document.createElement('canvas'), { width: S, height: S })
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    const F = CALI_FRAME
+    const zone = new Int8Array(S * S).fill(-1)
+    let inside = new Float32Array(S * S)
+    ZONES.forEach((z, k) => {
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.clearRect(0, 0, S, S)
+        // drawing → map → grid
+        ctx.setTransform(F.SCALE, 0, 0, F.SCALE, F.OX - F.X0 * F.SCALE - SHAPE.x0, F.OZ - F.Y0 * F.SCALE - SHAPE.z0)
+        ctx.fillStyle = ctx.strokeStyle = '#fff'
+        // a thin stroke too, so neighbouring zones meet without a seam
+        ctx.lineWidth = 3
+        for (const p of CALI_ZONES.filter((p) => p.zone === z.id)) {
+            const path = new Path2D(p.d)
+            ctx.fill(path)
+            ctx.stroke(path)
+        }
+        const px = ctx.getImageData(0, 0, S, S).data
+        for (let i = 0; i < S * S; i++) {
+            const a = px[i * 4 + 3] / 255
+            if (a > 0.5 && zone[i] < 0) zone[i] = k
+            if (a > inside[i]) inside[i] = a
+        }
+    })
+    // soft edges: the city thins out over some eight metres instead of stopping at a line
+    for (let pass = 0; pass < 2; pass++) inside = boxBlur(boxBlur(inside, S, 4, true), S, 4, false)
+    // the softened edge reaches a little past the drawn one: those cells take their neighbour's zone
+    for (let pass = 0; pass < 8; pass++) {
+        const next = zone.slice()
+        for (let i = 0; i < S * S; i++) {
+            if (zone[i] >= 0) continue
+            const x = i % S
+            const n = [x > 0 ? zone[i - 1] : -1, x < S - 1 ? zone[i + 1] : -1, i >= S ? zone[i - S] : -1, i < S * S - S ? zone[i + S] : -1].find((v) => v >= 0)
+            if (n !== undefined) next[i] = n
+        }
+        zone.set(next)
+    }
+    shape = { inside, zone }
+    return shape
+}
+
+/** The softened outline of Cali at (x, z): 1 well inside the city, 0 outside. */
+function caliInside(x, z) {
+    const { inside } = caliShape()
+    const S = SHAPE.size
+    const gx = x - SHAPE.x0 - 0.5, gz = z - SHAPE.z0 - 0.5
+    const i = Math.floor(gx), j = Math.floor(gz)
+    if (i < 0 || j < 0 || i >= S - 1 || j >= S - 1) return 0
+    const fx = gx - i, fz = gz - j
+    const at = (a, b) => inside[b * S + a]
+    return lerp(lerp(at(i, j), at(i + 1, j), fx), lerp(at(i, j + 1), at(i + 1, j + 1), fx), fz)
 }
 const WEST_EDGE = (z) => -86 + 5 * Math.sin(z * 0.035 + 0.5)
 
 function urbanMask(x, z) {
-    const dx = x - CITY_C.x, dz = z - CITY_C.y
-    const r = Math.hypot(dx, dz)
-    const R = cityRadius(Math.atan2(dz, dx))
-    const radial = 1 - smooth(r, R - 10, R + 4)
+    // the city stops at the foot of the hills, whatever the drawing says
     const west = smooth(x, WEST_EDGE(z) - 2, WEST_EDGE(z) + 8)
-    return radial * west
+    return smooth(caliInside(x, z), 0.08, 0.92) * west
 }
 
 function mountainFactor(x, z) {
@@ -95,8 +154,8 @@ export function heightAt(x, z) {
     if (m <= 0) return 0
     let h = m * (52 + 20 * Math.sin(z * 0.022 + 1) + 10 * Math.sin(z * 0.061))
     h += m * (fbm(x * 0.035, z * 0.035) - 0.5) * 34
-    h += 30 * Math.exp(-((x + 132) ** 2 + (z - 10) ** 2) / (2 * 15 ** 2)) // Cerro de Cristo Rey
-    h += 22 * Math.exp(-((x + 116) ** 2 + (z + 72) ** 2) / (2 * 14 ** 2)) // Cerro de las Tres Cruces
+    h += 30 * Math.exp(-((x + 132) ** 2 + (z + 46) ** 2) / (2 * 15 ** 2)) // Cerro de Cristo Rey, west of the centre
+    h += 22 * Math.exp(-((x + 116) ** 2 + (z + 104) ** 2) / (2 * 14 ** 2)) // Cerro de las Tres Cruces, to the north-west
     return Math.max(0, h)
 }
 
@@ -109,7 +168,7 @@ const RIVERS = [
         id: 'cauca',
         width: 10,
         clear: 12,
-        points: [[150, -460], [160, -300], [150, -170], [162, -70], [152, 30], [166, 130], [152, 250], [162, 460]],
+        points: [[118, -460], [126, -300], [112, -170], [122, -70], [120, 30], [128, 130], [116, 250], [124, 460]],
     },
 ]
 
@@ -125,8 +184,8 @@ function summit(x0, z0, radius) {
     }
     return best
 }
-const CRISTO_REY = summit(-132, 10, 20)
-const TRES_CRUCES = summit(-116, -72, 20)
+const CRISTO_REY = summit(-132, -46, 20)
+const TRES_CRUCES = summit(-116, -104, 20)
 
 /**
  * The focus mask around a zone in play: how far past its outline it keeps its
@@ -176,17 +235,17 @@ const STADIUM_CLEAR = 24
 
 /** Open green squares on the map. */
 const PARKS = [
-    { x: 52, z: 72, r: 12 },
-    { x: -46, z: 20, r: 8 },
-    { x: 40, z: -70, r: 9 },
-    { x: 100, z: 40, r: 9 },
-    { x: 6, z: -2, r: 5 }, // plaza
+    { x: -12, z: 84, r: 11 }, // the south
+    { x: -54, z: 14, r: 8 }, // the west
+    { x: 22, z: -92, r: 9 }, // the north
+    { x: 76, z: 6, r: 9 }, // the east
+    { x: -12, z: -46, r: 5 }, // Plaza de Caycedo, in the centre
 ]
 /** Landmarks with the ground they stand on: La Ermita, Torre de Cali, Estadio Pascual Guerrero. */
 const LANDMARK_GROUNDS = [
-    { x: -8, z: -6, r: 9 },
-    { x: 24, z: -12, r: 7 },
-    { x: -26, z: 58, r: STADIUM_CLEAR },
+    { x: -24, z: -58, r: 9 },
+    { x: -6, z: -66, r: 7 },
+    { x: -34, z: -16, r: STADIUM_CLEAR },
 ]
 /** What a street stops short of: the parks, the landmarks and each zone's aid point. */
 const STREET_KEEP_OUT = [...PARKS, ...LANDMARK_GROUNDS, ...ZONES.map((z) => ({ x: z.label[0], z: z.label[1], r: 6 }))]
@@ -531,21 +590,14 @@ export class CityOverview {
 
     /* ---------------- zones ---------------- */
 
+    /** The zone at (x, z), as Cali's MIO zones group into the app's five (see caliMap.js). */
     zoneAt(x, z) {
         if (urbanMask(x, z) < 0.5) return null
-        const wx = x + 9 * Math.sin(z * 0.045 + 1.3)
-        const wz = z + 9 * Math.sin(x * 0.04 + 0.4)
-        let best = null
-        let bestD = Infinity
-        for (const zone of ZONES) {
-            const w = zone.id === 'centro' ? 1.32 : 1
-            const d = Math.hypot(wx - zone.seed[0], wz - zone.seed[1]) * w
-            if (d < bestD) {
-                bestD = d
-                best = zone.id
-            }
-        }
-        return best
+        const S = SHAPE.size
+        const i = Math.round(x - SHAPE.x0 - 0.5), j = Math.round(z - SHAPE.z0 - 0.5)
+        if (i < 0 || j < 0 || i >= S || j >= S) return null
+        const k = caliShape().zone[j * S + i]
+        return k >= 0 ? ZONES[k].id : null
     }
 
     labelAnchor(zoneId, out = new THREE.Vector3()) {
@@ -821,8 +873,10 @@ export class CityOverview {
             for (let i = 0; i < N; i++) {
                 const a = (i / N) * Math.PI * 2
                 const dx = Math.cos(a), dz = Math.sin(a)
+                // the farthest point of the zone along the ray: its borders follow Cali's, which bend
+                // in and out, and the outline keeps to the outside of them
                 let r = 0
-                while (r < 260 && this.zoneAt(sx + dx * (r + 0.75), sz + dz * (r + 0.75)) === zone.id) r += 0.75
+                for (let t = 0.75; t < 260; t += 0.75) if (this.zoneAt(sx + dx * t, sz + dz * t) === zone.id) r = t
                 radii.push(r)
             }
             const sm = radii.map((_, i) => (radii[(i - 1 + N) % N] + radii[i] * 2 + radii[(i + 1) % N]) / 4)
@@ -1007,33 +1061,35 @@ export class CityOverview {
         }
         // the landmarks are drawn here until their models arrive (see useLandmarkModels)
         this.landmarks = {}
-        // La Ermita — small white gothic church, its front (bell tower and doors) turned to
-        // where the map's camera rests (App's CITY_VIEW, towards x 60, z 262), so it is seen face on
+        const [ermita, torre, estadio] = LANDMARK_GROUNDS
+        // La Ermita — small white gothic church by the river in the centre, its front (bell tower
+        // and doors) turned to where the map's camera rests (App's CITY_VIEW, towards x -50,
+        // z 304), so it is seen face on
         {
             const g = props.ermita()
-            g.position.set(-8, 0, -6)
-            g.rotation.y = Math.atan2(60 + 8, 262 + 6)
+            g.position.set(ermita.x, 0, ermita.z)
+            g.rotation.y = Math.atan2(-50 - ermita.x, 304 - ermita.z)
             this.group.add(g)
             this.landmarks.ermita = g
-            this.exclusions.push({ x: -8, z: -6, r: 9 })
+            this.exclusions.push({ x: ermita.x, z: ermita.z, r: 9 })
         }
-        // Torre de Cali
+        // Torre de Cali, a few blocks from it
         {
             const g = props.torreDeCali()
-            g.position.set(24, 0, -12)
+            g.position.set(torre.x, 0, torre.z)
             g.rotation.y = 0.22
             this.group.add(g)
             this.landmarks['torre-de-cali'] = g
-            this.exclusions.push({ x: 24, z: -12, r: 9 })
+            this.exclusions.push({ x: torre.x, z: torre.z, r: 9 })
         }
-        // Estadio Pascual Guerrero
+        // Estadio Pascual Guerrero, south of the centre
         {
             const g = props.estadio()
-            g.position.set(-26, 0, 58)
+            g.position.set(estadio.x, 0, estadio.z)
             g.rotation.y = 0.3
             this.group.add(g)
             this.landmarks.estadio = g
-            this.exclusions.push({ x: -26, z: 58, r: STADIUM_CLEAR })
+            this.exclusions.push({ x: estadio.x, z: estadio.z, r: STADIUM_CLEAR })
         }
         // Keep each zone's aid point clear of buildings
         for (const zone of ZONES) this.exclusions.push({ x: zone.label[0], z: zone.label[1], r: 7 })
@@ -1068,7 +1124,7 @@ export class CityOverview {
         // how many lots are built on, and how often a block has a tower on one corner (more
         // often on an avenue). Towers stand all over the city, but not in the east.
         const fill = { centro: 0.92, norte: 0.9, sur: 0.84, oriente: 0.95, oeste: 0.88 }
-        const towerChance = { centro: 0.34, norte: 0.26, sur: 0.22, oriente: 0, oeste: 0.22 }
+        const towerChance = { centro: 0.5, norte: 0.36, sur: 0.32, oriente: 0, oeste: 0.32 }
         const houses = []
         const towers = []
         const edge = (k) => streetWidth(k) / 2 + SIDEWALK
