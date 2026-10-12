@@ -2,7 +2,7 @@
 Las casas de los barrios, en versión liviana para el mapa de Cali.
 
 En el mapa hay cerca de mil casas y se ven pequeñas, desde arriba: cada una sale con menos
-triángulos (el mismo contorno, sin los detalles que a esa distancia no se ven) y con texturas
+triángulos (unos 400: el mismo contorno, sin los detalles que a esa distancia no se ven) y con texturas
 de 256 px. Son las mismas casas, con sus mismas texturas: el mapa y los barrios quedan en una
 sola línea.
 
@@ -15,7 +15,7 @@ import sys
 
 argv = sys.argv[sys.argv.index('--') + 1:]
 SRC, OUT = os.path.abspath(argv[0]), os.path.abspath(argv[1])
-TARGET = 700  # triangles per house, more or less
+TARGET = 400  # triangles per house, more or less
 TEX = 256
 HOUSES = ['casa-teja', 'casa-dos-pisos', 'casa-techo-ondulado', 'casa-estrato-2', 'casa-estrato-3', 'casa-estrato-4', 'casa-estrato-5']
 

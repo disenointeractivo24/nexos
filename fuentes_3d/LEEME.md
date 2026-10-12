@@ -190,7 +190,7 @@ node tools/vias_cali.mjs fuentes_3d/mapa_cali/Map_of_Cali.svg src/data/caliRoads
 
 El mapa de Cali usa las mismas casas de los barrios, en una versión liviana: cerca de mil casas
 vistas desde arriba no necesitan cada detalle. `tools/casas_mapa.py` toma cada casa de
-`static/assets/houses/`, le deja unos 700 triángulos (mismo contorno y mismas texturas, a 256 px)
+`static/assets/houses/`, le deja unos 450 triángulos (mismo contorno y mismas texturas, a 256 px)
 y la escribe en `static/assets/houses/mapa/`. Cada zona usa las casas que le van: las sencillas
 en el oriente y las más grandes en el norte y el oeste (`MAP_HOUSES` en `src/three/CityOverview.js`).
 Cada vez que cambie una casa del barrio hay que volver a correrlo, desde `starter/`:

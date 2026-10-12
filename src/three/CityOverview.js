@@ -1045,11 +1045,11 @@ export class CityOverview {
 
     #terrain() {
         // the ground runs out to the horizon, so its edge never shows, whatever the screen: some
-        // 6 m a cell round the city, about 10 m on the hills behind it, and growing from there to
-        // the far edge, 4 km out
-        const seg = 300
+        // 7 m a cell round the city and on the hills behind it, growing from there to the far
+        // edge, 4 km out
+        const seg = 240
         const reach = 4000
-        const near = 900
+        const near = 840
         const stretch = (u) => near * u + (reach - near) * Math.sign(u) * Math.abs(u) ** 6
         const geo = new THREE.PlaneGeometry(2, 2, seg, seg).rotateX(-Math.PI / 2)
         const pos = geo.attributes.position

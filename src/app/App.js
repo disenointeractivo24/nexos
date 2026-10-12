@@ -298,6 +298,8 @@ export class App {
 
         await landmarks
         await cityHouses
+        // the textured landmarks and houses cast their own shadows
+        this.stage.invalidateShadows()
         // Compile shaders now (not on first view) to avoid hitches later
         await this.stage.renderer.compileAsync?.(this.stage.scene, this.stage.camera).catch(() => {})
         this.worldReady = true
@@ -310,11 +312,14 @@ export class App {
 
     #cityLighting() {
         this.stage.setShadowFrame(new THREE.Vector3(20, 0, 0), 175, { mapSize: 2048, normalBias: 0.8 })
+        // nothing moves in the city: its shadows are drawn once and kept
+        this.stage.setShadowsLive(false)
         this.stage.setFog(420, 3400)
     }
 
     #barrioLighting() {
         this.stage.setShadowFrame(new THREE.Vector3(0, 0, -10), 38, { mapSize: 2048, normalBias: 0.05 })
+        this.stage.setShadowsLive(true)
         this.stage.setFog(70, 260)
         this.stage.setInk(INK.barrio[0], INK.barrio[1])
     }
@@ -679,6 +684,7 @@ export class App {
         this.depotSync = store.on(() => this.depot.sync(store))
         this.depot.group.visible = true
         this.stage.setShadowFrame(new THREE.Vector3(0, 1.5, -0.6), 11, { mapSize: 2048, normalBias: 0.05 })
+        this.stage.setShadowsLive(true)
         this.stage.setFog(40, 160)
         this.stage.setInk(INK.barrio[0], INK.barrio[1])
     }

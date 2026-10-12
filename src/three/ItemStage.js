@@ -1,5 +1,4 @@
 import * as THREE from 'three'
-import { PHONE } from './Stage.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 
 /**
@@ -13,7 +12,7 @@ export class ItemStage {
         this.canvas = canvas
         this.reducedMotion = reducedMotion
         this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, PHONE ? 1.5 : 2))
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
         this.renderer.outputColorSpace = THREE.SRGBColorSpace
         this.renderer.toneMapping = THREE.NeutralToneMapping
         this.renderer.setClearColor(0x000000, 0)

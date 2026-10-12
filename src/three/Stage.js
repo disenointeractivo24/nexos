@@ -17,8 +17,13 @@ export const PHONE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: 
 export class Stage {
     constructor(canvas) {
         this.canvas = canvas
-        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, PHONE ? 1.5 : 1.75))
+        // no antialiasing on the canvas itself: the scene is drawn into a multisampled target
+        // (see #post) and only a flat picture reaches the screen, so it would be paid for twice
+        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' })
+        // the sharpest this screen gets; a computer that cannot keep up draws a little less (see #adapt)
+        this.basePixelRatio = Math.min(window.devicePixelRatio, 1.5)
+        this.quality = { scale: 1, min: 0.6, time: 0, frames: 0, good: 0, warm: 3 }
+        this.renderer.setPixelRatio(this.basePixelRatio)
         this.renderer.outputColorSpace = THREE.SRGBColorSpace
         this.renderer.toneMapping = THREE.NeutralToneMapping
         this.renderer.toneMappingExposure = 1.04
@@ -129,6 +134,21 @@ export class Stage {
         }
     }
 
+    /**
+     * Shadows: redrawn every frame where things move (the barrio, the stand), and only when
+     * asked where nothing does — the city's shadow map is drawn once and kept, which spares
+     * a whole second pass over it in every frame.
+     */
+    setShadowsLive(live) {
+        this.renderer.shadowMap.autoUpdate = live
+        this.renderer.shadowMap.needsUpdate = true
+    }
+
+    /** Redraw the kept shadows once (something that casts them came or went). */
+    invalidateShadows() {
+        this.renderer.shadowMap.needsUpdate = true
+    }
+
     /** Fit the sun's shadow camera around an area (city or neighborhood). */
     setShadowFrame(center, radius, { mapSize = 2048, normalBias } = {}) {
         if (PHONE) mapSize = Math.min(mapSize, 1024)
@@ -143,6 +163,7 @@ export class Stage {
         cam.near = 0.5
         cam.far = radius * 7
         cam.updateProjectionMatrix()
+        this.renderer.shadowMap.needsUpdate = true
         if (normalBias !== undefined) s.shadow.normalBias = normalBias
         if (s.shadow.mapSize.x !== mapSize) {
             s.shadow.mapSize.set(mapSize, mapSize)
@@ -394,8 +415,40 @@ export class Stage {
         this.camera.updateProjectionMatrix()
     }
 
+    /**
+     * Every screen gets the same picture. If this computer takes too long over its frames
+     * (under some 40 a second, over a couple of seconds), it draws them with fewer pixels — a
+     * step at a time, down to 60 % — and goes back up once it has room to spare.
+     */
+    #adapt(raw) {
+        const q = this.quality
+        // the first seconds (loading, compiling) and a hidden tab say nothing about the machine
+        if (q.warm > 0) return void (q.warm -= raw)
+        if (raw > 0.25) return
+        q.time += raw
+        q.frames++
+        if (q.time < 2) return
+        const avg = q.time / q.frames
+        q.time = q.frames = 0
+        let scale = q.scale
+        if (avg > 1 / 40 && scale > q.min) {
+            scale = Math.max(q.min, scale * 0.85)
+            q.good = 0
+        } else if (avg < 1 / 57 && scale < 1 && ++q.good >= 3) {
+            scale = Math.min(1, scale * 1.1)
+            q.good = 0
+        }
+        if (scale === q.scale) return
+        q.scale = scale
+        this.renderer.setPixelRatio(this.basePixelRatio * scale)
+        this.size = { w: 0, h: 0 }
+        this.resize()
+    }
+
     #frame() {
-        const dt = Math.min(this.clock.getDelta(), 1 / 20)
+        const raw = this.clock.getDelta()
+        this.#adapt(raw)
+        const dt = Math.min(raw, 1 / 20)
         const t = this.clock.elapsedTime
         gsap.updateRoot(t + this.gsapOffset)
         shaderTime.value = t
