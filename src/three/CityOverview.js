@@ -45,16 +45,6 @@ function lotHash(i, j, zone) {
     return ((h >>> 0) % 100000) / 100000
 }
 
-/**
- * The turn that points a house (facing +Z) at the nearest street of its block: blocks are
- * four lots by three, with a street after each (see #blocks).
- */
-function facingStreet(i, j) {
-    const ii = ((i % 5) + 5) % 5, jj = ((j % 4) + 4) % 4
-    if (jj === 0) return Math.PI // the street before the block, on -Z
-    if (jj === 2) return 0
-    return ii <= 1 ? -Math.PI / 2 : Math.PI / 2
-}
 const pick = (arr) => arr[Math.floor(rnd() * arr.length)]
 const smooth = THREE.MathUtils.smoothstep
 const lerp = THREE.MathUtils.lerp
@@ -153,13 +143,30 @@ const FOCUS_FEATHER = 6
  */
 const BORDER_LIGHT_HEIGHT = 1.2
 
-const ROADS = [
-    [[-86, 44], [-50, 38], [-10, 32], [30, 34], [70, 44], [128, 62]], // Calle 5 / Autopista Sur
-    [[2, -14], [8, -50], [18, -88], [30, -128]], // Avenida 3 Norte
-    [[46, 122], [62, 60], [70, 4], [62, -56], [44, -112]], // Autopista Simón Bolívar / Oriental
-    [[-80, -64], [-72, -22], [-74, 26], [-62, 84]], // Circunvalar
-    [[-30, 10], [12, 4], [52, -2], [118, -18]], // Calle 25
-]
+/**
+ * The street grid: one for the whole city, turned a little, like Cali's own. Blocks are
+ * `bu` by `bv` from one street to the next; every `every`-th street is an avenue (wider,
+ * with a centre line and palms). The origin sits in the centre.
+ */
+const GRID = { angle: 0.12, x: 4, z: 4, bu: 18.5, bv: 14.8, every: 3, reach: 12 }
+const GRID_COS = Math.cos(GRID.angle), GRID_SIN = Math.sin(GRID.angle)
+const STREET_W = 2
+const AVENUE_W = 3.6
+/** Pavement between the street and the first lot. */
+const SIDEWALK = 0.5
+/** How wide a lot is, at most: a block holds as many as fit. */
+const LOT = 3.6
+
+const fromGrid = (u, v) => [GRID.x + u * GRID_COS - v * GRID_SIN, GRID.z + u * GRID_SIN + v * GRID_COS]
+const toGrid = (x, z) => [(x - GRID.x) * GRID_COS + (z - GRID.z) * GRID_SIN, -(x - GRID.x) * GRID_SIN + (z - GRID.z) * GRID_COS]
+const isAvenue = (k) => ((k % GRID.every) + GRID.every) % GRID.every === 0
+const streetWidth = (k) => (isAvenue(k) ? AVENUE_W : STREET_W)
+
+/** True when (x, z) is within `margin` of a street's centre line (any street, clipped or not). */
+function nearStreet(x, z, margin) {
+    const [u, v] = toGrid(x, z)
+    return Math.abs(u - Math.round(u / GRID.bu) * GRID.bu) < margin || Math.abs(v - Math.round(v / GRID.bv) * GRID.bv) < margin
+}
 
 /**
  * Clear ground round the Estadio Pascual Guerrero: the model is 36 long, so houses and
@@ -181,103 +188,52 @@ const LANDMARK_GROUNDS = [
     { x: 24, z: -12, r: 7 },
     { x: -26, z: 58, r: STADIUM_CLEAR },
 ]
-/**
- * What an avenue must go round and never cross: the parks, the landmarks and
- * each zone's aid point.
- */
-const ROAD_HALF_WIDTH = 1.3
-const ROAD_KEEP_OUT = mergeKeepOut([...PARKS, ...LANDMARK_GROUNDS, ...ZONES.map((z) => ({ x: z.label[0], z: z.label[1], r: 7 }))])
+/** What a street stops short of: the parks, the landmarks and each zone's aid point. */
+const STREET_KEEP_OUT = [...PARKS, ...LANDMARK_GROUNDS, ...ZONES.map((z) => ({ x: z.label[0], z: z.label[1], r: 6 }))]
 
 /**
- * Places too close for a road to pass between them (the plaza and the centre's
- * aid point) become one circle round both, so the road goes round the pair
- * instead of being pushed from one into the other.
+ * Every street of the grid, as straight stretches: each line is walked a metre at a time
+ * and kept only inside the city, off the hills and the river, and short of the places above.
  */
-function mergeKeepOut(list) {
-    const out = list.map((c) => ({ ...c }))
-    for (let merged = true; merged; ) {
-        merged = false
-        for (let i = 0; i < out.length && !merged; i++) {
-            for (let j = i + 1; j < out.length && !merged; j++) {
-                const a = out[i], b = out[j]
-                const d = Math.hypot(b.x - a.x, b.z - a.z)
-                if (d >= a.r + b.r + 2 * (ROAD_HALF_WIDTH + 1) + 2) continue
-                // the smallest circle holding both
-                const r = Math.max(a.r, b.r, (d + a.r + b.r) / 2)
-                const k = d > 1e-6 ? (r - a.r) / d : 0
-                out[i] = r === a.r ? a : r === b.r ? b : { x: a.x + (b.x - a.x) * k, z: a.z + (b.z - a.z) * k, r }
-                out.splice(j, 1)
-                merged = true
+function gridStreets(rivers) {
+    const runs = []
+    for (const dir of ['u', 'v']) {
+        const period = dir === 'u' ? GRID.bu : GRID.bv
+        for (let k = -GRID.reach; k <= GRID.reach; k++) {
+            const w = streetWidth(k)
+            let run = []
+            const flush = () => {
+                if (run.length >= 6) runs.push({ dir, avenue: isAvenue(k), w, pts: run })
+                run = []
             }
+            for (let t = -230; t <= 230; t += 1) {
+                const [x, z] = dir === 'u' ? fromGrid(k * period, t) : fromGrid(t, k * period)
+                const ok =
+                    urbanMask(x, z) >= 0.8 &&
+                    mountainFactor(x, z) < 0.02 &&
+                    !STREET_KEEP_OUT.some((o) => (x - o.x) ** 2 + (z - o.z) ** 2 < (o.r + w / 2 + 0.5) ** 2) &&
+                    !rivers.some((r) => distToSamples(x, z, r.samples) < r.clear)
+                if (ok) run.push({ x, z })
+                else flush()
+            }
+            flush()
         }
     }
-    return out
+    return runs
 }
 
 /**
- * Bend a road round the places it must not cross. Where it would enter one,
- * the stretch inside is laid on a half circle round its edge (on the side the
- * road already passes), with a metre to spare; then the line is relaxed so the
- * detour reads as a gentle curve, and laid out again at even spacing.
+ * The turn that points a house (facing +Z) at the nearest street of its block, from where
+ * it stands in the block (lot a of nu along it, b of nv across).
  */
-function detour(samples, keepOut = ROAD_KEEP_OUT) {
-    let pts = samples.map((p) => new THREE.Vector3(p.x, 0, p.z))
-    const clearOf = (o) => o.r + ROAD_HALF_WIDTH + 1
-    const bend = () => {
-        for (const o of keepOut) {
-            const R = clearOf(o)
-            let bi = -1
-            let bd = Infinity
-            pts.forEach((p, i) => {
-                const d = Math.hypot(p.x - o.x, p.z - o.z)
-                if (d < bd) {
-                    bd = d
-                    bi = i
-                }
-            })
-            if (bd >= R) continue
-            const a = pts[Math.max(bi - 2, 0)]
-            const b = pts[Math.min(bi + 2, pts.length - 1)]
-            let ux = b.x - a.x, uz = b.z - a.z
-            const l = Math.hypot(ux, uz) || 1
-            ux /= l
-            uz /= l
-            let vx = -uz, vz = ux
-            if ((pts[bi].x - o.x) * vx + (pts[bi].z - o.z) * vz < 0) {
-                vx = -vx
-                vz = -vz
-            }
-            for (const p of pts) {
-                const dx = p.x - o.x, dz = p.z - o.z
-                if (Math.hypot(dx, dz) >= R) continue
-                const along = Math.max(-R, Math.min(R, dx * ux + dz * uz))
-                const side = Math.sqrt(Math.max(0, R * R - along * along))
-                p.x = o.x + ux * along + vx * side
-                p.z = o.z + uz * along + vz * side
-            }
-        }
-    }
-    const push = () => {
-        for (const p of pts) {
-            for (const o of keepOut) {
-                const R = clearOf(o)
-                const dx = p.x - o.x, dz = p.z - o.z
-                const d = Math.hypot(dx, dz)
-                if (d < R && d > 1e-4) {
-                    p.x = o.x + (dx / d) * R
-                    p.z = o.z + (dz / d) * R
-                }
-            }
-        }
-    }
-    bend()
-    for (let k = 0; k < 6; k++) {
-        pts = pts.map((p, i) =>
-            i === 0 || i === pts.length - 1 ? p.clone() : new THREE.Vector3((pts[i - 1].x + p.x * 2 + pts[i + 1].x) / 4, 0, (pts[i - 1].z + p.z * 2 + pts[i + 1].z) / 4)
-        )
-        push()
-    }
-    return sampleCurve(new THREE.CatmullRomCurve3(pts, false, 'centripetal'), 2)
+function facingStreet(a, b, nu, nv) {
+    const sides = [
+        [nv - 1 - b, 0], // +v
+        [b, Math.PI], // -v
+        [nu - 1 - a, Math.PI / 2], // +u
+        [a, -Math.PI / 2], // -u
+    ]
+    return sides.reduce((best, s) => (s[0] < best[0] ? s : best))[1]
 }
 
 function curveFrom(points, y = 0) {
@@ -403,8 +359,9 @@ export class CityOverview {
         this.ready = false
         this.riverScale = theme?.cues.city.includes('highRiver') ? 1.3 : 1
         this.riverSamples = RIVERS.map((r) => ({ ...r, width: r.width * this.riverScale, samples: sampleCurve(curveFrom(r.points), 2) }))
-        // the avenues bend round parks, landmarks and aid points instead of running over them
-        this.roadSamples = ROADS.map((pts) => detour(sampleCurve(curveFrom(pts), 2)))
+        // the street grid; the avenues, sampled every two metres, are what palms line and houses keep off
+        this.streets = gridStreets(this.riverSamples)
+        this.roadSamples = this.streets.filter((r) => r.avenue).map((r) => r.pts.filter((_, i) => i % 2 === 0))
     }
 
     /**
@@ -1005,17 +962,27 @@ export class CityOverview {
     }
 
     #roads() {
-        const mat = new THREE.MeshStandardMaterial({ color: WORLD.road, roughness: 0.95 })
-        const centre = new THREE.MeshBasicMaterial({ color: '#F4F1EA' })
-        for (const samples of this.roadSamples) {
-            const pts = samples.map((p) => new THREE.Vector3(p.x, 0, p.z))
-            const road = new THREE.Mesh(ribbonGeometry(pts, 2.6, 0.12), mat)
-            road.receiveShadow = true
-            road.userData.ground = 'avenidas'
-            const line = new THREE.Mesh(ribbonGeometry(pts, 0.22, 0.14), centre)
-            line.userData.ground = 'lineas_centrales'
-            this.group.add(road, line)
+        // all the streets in one mesh, the avenues in another (with the painted asphalt) and their
+        // centre lines in a third; the avenues sit a hair higher so the crossings never flicker
+        const streets = [], avenues = [], lines = []
+        for (const r of this.streets) {
+            const ends = [r.pts[0], r.pts[r.pts.length - 1]].map((p) => new THREE.Vector3(p.x, 0, p.z))
+            const lift = r.dir === 'u' ? 0 : 0.005
+            if (r.avenue) {
+                avenues.push(ribbonGeometry(ends, r.w, 0.12 + lift))
+                lines.push(ribbonGeometry(ends, 0.18, 0.14 + lift))
+            } else streets.push(ribbonGeometry(ends, r.w, 0.11))
         }
+        const add = (list, mat, ground) => {
+            if (!list.length) return
+            const mesh = new THREE.Mesh(mergeGeometries(list), mat)
+            mesh.receiveShadow = true
+            if (ground) mesh.userData.ground = ground
+            this.group.add(mesh)
+        }
+        add(streets, new THREE.MeshStandardMaterial({ color: WORLD.road, roughness: 0.95 }), null)
+        add(avenues, new THREE.MeshStandardMaterial({ color: WORLD.road, roughness: 0.95 }), 'avenidas')
+        add(lines, new THREE.MeshBasicMaterial({ color: '#F4F1EA' }), 'lineas_centrales')
     }
 
     /* ---------------- landmarks ---------------- */
@@ -1098,30 +1065,44 @@ export class CityOverview {
     }
 
     #blocks() {
-        const gridAngle = { centro: 0.18, norte: -0.22, sur: 0.36, oriente: 0.58, oeste: 0.05 }
-        const towerChance = { centro: 0.24, norte: 0.12, sur: 0.04, oriente: 0.0, oeste: 0.0 }
-        const fill = { centro: 0.86, norte: 0.84, sur: 0.7, oriente: 0.95, oeste: 0.82 }
+        // how many lots are built on, and how often a block has a tower on one corner (more
+        // often on an avenue). Towers stand all over the city, but not in the east.
+        const fill = { centro: 0.92, norte: 0.9, sur: 0.84, oriente: 0.95, oeste: 0.88 }
+        const towerChance = { centro: 0.34, norte: 0.26, sur: 0.22, oriente: 0, oeste: 0.22 }
         const houses = []
         const towers = []
-        const step = 3.7
+        const edge = (k) => streetWidth(k) / 2 + SIDEWALK
 
-        for (const zone of ZONES) {
-            const a = gridAngle[zone.id]
-            const ca = Math.cos(a), sa = Math.sin(a)
-            const [cx, cz] = zone.seed
-            for (let i = -42; i <= 42; i++) {
-                for (let j = -42; j <= 42; j++) {
-                    // streets between blocks
-                    if (((i % 5) + 5) % 5 === 4 || ((j % 4) + 4) % 4 === 3) continue
-                    const lx = i * step, lz = j * step
-                    const x = cx + lx * ca - lz * sa + (rnd() - 0.5) * 0.5
-                    const z = cz + lx * sa + lz * ca + (rnd() - 0.5) * 0.5
-                    if (this.zoneAt(x, z) !== zone.id) continue
-                    if (urbanMask(x, z) < 0.85) continue
-                    if (!this.#isFree(x, z)) continue
-                    if (rnd() > fill[zone.id]) continue
-                    const isTower = rnd() < towerChance[zone.id] * (1 - Math.min(1, Math.hypot(x - 20, z + 10) / 120))
-                    ;(isTower ? towers : houses).push({ x, z, a: a + (rnd() - 0.5) * 0.06, zone: zone.id, face: facingStreet(i, j), mix: lotHash(i, j, zone.id) })
+        for (let i = -GRID.reach; i < GRID.reach; i++) {
+            for (let j = -GRID.reach; j < GRID.reach; j++) {
+                const u0 = i * GRID.bu + edge(i), u1 = (i + 1) * GRID.bu - edge(i + 1)
+                const v0 = j * GRID.bv + edge(j), v1 = (j + 1) * GRID.bv - edge(j + 1)
+                const nu = Math.max(1, Math.floor((u1 - u0) / LOT)), nv = Math.max(1, Math.floor((v1 - v0) / LOT))
+                const su = (u1 - u0) / nu, sv = (v1 - v0) / nv
+                // a whole block belongs to one zone
+                const zone = this.zoneAt(...fromGrid((u0 + u1) / 2, (v0 + v1) / 2))
+                if (!zone) continue
+                const avenue = { u0: isAvenue(i), u1: isAvenue(i + 1), v0: isAvenue(j), v1: isAvenue(j + 1) }
+                const onAvenue = avenue.u0 || avenue.u1 || avenue.v0 || avenue.v1
+                let tower = null
+                if (nu >= 2 && nv >= 2 && rnd() < towerChance[zone] * (onAvenue ? 1.7 : 0.6)) {
+                    // the corner on the avenue, when the block has one
+                    const cu = avenue.u1 ? nu - 2 : avenue.u0 ? 0 : rnd() < 0.5 ? 0 : nu - 2
+                    const cv = avenue.v1 ? nv - 2 : avenue.v0 ? 0 : rnd() < 0.5 ? 0 : nv - 2
+                    const [x, z] = fromGrid(u0 + (cu + 1) * su, v0 + (cv + 1) * sv)
+                    if (urbanMask(x, z) >= 0.85 && this.#isFree(x, z, 2.5)) {
+                        tower = { cu, cv }
+                        towers.push({ x, z, a: GRID.angle, zone, w: 2 * Math.min(su, sv) - 1.2 })
+                    }
+                }
+                for (let a = 0; a < nu; a++) {
+                    for (let b = 0; b < nv; b++) {
+                        if (tower && a >= tower.cu && a < tower.cu + 2 && b >= tower.cv && b < tower.cv + 2) continue
+                        const [x, z] = fromGrid(u0 + (a + 0.5) * su + (rnd() - 0.5) * 0.2, v0 + (b + 0.5) * sv + (rnd() - 0.5) * 0.2)
+                        if (urbanMask(x, z) < 0.85 || !this.#isFree(x, z)) continue
+                        if (rnd() > fill[zone]) continue
+                        houses.push({ x, z, a: GRID.angle + (rnd() - 0.5) * 0.04, zone, face: facingStreet(a, b, nu, nv), mix: lotHash(i * 8 + a, j * 8 + b, zone) })
+                    }
                 }
             }
         }
@@ -1192,10 +1173,10 @@ export class CityOverview {
         )
         const towerColors = ['#F1F0EC', '#E6E8EA', '#DDE3E8', '#ECE6DC'].map((c) => new THREE.Color(c))
         towers.forEach((t, i) => {
-            const w = 4 + rnd() * 2.5
-            const ht = 8 + rnd() * 16 * (t.zone === 'centro' ? 1.2 : 0.8)
+            const w = t.w * (0.88 + rnd() * 0.12)
+            const ht = 8 + rnd() * 14 * (t.zone === 'centro' ? 1.25 : 0.9)
             q.setFromAxisAngle(up, -t.a)
-            m.compose(p.set(t.x, 0, t.z), q, sc.set(w, ht, w * (0.8 + rnd() * 0.4)))
+            m.compose(p.set(t.x, 0, t.z), q, sc.set(w, ht, w * (0.85 + rnd() * 0.15)))
             towerMesh.setMatrixAt(i, m)
             towerMesh.setColorAt(i, pick(towerColors))
         })
@@ -1248,6 +1229,7 @@ export class CityOverview {
             if (u > 0.2 && !this.#isFree(x, z, -1.2)) continue
             if (u <= 0.2 && rnd() > 0.5) continue
             if (this.#onRoad(x, z, 2.8)) continue
+            if (u > 0.2 && nearStreet(x, z, 1.8)) continue
             trees.push({ x, z, y: 0, s: 1.2 + rnd() * 0.9 })
         }
         // Palms along the avenues (a Cali signature)
