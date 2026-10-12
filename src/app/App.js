@@ -11,7 +11,7 @@ import { GuideCharacter } from '../three/GuideCharacter.js'
 import { ItemStage } from '../three/ItemStage.js'
 import { Rain } from '../three/ThemeCues.js'
 import { Families } from '../three/Families.js'
-import { Depot, DEPOT_BOUNDS } from '../three/Depot.js'
+import { Depot, DEPOT_FRAME } from '../three/Depot.js'
 import { HOUSE_MODELS, ASSETS } from '../data/assets.js'
 import { ZONES, NEED_WORD, buildBarrio, zoneLevel, zoneNeeds, applyDonation, barrioCovered, useStock, refreshBarrioNeeds } from '../data/zones.js'
 import { CATEGORIES, SUPPLIES, money } from '../data/catalog.js'
@@ -697,8 +697,8 @@ export class App {
 
     /**
      * Frame the stand straight from the front, in the band the board leaves
-     * free between the top bar and itself: as close as it can be while the
-     * whole stand still fits, and centred in that band.
+     * free between the top bar and itself: as close as it can be while its
+     * shelves and banner still fit (DEPOT_FRAME), and centred in that band.
      */
     #frameDepot() {
         const cam = this.stage.camera
@@ -709,9 +709,9 @@ export class App {
         const panelTop = this.inventoryPanel.el.offsetTop || h * 0.6
         const free = Math.max(140, panelTop - top - 8)
         const tan = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2)
-        const height = DEPOT_BOUNDS.top - DEPOT_BOUNDS.bottom
+        const height = DEPOT_FRAME.top - DEPOT_FRAME.bottom
         const byHeight = (height * h) / (2 * tan * free)
-        const byWidth = (DEPOT_BOUNDS.width * h) / (2 * tan * w * 0.96)
+        const byWidth = (DEPOT_FRAME.width * h) / (2 * tan * w * 0.96)
         const dist = Math.max(byHeight, byWidth) * 1.04
         const look = this.depot.center
         this.rig.set(new THREE.Vector3(look.x, look.y, look.z + dist), look)
