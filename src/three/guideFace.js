@@ -32,9 +32,10 @@ export class GuideFace {
         let helmet = null
         head.traverse((o) => {
             if (!o.isMesh) return
-            const name = [o.material].flat()[0]?.name ?? ''
+            // the face goes on the skin of the head: not on the hair or the ears (by material or by piece)
+            const name = `${[o.material].flat()[0]?.name ?? ''} ${o.name}`
             if (/casco/i.test(name)) helmet = o
-            else if (!/ojos|lengua|emblema|pelo|oreja/.test(name)) skin.push(o)
+            else if (!/ojos|lengua|emblema|pelo|oreja/i.test(name)) skin.push(o)
         })
         if (!skin.length) return null
         return new GuideFace(head, skin, helmet)

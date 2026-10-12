@@ -30,7 +30,7 @@ import { Toast, Dialog } from '../ui/feedback.js'
 import { TrackView } from '../ui/track.js'
 import { ledger, localQueue } from './donations.js'
 import { setLite } from '../lite/detect.js'
-import { makeNeighbour } from '../three/neighbour.js'
+import { makeNeighbour, preloadNeighbours } from '../three/neighbour.js'
 import { session } from './session.js'
 
 const COLLECTION_POINTS_BY_ID = Object.fromEntries(COLLECTION_POINTS.map((p) => [p.id, p]))
@@ -284,6 +284,8 @@ export class App {
             reducedMotion: this.reducedMotion,
             makePerson: guideT.source === 'glb' ? (n, age) => makeNeighbour(this.loader, guideT, n, age) : null,
         })
+        // the textured neighbours arrive in the background; until then the painted ones stand in
+        if (guideT.source === 'glb') preloadNeighbours(this.loader)
         this.portrait = new GuideCharacter(this.loader.instanceSync(guideT), guideT.animations, { reducedMotion: this.reducedMotion, face: true, lively: true })
         this.portrait.place(new THREE.Vector3(), 0.32)
         this.portrait.blob.visible = false

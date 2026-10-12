@@ -163,3 +163,20 @@ texturas PNG. Desde `starter/`:
 ```
 "C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python tools/optimizar_glb.py -- static/assets/houses/casa-teja.glb
 ```
+
+### Texturas de los vecinos
+
+Las texturas pintadas en Substance van en `npcs/Textures/`, una carpeta por juego:
+`NPC1`, `NPC2`… (ropa para los jóvenes), `Niño` (solo el pantalón: la pantaloneta del niño)
+y `Abuelo` (el mayor). Se pintaron sobre `npc_adolescente.fbx`, así que el adulto, el
+adolescente y el niño usan su mismo peinado; el niño conserva su pantaloneta. Cada carpeta
+`NPC<n>` da dos modelos (`npc-joven-<n>` y `npc-nino-<n>`) y la aplicación los alterna.
+
+Para regenerarlos, desde `starter/`:
+
+```
+"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python tools/exportar_npcs_texturas.py -- fuentes_3d/npcs static/assets/characters
+```
+
+Basta con añadir otra carpeta `NPC3` (con los mismos nombres de material) para tener otro
+juego de ropa; luego hay que sumarlo en `src/data/assets.js` y en `src/three/neighbour.js`.

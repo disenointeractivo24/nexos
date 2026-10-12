@@ -54,7 +54,60 @@ function jointOf(o) {
  * @param n      which neighbour: picks the colours, so each one looks different
  * @param age    'adult' | 'teen' | 'child' | 'elder'
  */
+/** The textured neighbours, once loaded (see preloadNeighbours): id → template. */
+const textured = new Map()
+const TEXTURED = ['npc-joven-1', 'npc-joven-2', 'npc-nino-1', 'npc-nino-2', 'npc-mayor']
+
+/**
+ * Loads the textured neighbours in the background. Until they arrive (or if they fail),
+ * makeNeighbour dresses the guide's model in painted clothes instead.
+ */
+export function preloadNeighbours(loader) {
+    return Promise.all(
+        TEXTURED.map((id) =>
+            loader
+                .load(id)
+                .then((t) => t.source === 'glb' && textured.set(id, t))
+                .catch(() => {})
+        )
+    )
+}
+
+/** The textured model for a neighbour of this age, or null if it is not loaded. */
+function texturedModel(loader, n, age) {
+    const id = age === 'elder' ? 'npc-mayor' : `npc-${age === 'child' ? 'nino' : 'joven'}-${1 + (n % 2)}`
+    const t = textured.get(id)
+    return t ? loader.instanceSync(t) : null
+}
+
 export function makeNeighbour(loader, guide, n = 0, age = 'adult') {
+    const model = texturedModel(loader, n, age)
+    if (model) return finish(model, age)
+    return paintedNeighbour(loader, guide, n, age)
+}
+
+/** The parcel they carry home, shadows, and the child's slightly bigger head. */
+function finish(model, age) {
+    model.updateMatrixWorld(true)
+    const body = model.getObjectByName('body')
+    if (body) {
+        const parcel = new THREE.Mesh(new RoundedBoxGeometry(0.34, 0.26, 0.24, 2, 0.03), new THREE.MeshStandardMaterial({ color: '#C9A77C', roughness: 0.9 }))
+        parcel.name = 'parcel'
+        parcel.position.set(0, 0.62, 0.36)
+        parcel.visible = false
+        body.attach(parcel)
+    }
+    const head = model.getObjectByName('head')
+    if (head && age === 'child') head.scale.multiplyScalar(1.16)
+    model.traverse((o) => {
+        if (o.isMesh) o.castShadow = o.receiveShadow = true
+    })
+    model.userData.age = age
+    return model
+}
+
+/** The guide's model dressed with painted clothes: the stand-in until the textured ones load. */
+function paintedNeighbour(loader, guide, n = 0, age = 'adult') {
     // a small seeded random per neighbour, so each one is dressed differently but always the same way
     let h = (n + 1) * 2654435761
     const rand = () => ((h = Math.imul(h ^ (h >>> 15), 2246822507) ^ ((h + 0x9e3779b9) | 0)) >>> 0) / 4294967296

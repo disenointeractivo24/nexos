@@ -36,6 +36,16 @@ const stylized = { ao: 0.28, aoHeight: 3.2, rim: 0.1 } // keeps the textures; ad
 
 export const ASSETS = {
     /* ---------------- characters ---------------- */
+    /*
+     * The neighbours, textured in Substance on the guide's own body (tools/exportar_npcs_texturas.py):
+     * every young one (adult, teenager, child) has the teenager's hairstyle; the child wears shorts.
+     * Two sets of clothes for the young ones, alternated; the app sets each age's size.
+     */
+    'npc-joven-1': { id: 'npc-joven-1', category: 'characters', label: 'Vecino', model: '/assets/characters/npc-joven-1.glb', procedural: null, scale: 1.6 / 4 },
+    'npc-joven-2': { id: 'npc-joven-2', category: 'characters', label: 'Vecino', model: '/assets/characters/npc-joven-2.glb', procedural: null, scale: 1.6 / 4 },
+    'npc-nino-1': { id: 'npc-nino-1', category: 'characters', label: 'Niño', model: '/assets/characters/npc-nino-1.glb', procedural: null, scale: 1.6 / 4 },
+    'npc-nino-2': { id: 'npc-nino-2', category: 'characters', label: 'Niño', model: '/assets/characters/npc-nino-2.glb', procedural: null, scale: 1.6 / 4 },
+    'npc-mayor': { id: 'npc-mayor', category: 'characters', label: 'Vecino mayor', model: '/assets/characters/npc-mayor.glb', procedural: null, scale: 1.6 / 4 },
     guide: {
         id: 'guide',
         category: 'characters',
