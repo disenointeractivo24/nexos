@@ -236,16 +236,16 @@ const STADIUM_CLEAR = 24
 /** Open green squares on the map. */
 const PARKS = [
     { x: -12, z: 84, r: 11 }, // the south
-    { x: -54, z: 14, r: 8 }, // the west
+    { x: -60, z: 30, r: 8 }, // the west
     { x: 22, z: -92, r: 9 }, // the north
     { x: 76, z: 6, r: 9 }, // the east
-    { x: -12, z: -46, r: 5 }, // Plaza de Caycedo, in the centre
+    { x: -8, z: -40, r: 5 }, // Plaza de Caycedo, in the centre
 ]
 /** Landmarks with the ground they stand on: La Ermita, Torre de Cali, Estadio Pascual Guerrero. */
 const LANDMARK_GROUNDS = [
-    { x: -24, z: -58, r: 9 },
-    { x: -6, z: -66, r: 7 },
-    { x: -34, z: -16, r: STADIUM_CLEAR },
+    { x: -20, z: -49, r: 9 }, // La Ermita
+    { x: -31, z: -57, r: 7 }, // Torre de Cali, just west of it
+    { x: -39, z: -19, r: STADIUM_CLEAR }, // Estadio Pascual Guerrero, in the north of Cañaveralejo
 ]
 /** What a street stops short of: the parks, the landmarks and each zone's aid point. */
 const STREET_KEEP_OUT = [...PARKS, ...LANDMARK_GROUNDS, ...ZONES.map((z) => ({ x: z.label[0], z: z.label[1], r: 6 }))]
@@ -1073,7 +1073,7 @@ export class CityOverview {
             this.landmarks.ermita = g
             this.exclusions.push({ x: ermita.x, z: ermita.z, r: 9 })
         }
-        // Torre de Cali, a few blocks from it
+        // Torre de Cali, a few blocks west of it
         {
             const g = props.torreDeCali()
             g.position.set(torre.x, 0, torre.z)

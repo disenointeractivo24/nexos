@@ -56,13 +56,16 @@ import { Audio } from './audio.js'
 
 // Cali runs long from north to south: seen a little more from above, and set off to the right of the guide
 const CITY_VIEW = { pos: new THREE.Vector3(-50, 340, 304), target: new THREE.Vector3(-30, 0, 30) }
+// the descent comes down from high above the city straight into CITY_VIEW, already looking
+// almost where it ends, so the camera never swings round on arrival
+const INTRO_START = new THREE.Vector3(CITY_VIEW.target.x + 4, 720, CITY_VIEW.target.z + 60)
 const INTRO_CURVE = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(8, 720, 70),
-    new THREE.Vector3(26, 520, 150),
-    new THREE.Vector3(46, 330, 210),
+    INTRO_START.clone(),
+    INTRO_START.clone().lerp(CITY_VIEW.pos, 0.45).setY(520),
+    INTRO_START.clone().lerp(CITY_VIEW.pos, 0.8).setY(400),
     CITY_VIEW.pos.clone(),
 ])
-const INTRO_TARGET_FROM = new THREE.Vector3(12, 0, -10)
+const INTRO_TARGET_FROM = CITY_VIEW.target.clone().add(new THREE.Vector3(0, 0, -24))
 /**
  * A collection point's view of its own zone: camera distance, in zone radii,
  * and how much steeper than the city view it looks down, so the towers of the
