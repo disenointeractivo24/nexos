@@ -265,9 +265,8 @@ export class App {
         // and the barrio's own houses across the city, in place of the drawn ones
         const cityHouses = this.city.useHouseModels(this.loader)
 
+        // the barrio starts as soon as its own models are in, without waiting for the map's
         await assets
-        await landmarks
-        await cityHouses
         this.hood = new NeighborhoodScene(this.loader, this.theme)
         // hidden from the start: the frame loop runs while it loads its models, and a visible
         // barrio would be updated before its guide exists
@@ -297,6 +296,8 @@ export class App {
         this.portrait.place(new THREE.Vector3(), 0.32)
         this.portrait.blob.visible = false
 
+        await landmarks
+        await cityHouses
         // Compile shaders now (not on first view) to avoid hitches later
         await this.stage.renderer.compileAsync?.(this.stage.scene, this.stage.camera).catch(() => {})
         this.worldReady = true
@@ -446,14 +447,17 @@ export class App {
 
     #introStep(dt) {
         const it = this.intro
-        // Hold softly inside the clouds only until the city is built (a moment); then the descent
-        // carries on down to it while the barrio and the guide load behind. If they are not ready
-        // yet it slows a little and eases ever closer to the final view instead of stopping, and
-        // when they are it finishes the last stretch: one continuous move, never a frozen frame
+        // One continuous move from the clouds to the city, however long the loading takes: while
+        // the city is still being built the camera keeps coming down through the clouds (they hide
+        // it), and while the barrio and the guide load behind, it carries on towards the final view.
+        // The pace follows the loading — slower while there is more to come — and changes gently,
+        // so the descent stretches over the wait instead of stopping and starting again
         const built = !!this.city?.ready
-        const limit = this.worldReady ? 1 : built ? 0.985 : 0.3
+        const limit = this.worldReady ? 1 : built ? 0.985 : 0.55
         const target = Math.min(it.target, limit)
-        const rate = this.reducedMotion ? 10 : (it.auto ? 1.7 : 2.6) * (this.worldReady ? 1 : 0.7)
+        const pace = this.worldReady ? 1 : built ? 0.45 : 0.3
+        it.pace = (it.pace ?? pace) + (pace - (it.pace ?? pace)) * (1 - Math.exp(-dt * 1.5))
+        const rate = this.reducedMotion ? 10 : (it.auto ? 1.7 : 2.6) * it.pace
         it.p += (target - it.p) * (1 - Math.exp(-dt * rate))
         const e = it.p * it.p * (3 - 2 * it.p)
         INTRO_CURVE.points[3].copy(this.#cityFrame().pos)
