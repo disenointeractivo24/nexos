@@ -168,8 +168,11 @@ texturas PNG. Desde `starter/`:
 
 Las texturas pintadas en Substance van en `npcs/Textures/`, una carpeta por juego:
 `NPC1`, `NPC2`… (ropa para los jóvenes), `Niño` (solo el pantalón: la pantaloneta del niño)
-y `Abuelo` (el mayor). Se pintaron sobre `npc_adolescente.fbx`, así que el adulto, el
-adolescente y el niño usan su mismo peinado; el niño conserva su pantaloneta. Cada carpeta
+y `Abuelo` (el mayor). Se pintaron sobre `npcs/npc1.glb` (el joven) y `npcs/abuelo.glb` (el
+mayor), que son los mismos modelos con UV propias; los `.fbx` solo le dicen al script a qué
+articulación va cada pieza. El adulto, el adolescente y el niño usan el mismo peinado; el niño
+lleva la pantaloneta de `npc_nino.fbx` y, debajo, las piernas en el tono de la piel (esa parte
+de la textura quedó sin pintar, porque iba bajo el pantalón largo). Cada carpeta
 `NPC<n>` da dos modelos (`npc-joven-<n>` y `npc-nino-<n>`) y la aplicación los alterna.
 
 Para regenerarlos, desde `starter/`:
