@@ -172,6 +172,22 @@ export class Stage {
         }
     }
 
+    /**
+     * How near and how far the camera sees. Depth precision is spread over the ratio between the
+     * two, so each place asks for what it needs: the city, seen from high up out to the horizon,
+     * starts a few metres out (or its stacked roads and the stadium's pitch flicker against the
+     * ground); the barrio and the stand, seen from close, start right in front of the lens.
+     */
+    setClip(near, far) {
+        const c = this.camera
+        if (c.near === near && c.far === far) return
+        c.near = near
+        c.far = far
+        c.updateProjectionMatrix()
+        this.postUniforms.uNear.value = near
+        this.postUniforms.uFar.value = far
+    }
+
     /** The fog of the current place (city or barrio); the weather brings it closer (see #frame). */
     setFog(near, far) {
         this.fogBase = { near, far }

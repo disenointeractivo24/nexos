@@ -325,12 +325,14 @@ export class App {
         this.stage.setShadowFrame(new THREE.Vector3(20, 0, 0), 175, { mapSize: 2048, normalBias: 0.8 })
         // nothing moves in the city: its shadows are drawn once and kept
         this.stage.setShadowsLive(false)
+        this.stage.setClip(2.5, 6000)
         this.stage.setFog(420, 3400)
     }
 
     #barrioLighting() {
         this.stage.setShadowFrame(new THREE.Vector3(0, 0, -10), 38, { mapSize: 2048, normalBias: 0.05 })
         this.stage.setShadowsLive(true)
+        this.stage.setClip(0.5, 2000)
         this.stage.setFog(70, 260)
         this.stage.setInk(INK.barrio[0], INK.barrio[1])
     }
@@ -751,6 +753,7 @@ export class App {
         this.depot.group.visible = true
         this.stage.setShadowFrame(new THREE.Vector3(0, 1.5, -0.6), 11, { mapSize: 2048, normalBias: 0.05 })
         this.stage.setShadowsLive(true)
+        this.stage.setClip(0.5, 800)
         this.stage.setFog(40, 160)
         this.stage.setInk(INK.barrio[0], INK.barrio[1])
     }

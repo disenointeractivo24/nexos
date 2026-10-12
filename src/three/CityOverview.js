@@ -677,8 +677,13 @@ export class CityOverview {
                 const model = loader.instanceSync(t)
                 model.position.copy(drawn.position)
                 model.rotation.copy(drawn.rotation)
-                // the stadium lies along the avenue that passes it, its length running beside the road
-                if (id === 'estadio') model.rotation.y = this.#alongNearestRoad(model.position.x, model.position.z)
+                // the stadium lies along the avenue that passes it, its length running beside the road;
+                // its pitch is its lowest face, so it stands a few centimetres over the ground
+                // instead of flickering against it
+                if (id === 'estadio') {
+                    model.rotation.y = this.#alongNearestRoad(model.position.x, model.position.z)
+                    model.position.y = 0.12
+                }
                 this.group.add(model)
                 this.group.remove(drawn)
                 this.landmarks[id] = model
@@ -1193,16 +1198,19 @@ export class CityOverview {
 
     #roads() {
         // the local streets in one mesh, Cali's main streets in another, the avenues (with the
-        // painted asphalt) in a third and their centre lines in a fourth; each kind sits a hair
-        // above the one below, and the avenues alternate, so no crossing ever flickers
+        // painted asphalt) in a third and their centre lines in a fourth. Seen from a few hundred
+        // metres, layers a few millimetres apart fight over every pixel where they cross (the
+        // textures seem to flicker over each other): each kind sits centimetres above the one
+        // below, the avenues alternate between three heights, and each kind is also drawn with
+        // its own depth offset, so the order holds at any distance
         const v3 = (p) => new THREE.Vector3(p.x, 0, p.z)
-        const streets = this.localStreets.map((r) => ribbonGeometry([r.pts[0], r.pts[r.pts.length - 1]].map(v3), STREET_W, 0.11))
-        const mains = this.mainStreets.map((l) => ribbonGeometry(l.map(v3), MAIN_STREET_W, 0.115))
+        const streets = this.localStreets.map((r) => ribbonGeometry([r.pts[0], r.pts[r.pts.length - 1]].map(v3), STREET_W, 0.12))
+        const mains = this.mainStreets.map((l) => ribbonGeometry(l.map(v3), MAIN_STREET_W, 0.16))
         const avenues = [], lines = []
         this.avenues.forEach((l, i) => {
-            const lift = (i % 3) * 0.002
-            avenues.push(ribbonGeometry(l.map(v3), AVENUE_W, 0.12 + lift))
-            lines.push(ribbonGeometry(l.map(v3), 0.18, 0.14 + lift))
+            const lift = (i % 3) * 0.015
+            avenues.push(ribbonGeometry(l.map(v3), AVENUE_W, 0.2 + lift))
+            lines.push(ribbonGeometry(l.map(v3), 0.18, 0.27 + lift))
         })
         const add = (list, mat, ground) => {
             if (!list.length) return
@@ -1211,11 +1219,11 @@ export class CityOverview {
             if (ground) mesh.userData.ground = ground
             this.group.add(mesh)
         }
-        const asphalt = new THREE.MeshStandardMaterial({ color: WORLD.road, roughness: 0.95 })
-        add(streets, asphalt, null)
-        add(mains, asphalt, null)
-        add(avenues, new THREE.MeshStandardMaterial({ color: WORLD.road, roughness: 0.95 }), 'avenidas')
-        add(lines, new THREE.MeshBasicMaterial({ color: '#F4F1EA' }), 'lineas_centrales')
+        const layer = (k) => ({ polygonOffset: true, polygonOffsetFactor: -k, polygonOffsetUnits: -k * 2 })
+        add(streets, new THREE.MeshStandardMaterial({ color: WORLD.road, roughness: 0.95, ...layer(1) }), null)
+        add(mains, new THREE.MeshStandardMaterial({ color: WORLD.road, roughness: 0.95, ...layer(2) }), null)
+        add(avenues, new THREE.MeshStandardMaterial({ color: WORLD.road, roughness: 0.95, ...layer(3) }), 'avenidas')
+        add(lines, new THREE.MeshBasicMaterial({ color: '#F4F1EA', ...layer(4) }), 'lineas_centrales')
     }
 
     /* ---------------- landmarks ---------------- */
