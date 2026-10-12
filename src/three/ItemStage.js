@@ -42,7 +42,9 @@ export class ItemStage {
      * @param {string} id
      * @param {HTMLElement} el      element whose box is the viewport
      * @param {THREE.Object3D} object  normalised object (min y = 0)
-     * @param {{clipEl?: HTMLElement, kind?: 'item'|'guide', getAlpha?: () => number, update?: (dt:number,t:number)=>void}} opts
+     * @param {{clipEl?: HTMLElement, owner?: HTMLElement, kind?: 'item'|'guide', getAlpha?: () => number, update?: (dt:number,t:number)=>void}} opts
+     *   owner: the element the view belongs to (a tile with its name and count over the picture):
+     *   what lies inside it does not count as covering the view
      */
     add(id, el, object, opts = {}) {
         this.remove(id)
@@ -70,6 +72,7 @@ export class ItemStage {
             mats,
             kind: opts.kind ?? 'item',
             clipEl: opts.clipEl,
+            owner: opts.owner ?? el,
             getAlpha: opts.getAlpha,
             update: opts.update,
             phase: Math.random() * Math.PI * 2,
@@ -113,7 +116,21 @@ export class ItemStage {
         }
     }
 
+    /**
+     * True when something of the interface lies over the middle of a view's element (a dialog,
+     * the tracking card, a panel that slid over it): this canvas sits above the whole interface,
+     * so a covered tile must not be drawn. Checked every few frames; the 3D scene behind (or
+     * nothing at all) does not count as covering.
+     */
+    #covered(v, x, y) {
+        if (this.frame % 4 !== 0 && v.covered !== undefined) return v.covered
+        const hit = document.elementFromPoint(x, y)
+        v.covered = !!hit && hit !== document.body && hit !== document.documentElement && !hit.matches('canvas.webgl') && !v.owner.contains(hit) && !hit.contains(v.owner)
+        return v.covered
+    }
+
     render(dt, t) {
+        this.frame = (this.frame ?? 0) + 1
         const r = this.renderer
         // where on screen there is something to draw, clipped to the window
         const W = window.innerWidth, H = window.innerHeight
@@ -132,7 +149,9 @@ export class ItemStage {
                 bottom = Math.min(bottom, c.bottom)
                 if (right - left < 1 || bottom - top < 1) continue
             }
-            boxes.push({ v, rect, left: Math.max(0, left), top: Math.max(0, top), right: Math.min(W, right), bottom: Math.min(H, bottom) })
+            const box = { v, rect, left: Math.max(0, left), top: Math.max(0, top), right: Math.min(W, right), bottom: Math.min(H, bottom) }
+            if (this.#covered(v, (box.left + box.right) / 2, (box.top + box.bottom) / 2)) continue
+            boxes.push(box)
         }
         if (!boxes.length) {
             this.canvas.style.display = 'none'

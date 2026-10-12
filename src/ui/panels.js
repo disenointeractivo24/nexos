@@ -163,7 +163,7 @@ function tile3D(panel, tileEl, itemId, clipEl) {
             return
         }
         const obj = cloneMaterials(panel.loader.instanceSync(t))
-        panel.items.add(`tile:${itemId}`, stage, obj, { clipEl, getAlpha: () => (tileEl.offsetParent ? panel.state.alpha : 0) })
+        panel.items.add(`tile:${itemId}`, stage, obj, { clipEl, owner: tileEl, getAlpha: () => (tileEl.offsetParent ? panel.state.alpha : 0) })
     })
 }
 
