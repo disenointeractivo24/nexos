@@ -360,6 +360,67 @@ function zoneIdAt(x, z) {
 }
 
 /**
+ * The outline of a zone as Cali's map draws it: the edge of its cells in the shape grid traced
+ * as one loop (the longest, if the zone comes in pieces), thinned out and rounded off, and laid
+ * `inset` metres inside, so two neighbours' outlines run side by side instead of on top of
+ * each other.
+ */
+function zoneOutline(id, inset = 0.9) {
+    const S = SHAPE.size
+    const inZone = (i, j) => i >= 0 && j >= 0 && i < S && j < S && zoneIdAt(SHAPE.x0 + i + 0.5, SHAPE.z0 + j + 0.5) === id
+    // every cell side between the zone and the rest, all turning the same way round
+    const next = new Map()
+    const key = (x, y) => y * (S + 2) + x
+    const edge = (ax, ay, bx, by) => {
+        const k = key(ax, ay)
+        if (!next.has(k)) next.set(k, [])
+        next.get(k).push([bx, by])
+    }
+    for (let j = 0; j < S; j++) {
+        for (let i = 0; i < S; i++) {
+            if (!inZone(i, j)) continue
+            if (!inZone(i, j - 1)) edge(i, j, i + 1, j)
+            if (!inZone(i + 1, j)) edge(i + 1, j, i + 1, j + 1)
+            if (!inZone(i, j + 1)) edge(i + 1, j + 1, i, j + 1)
+            if (!inZone(i - 1, j)) edge(i, j + 1, i, j)
+        }
+    }
+    // chained into loops; the longest is the zone
+    let best = []
+    for (const [k0, outs] of next) {
+        while (outs.length) {
+            const loop = []
+            let [x, y] = [k0 % (S + 2), Math.floor(k0 / (S + 2))]
+            for (let guard = 0; guard < S * S; guard++) {
+                loop.push([x, y])
+                const list = next.get(key(x, y))
+                if (!list?.length) break
+                ;[x, y] = list.pop()
+                if (key(x, y) === k0) break
+            }
+            if (loop.length > best.length) best = loop
+        }
+    }
+    // the steps of the grid smoothed away: every third corner, then rounded off twice
+    let pts = best.filter((_, i) => i % 3 === 0).map(([x, y]) => [SHAPE.x0 + x, SHAPE.z0 + y])
+    for (let pass = 0; pass < 2; pass++) {
+        const out = []
+        for (let i = 0; i < pts.length; i++) {
+            const [ax, az] = pts[i], [bx, bz] = pts[(i + 1) % pts.length]
+            out.push([ax * 0.75 + bx * 0.25, az * 0.75 + bz * 0.25], [ax * 0.25 + bx * 0.75, az * 0.25 + bz * 0.75])
+        }
+        pts = out
+    }
+    // the zone lies to the right of the way the loop runs
+    return pts.map(([x, z], i) => {
+        const [px, pz] = pts[(i - 1 + pts.length) % pts.length], [nx, nz] = pts[(i + 1) % pts.length]
+        const dx = nx - px, dz = nz - pz
+        const l = Math.hypot(dx, dz) || 1
+        return new THREE.Vector3(x + (-dz / l) * inset, 0, z + (dx / l) * inset)
+    })
+}
+
+/**
  * Each zone's local streets, as straight stretches of its own grid: each line is walked a
  * metre at a time and kept only inside its zone, off the hills and the river, short of the
  * parks, landmarks and aid points, and off Cali's own roads (`mainAt`: distance to them).
@@ -861,8 +922,10 @@ export class CityOverview {
             const veiled = focus && id !== focus
             const lit = focus && id === focus
 
-            let fillTarget = isSel ? 0.26 : isHover ? 0.14 : 0
-            let lineTarget = isSel ? 1 : this.selected ? 0.12 : isHover ? 0.5 : 0.26
+            // at rest every zone shows: its outline in its colour and a light wash of it inside;
+            // the one pointed at or picked stands out, the others step back
+            let fillTarget = isSel ? 0.32 : isHover ? 0.24 : this.selected ? 0.05 : 0.15
+            let lineTarget = isSel ? 1 : this.selected ? 0.3 : isHover ? 1 : 0.95
             let glowTarget = isSel ? 0.55 : 0
             if (veiled) {
                 fillTarget = 0
@@ -877,7 +940,7 @@ export class CityOverview {
             z.fill.material.opacity = lerp(z.fill.material.opacity, fillTarget, k)
             z.line.material.opacity = lerp(z.line.material.opacity, lineTarget, k)
             z.glow.material.opacity = lerp(z.glow.material.opacity, glowTarget, k)
-            z.line.material.color.lerp(lit ? z.colour : isSel ? this._red : this._navy, k)
+            z.line.material.color.lerp(z.colour, k)
             if (lit) z.glow.material.color.lerp(z.colour, k)
             z.fill.visible = z.fill.material.opacity > 0.005
             z.glow.visible = z.glow.material.opacity > 0.005
@@ -961,9 +1024,6 @@ export class CityOverview {
     }
 
     #zones() {
-        this._red = new THREE.Color('#F5333F')
-        this._navy = new THREE.Color('#011E41')
-        this._white = new THREE.Color('#FFFFFF')
         // bright at the ground, gone by the top
         const riseTex = canvasTexture(4, 64, (ctx, w, h) => {
             const g = ctx.createLinearGradient(0, h, 0, 0)
@@ -983,38 +1043,24 @@ export class CityOverview {
         })
 
         for (const zone of ZONES) {
-            const N = 140
-            let [sx, sz] = zone.seed
-            if (this.zoneAt(sx, sz) !== zone.id) [sx, sz] = zone.label
-            const radii = []
-            for (let i = 0; i < N; i++) {
-                const a = (i / N) * Math.PI * 2
-                const dx = Math.cos(a), dz = Math.sin(a)
-                // the farthest point of the zone along the ray: its borders follow Cali's, which bend
-                // in and out, and the outline keeps to the outside of them
-                let r = 0
-                for (let t = 0.75; t < 260; t += 0.75) if (this.zoneAt(sx + dx * t, sz + dz * t) === zone.id) r = t
-                radii.push(r)
-            }
-            const sm = radii.map((_, i) => (radii[(i - 1 + N) % N] + radii[i] * 2 + radii[(i + 1) % N]) / 4)
-            const pts = sm.map((r, i) => {
-                const a = (i / N) * Math.PI * 2
-                return new THREE.Vector3(sx + Math.cos(a) * (r - 0.6), 0, sz + Math.sin(a) * (r - 0.6))
-            })
+            // the zone's own edge, as the map of Cali draws it
+            const pts = zoneOutline(zone.id)
 
             const shape = new THREE.Shape(pts.map((p) => new THREE.Vector2(p.x, -p.z)))
             const fillGeo = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2)
 
             const fill = new THREE.Mesh(
                 fillGeo,
-                new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 })
+                new THREE.MeshBasicMaterial({ color: zone.color, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 })
             )
             fill.position.y = 0.55
             fill.renderOrder = 2
 
+            // each zone outlined in its own colour (the colour of its marker and of its row in the
+            // phone's list), so the city reads as its five parts at a glance
             const line = new THREE.Mesh(
-                ribbonGeometry(pts, 0.5, 0.7, true),
-                new THREE.MeshBasicMaterial({ color: '#011E41', transparent: true, opacity: 0.26, depthWrite: false })
+                ribbonGeometry(pts, 1.6, 0.7, true),
+                new THREE.MeshBasicMaterial({ color: zone.color, transparent: true, opacity: 0.85, depthWrite: false })
             )
             line.renderOrder = 3
             const glow = new THREE.Mesh(

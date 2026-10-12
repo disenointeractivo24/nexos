@@ -511,8 +511,10 @@ canvas.items {
     padding: 7px;
     min-height: 0;
 }
-.wlabel.is-compact .wlabel-icon { position: relative; }
-.wlabel.is-compact .wlabel-dot {
+.wlabel.is-compact .wlabel-icon,
+.zone-item .wlabel-icon { position: relative; }
+.wlabel.is-compact .wlabel-dot,
+.zone-item .wlabel-dot {
     position: absolute;
     right: -3px;
     bottom: -3px;
@@ -522,13 +524,16 @@ canvas.items {
     border: 2.5px solid var(--white, #fff);
     background: var(--navy);
 }
-.wlabel.is-compact .wlabel-dot.is-high { background: var(--red); }
+.wlabel.is-compact .wlabel-dot.is-high,
+.zone-item .wlabel-dot.is-high { background: var(--red); }
 .wlabel.is-compact .wlabel-dot.is-ok { background: #2E7D5B; }
-.wlabel.is-compact .wlabel-dot.is-urgent { background: var(--red); }
+.wlabel.is-compact .wlabel-dot.is-urgent,
+.zone-item .wlabel-dot.is-urgent { background: var(--red); }
 /* The red dots that call for attention pulse with a ring that grows and fades: a transform and
    an opacity, which the browser animates on its own, instead of a shadow it would repaint in
    every frame over the 3D scene. */
 .wlabel.is-compact .wlabel-dot.is-urgent::after,
+.zone-item .wlabel-dot.is-urgent::after,
 .need-alert.is-high::after,
 .live-dot::after {
     content: "";
@@ -544,7 +549,7 @@ canvas.items {
     60%, 100% { transform: scale(2.2); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-    .wlabel.is-compact .wlabel-dot.is-urgent::after, .need-alert.is-high::after, .live-dot::after { animation: none; opacity: 0; }
+    .wlabel.is-compact .wlabel-dot.is-urgent::after, .zone-item .wlabel-dot.is-urgent::after, .need-alert.is-high::after, .live-dot::after { animation: none; opacity: 0; }
 }
 
 .wlabel-icon {
@@ -559,6 +564,40 @@ canvas.items {
     box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.5);
 }
 .wlabel-icon [data-icon] { width: 24px; height: 24px; }
+
+/* Phones: the zones as a list down the left side, under the steps (App #showZoneList), in
+   place of the markers over the map, which would hide the city on a small screen */
+.zone-list { display: none; }
+.ui[data-state="city"] .zone-list.is-on {
+    position: fixed;
+    left: calc(var(--gutter) + env(safe-area-inset-left));
+    z-index: 11;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    animation: fade-in 420ms var(--ease-calm) both;
+}
+.zone-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 48px;
+    padding: 5px 16px 5px 5px;
+    border-radius: 999px;
+    font: inherit;
+    color: var(--navy);
+    text-align: left;
+    cursor: pointer;
+    transition: transform 160ms var(--ease-calm), opacity 200ms var(--ease-calm);
+}
+.zone-item:active { transform: scale(0.97); }
+.zone-item.is-dim { opacity: 0.55; }
+.zone-item .wlabel-icon { width: 38px; height: 38px; }
+.zone-item .wlabel-icon [data-icon] { width: 21px; height: 21px; }
+.zone-item-text { display: grid; line-height: 1.15; }
+.zone-item-text strong { font-size: 16px; font-weight: 700; }
+.zone-item-text span { font-size: 13px; color: #4E5663; }
 .wlabel-text { display: flex; flex-direction: column; line-height: 1.15; text-align: left; }
 .wlabel-status {
     display: inline-flex;

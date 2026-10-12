@@ -137,6 +137,12 @@ export class App {
         this.stage.afterRender = (dt, t) => this.items.render(dt, t)
         this.loader = new AssetLoader()
         this.labels = new Labels(this.$('.labels'), this.stage.camera)
+        // on a phone the zones are a list at the side instead of markers over the map; turning
+        // the phone (or resizing the window) across that width swaps one for the other
+        this.zoneList = this.$('.zone-list')
+        window.matchMedia('(max-width: 760px), (max-height: 560px) and (max-width: 1000px)').addEventListener('change', () => {
+            if (this.state === 'city') this.#showZoneLabels()
+        })
         this.dockBubble = new Bubble(this.$('.bubble-dock'))
         this.worldBubble = new Bubble(this.$('.bubble-world'))
         this.progress = new Progress(this.$('.progress'))
@@ -541,6 +547,58 @@ export class App {
             ${bubble}`
     }
 
+    /**
+     * The zones as a list down the side of a phone screen, under the steps: each with its house
+     * in its own colour, the urgency dot, its name and how much it needs. Touching one picks it,
+     * as its marker would; pressing on one lights its outline on the map.
+     */
+    #showZoneList(own = null) {
+        const list = this.zoneList
+        list.innerHTML = ZONES.map((zone) => `
+            <button type="button" class="zone-item glass${own && zone.id !== own ? ' is-dim' : ''}" data-zone="${zone.id}" aria-label="${this.#zoneAria(zone)}">${this.#zoneItemHtml(zone)}</button>`).join('')
+        hydrateIcons(list)
+        for (const b of list.querySelectorAll('.zone-item')) {
+            const id = b.dataset.zone
+            b.addEventListener('click', () => this.selectZone(id))
+            b.addEventListener('pointerenter', () => this.city?.setHover(id))
+            b.addEventListener('pointerleave', () => this.city?.setHover(null))
+        }
+        // under the steps: measured where they come to rest (they may still be fading and rising in)
+        const steps = this.$('.progress')
+        const stepsBottom = steps && !steps.hidden && steps.getClientRects().length ? steps.offsetTop + steps.offsetHeight : 0
+        list.style.top = `${Math.max(this.#chromeBottom(), stepsBottom) + 10}px`
+        list.classList.add('is-on')
+        if (this.state === 'city') this.#frameForPanel(null)
+    }
+
+    #zoneItemHtml(zone) {
+        const level = zoneLevel(zone, this.theme)
+        const urgent = session.zoneHasUrgent(zone.id)
+        const high = level === 'alta' || urgent
+        return `
+            <span class="wlabel-icon" style="background:${zone.color}">
+                ${icon('home')}
+                <span class="wlabel-dot ${urgent ? 'is-urgent' : high ? 'is-high' : ''}"></span>
+            </span>
+            <span class="zone-item-text">
+                <strong>${zone.name.replace(/^Zona /, '')}</strong>
+                <span>${NEED_WORD[level]}</span>
+            </span>`
+    }
+
+    /** The zones' markers (or the phone's list) say again what each zone needs. */
+    #refreshZones() {
+        for (const z of ZONES) this.labels.update(`zone:${z.id}`, this.#zoneLabelHtml(z), this.#zoneAria(z))
+        if (!this.zoneList.classList.contains('is-on')) return
+        for (const z of ZONES) {
+            const b = this.zoneList.querySelector(`[data-zone="${z.id}"]`)
+            if (!b) continue
+            b.innerHTML = this.#zoneItemHtml(z)
+            b.setAttribute('aria-label', this.#zoneAria(z))
+            hydrateIcons(b)
+        }
+    }
+
     /** The categories a zone is short of, most pressing first (at most three). */
     #zoneMissing(zone) {
         return zoneNeeds(zone, this.theme).filter(([, lvl]) => lvl !== 'baja')
@@ -554,6 +612,12 @@ export class App {
     #showZoneLabels() {
         this.labels.clear()
         const own = session.role === 'collector' ? session.point?.zone : null
+        // a phone screen is too small for a marker over each zone: they hide the city
+        if (isNarrow()) return this.#showZoneList(own)
+        if (this.zoneList.classList.contains('is-on')) {
+            this.zoneList.classList.remove('is-on')
+            if (this.state === 'city') this.#frameForPanel(null)
+        }
         ZONES.forEach((zone, i) => {
             const el = this.labels.add(`zone:${zone.id}`, {
                 className: 'is-compact has-needs',
@@ -832,14 +896,22 @@ export class App {
 
     #cityFrame() {
         const a = this.stage.size.w / this.stage.size.h
-        const k = Math.min(1.3, Math.max(1, 0.85 / a))
+        // a phone also keeps the zone list down the left side: a little farther back, so the whole
+        // city still fits in what is left beside it
+        const k = Math.min(isNarrow() ? 1.55 : 1.3, Math.max(1, 0.85 / a))
         const dir = CITY_VIEW.pos.clone().sub(CITY_VIEW.target)
         return { pos: CITY_VIEW.target.clone().addScaledVector(dir, k), zoneK: Math.min(1.8, Math.max(1, 1.15 / a)) }
     }
 
+    /** With the phone's zone list down the left side, the city sits in what is left on the right. */
+    #restOffsetX() {
+        if (!isNarrow() || !this.zoneList.classList.contains('is-on')) return 0
+        return -(this.zoneList.getBoundingClientRect().right || 170) * 0.12
+    }
+
     #frameForPanel(panel, fallbackW = 640) {
         const vo = this.stage.viewOffset
-        let x = 0, y = 0
+        let x = panel ? 0 : this.#restOffsetX(), y = 0
         if (panel) {
             if (isNarrow()) {
                 // centre the scene in the band left between the top of the screen and the sheet
@@ -1236,9 +1308,7 @@ export class App {
 
     /** The stock of some point moved (the sheet, a point's board, a donation): what donors read follows. */
     #onStock() {
-        if (['city', 'zone'].includes(this.state)) {
-            for (const z of ZONES) this.labels.update(`zone:${z.id}`, this.#zoneLabelHtml(z), this.#zoneAria(z))
-        }
+        if (['city', 'zone'].includes(this.state)) this.#refreshZones()
         if (this.state === 'zone' && this.zone && this.zoneCard.open) this.zoneCard.render(this.zone)
         if (this.barrio) refreshBarrioNeeds(this.barrio)
         if (this.state === 'point' && session.role === 'donor') this.donorPanel.refreshNeeds()
@@ -1288,7 +1358,8 @@ export class App {
         this.city.setSelected(null)
         this.#cityLighting()
         this.stage.setInk(INK.city[0], INK.city[1])
-        this.stage.viewOffset.x = this.stage.viewOffset.y = 0
+        this.stage.viewOffset.x = this.#restOffsetX()
+        this.stage.viewOffset.y = 0
         this.stage.applyViewOffset()
         this.#setContext('map', 'Mapa de ayuda', 'Cali, Valle del Cauca')
     }
@@ -1736,7 +1807,7 @@ export class App {
         // Alerts made by a collection point show up live on the map
         session.on((type) => {
             if (type !== 'alerts' || !['city', 'zone'].includes(this.state)) return
-            for (const z of ZONES) this.labels.update(`zone:${z.id}`, this.#zoneLabelHtml(z), this.#zoneAria(z))
+            this.#refreshZones()
         })
     }
 }
