@@ -144,7 +144,6 @@ export class App {
             if (this.state === 'city') this.#showZoneLabels()
         })
         this.dockBubble = new Bubble(this.$('.bubble-dock'))
-        this.worldBubble = new Bubble(this.$('.bubble-world'))
         this.progress = new Progress(this.$('.progress'))
 
         this.toast = new Toast(this.$('.toast'), { reducedMotion: this.reducedMotion })
@@ -242,7 +241,12 @@ export class App {
     }
 
     setState(s) {
+        const was = this.state
         this.state = s
+        // the guide already stands in its corner on the opening screen, so the person meets it
+        // before the descent; it steps out while the camera comes down, and is back in the city
+        if (s === 'role' && this.portrait) this.#showGuideDock('', '')
+        else if (was === 'role') this.#hideGuideDock()
         this.audio.setScene(['barrio', 'walking', 'leaving', 'entering'].includes(s) ? 'barrio' : s === 'point' ? 'house' : ['role', 'login', 'boot', 'intro', 'exiting'].includes(s) ? 'intro' : 'city')
         this.ui.dataset.state = s
         this.ui.dataset.role = session.role ?? ''
@@ -301,6 +305,7 @@ export class App {
         this.portrait = new GuideCharacter(this.loader.instanceSync(guideT), guideT.animations, { reducedMotion: this.reducedMotion, face: true, lively: true })
         this.portrait.place(new THREE.Vector3(), 0.32)
         this.portrait.blob.visible = false
+        if (this.state === 'role') this.#showGuideDock('', '')
 
         await landmarks
         await cityHouses
@@ -373,7 +378,6 @@ export class App {
 
         const { w, h } = this.stage.size
         this.labels.project(w, h, this.#chromeRects())
-        this.#placeWorldBubble(w, h)
     }
 
     /* ================================================================
@@ -530,11 +534,8 @@ export class App {
         const bubble = missing.length
             ? `<span class="need-bubble" aria-hidden="true">${missing
                   .map(
-                      ([cat, lvl]) => `
-                <span class="need-chip" style="background:${CATEGORIES[cat].color}">
-                    ${icon(CATEGORIES[cat].icon)}
-                    <span class="need-alert ${lvl === 'alta' ? 'is-high' : ''}">!</span>
-                </span>`
+                      ([cat]) => `
+                <span class="need-chip" style="background:${CATEGORIES[cat].color}">${icon(CATEGORIES[cat].icon)}</span>`
                   )
                   .join('')}</span>`
             : ''
@@ -668,7 +669,8 @@ export class App {
         this.#flyCity(view.pos, view.target, 1.4)
         this.#frameForPanel(this.zoneCard, 420)
 
-        this.dockBubble.say('Esta zona necesita apoyo.', 'Puedes entrar al barrio para ver las casas.')
+        // the card says what the zone needs; the guide only says what to do next
+        this.dockBubble.say('', 'Entra al barrio para ver dónde llega tu ayuda.')
         if (isNarrow()) this.$('.guide-dock').hidden = true
         requestAnimationFrame(() => this.zoneCard.focusPrimary())
 
@@ -1227,17 +1229,9 @@ export class App {
         else this.say('', 'Puedes dejar más suministros cuando quieras.')
     }
 
-    #onDonorStep(step) {
+    #onDonorStep() {
         this.#syncProgress()
-        const lines = {
-            supplies: ['', 'Elige qué dejar en el punto de acopio.'],
-            method: ['', 'Elige cómo quieres aportar.'],
-            details: ['', 'Necesitamos pocos datos para coordinar.'],
-            summary: ['Revisa el resumen.', 'Si todo está bien, confirma.'],
-            payment: ['', 'Elige un medio de pago.'],
-            done: ['Las familias salieron a recoger.', 'Puedes seguir apoyando cuando quieras.'],
-        }
-        if (lines[step]) this.say(...lines[step])
+        // the panel itself says what each step asks; the guide does not repeat it
         requestAnimationFrame(() => this.#frameForPanel(this.panel))
     }
 
@@ -1328,7 +1322,6 @@ export class App {
         this.hood.setFocusMode(false)
         this.hood.setSelected(false)
         this.labels.clear()
-        this.worldBubble.hide()
         this.#hideBack()
         this.#frameForPanel(null)
 
@@ -1378,7 +1371,6 @@ export class App {
         if (this.panel.open) this.panel.close()
         this.zoneCard.open && this.zoneCard.hide()
         this.labels.clear()
-        this.worldBubble.hide()
         this.#hideGuideDock()
         this.#hideBack()
         this.#frameForPanel(null)
@@ -1460,8 +1452,14 @@ export class App {
        Shared UI
        ================================================================ */
 
+    /**
+     * The guide speaks from its corner (its portrait over the navy triangle) wherever the person
+     * is: one voice, in one place. At the counter the panel already says each step, so the guide
+     * keeps quiet there instead of repeating it.
+     */
     say(lead, action) {
-        this.worldBubble.say(lead, action)
+        if (this.state === 'point') return this.#hideGuideDock()
+        this.#showGuideDock(lead, action)
     }
 
     #caption(text) {
@@ -1499,46 +1497,6 @@ export class App {
         const label = session.role === 'collector' ? 'Cerrar sesión' : 'Salir'
         exit.setAttribute('aria-label', label)
         exit.title = label
-    }
-
-    #placeWorldBubble(w, h) {
-        const el = this.$('.bubble-world')
-        if (el.hidden) return
-        const panelOpen = this.panel.open
-        // the supply panel sits on the left; nothing is placed underneath it
-        const panelRight = panelOpen && !isNarrow() ? this.panel.el.getBoundingClientRect().right + 16 : 24
-        if (!this.guide?.root.visible) {
-            // collection points have no character on screen, so the line is simply docked
-            el.classList.remove('is-left')
-            el.style.maxWidth = `${Math.min(420, w - panelRight - 24)}px`
-            el.style.transform = `translate3d(${panelRight}px, ${h - el.offsetHeight - 24}px, 0)`
-            return
-        }
-        if (isNarrow()) {
-            const top = panelOpen ? (this.$('.progress').getBoundingClientRect().bottom || this.$('.topbar').getBoundingClientRect().bottom || 80) + 10 : h - el.offsetHeight - 16
-            el.classList.remove('is-left')
-            el.style.transform = `translate3d(12px, ${top}px, 0)`
-            el.style.maxWidth = `${w - 24}px`
-            return
-        }
-        el.style.maxWidth = ''
-        const p = this._bub ?? (this._bub = new THREE.Vector3())
-        p.copy(this.guide.position).setY(this.guide.position.y + 2.2).project(this.stage.camera)
-        const x = (p.x * 0.5 + 0.5) * w
-        const y = (-p.y * 0.5 + 0.5) * h
-        const bw = el.offsetWidth
-        const bh = el.offsetHeight
-        let left = x + 46
-        let isLeft = false
-        if (left + bw > w - 24 && x - 46 - bw >= panelRight) {
-            left = x - 46 - bw
-            isLeft = true
-        }
-        left = Math.max(panelRight, Math.min(left, w - bw - 24))
-        const minTop = (this.$('.progress').getBoundingClientRect().bottom || 120) + 12
-        const top = Math.min(Math.max(minTop, y - bh + 24), h - bh - 24)
-        el.classList.toggle('is-left', isLeft)
-        el.style.transform = `translate3d(${left.toFixed(1)}px, ${top.toFixed(1)}px, 0)`
     }
 
     #chromeRects() {

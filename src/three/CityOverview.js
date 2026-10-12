@@ -1065,7 +1065,7 @@ export class CityOverview {
             line.renderOrder = 3
             const glow = new THREE.Mesh(
                 ribbonGeometry(pts, 2.6, 0.65, true),
-                new THREE.MeshBasicMaterial({ color: '#F5333F', alphaMap: glowTex, transparent: true, opacity: 0, depthWrite: false })
+                new THREE.MeshBasicMaterial({ color: zone.color, alphaMap: glowTex, transparent: true, opacity: 0, depthWrite: false })
             )
             glow.renderOrder = 3
 
@@ -1620,10 +1620,12 @@ export class CityOverview {
 
     #aidPoints() {
         this.aidRings = []
+        // a white ring under each aid point: its tent and flag carry the red cross, the ring only
+        // says "here", without the alarm a red one would sound
         const ringMat = new THREE.MeshBasicMaterial({
-            color: '#F5333F',
+            color: '#FFFFFF',
             transparent: true,
-            opacity: 0.55,
+            opacity: 0.8,
             depthWrite: false,
             alphaMap: canvasTexture(128, 128, (ctx, w) => {
                 const g = ctx.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2)
