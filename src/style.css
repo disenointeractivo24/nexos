@@ -580,6 +580,22 @@ canvas.items {
     animation: fade-in 600ms var(--ease-calm) both;
 }
 .guide-portrait { width: 150px; height: 190px; flex: none; }
+/* City view: the guide stands big in the bottom-left corner, on a filled triangle, cut at the
+   waist by the edge of the screen. The guide is drawn on the items canvas, above all this. */
+.guide-dock { left: 0; bottom: 0; gap: 0; }
+.guide-dock::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    z-index: -1;
+    width: min(38vw, 600px);
+    height: min(30vh, 270px);
+    background: var(--navy);
+    clip-path: polygon(0 0, 0 100%, 100% 100%);
+}
+.guide-dock .guide-portrait { width: 440px; height: 580px; margin: 0 -50px -128px max(8px, env(safe-area-inset-left)); }
+.guide-dock .bubble-dock { margin-bottom: calc(220px + env(safe-area-inset-bottom)); }
 .bubble {
     position: relative;
     max-width: 380px;
@@ -973,6 +989,9 @@ canvas.items {
     .bubble-world::before { display: none; }
 
     .guide-portrait { width: 96px; height: 124px; }
+    .guide-dock::before { width: 48vw; height: 18vh; }
+    .guide-dock .guide-portrait { width: 220px; height: 300px; margin: 0 -20px -66px -24px; }
+    .guide-dock .bubble-dock { margin-bottom: calc(110px + env(safe-area-inset-bottom)); max-width: calc(100vw - 188px); }
     .bubble { font-size: 18px; padding: 14px 18px; max-width: calc(100vw - 140px); }
     .bubble-dock { margin-bottom: 40px; }
 
@@ -2675,7 +2694,6 @@ html.is-lite,
    on screens without them, so nothing moves there. */
 .topbar { top: calc(var(--gutter) + env(safe-area-inset-top)); left: calc(var(--gutter) + env(safe-area-inset-left)); }
 .back-btn { top: calc(var(--gutter) + env(safe-area-inset-top)); right: calc(var(--gutter) + env(safe-area-inset-right)); }
-.guide-dock { bottom: calc(var(--gutter) + env(safe-area-inset-bottom)); left: calc(var(--gutter) + env(safe-area-inset-left)); }
 .toast { bottom: calc(var(--gutter) + 8px + env(safe-area-inset-bottom)); }
 @media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
     .zone-card { padding-bottom: env(safe-area-inset-bottom); }
