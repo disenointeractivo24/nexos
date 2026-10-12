@@ -173,6 +173,19 @@ y Guadalupe, oeste = Cañaveralejo). El mapa de la aplicación los dibuja en una
 los bordes, así que la ciudad tiene la forma de Cali sin copiarla al detalle. Si cambia el SVG, hay
 que volver a copiar los contornos de cada `<path>` en ese archivo.
 
+### Vías de la ciudad
+
+`mapa_cali/Map_of_Cali.svg` es un mapa de OpenStreetMap con las vías de Cali y Yumbo.
+`tools/vias_cali.mjs` lo superpone al mapa del MIO, deja una sola línea por corredor (las
+calzadas de una avenida van juntas), separa las calles al menos media cuadra y escribe
+`src/data/caliRoads.js`: las avenidas (vías troncales y primarias) y las calles principales
+(secundarias y terciarias). Entre ellas, cada zona arma sus manzanas con su propia orientación,
+como corren las calles de Cali allí (`ZONE_GRID` en `src/three/CityOverview.js`). Desde `starter/`:
+
+```
+node tools/vias_cali.mjs fuentes_3d/mapa_cali/Map_of_Cali.svg src/data/caliRoads.js
+```
+
 ### Casas del mapa de Cali
 
 El mapa de Cali usa las mismas casas de los barrios, en una versión liviana: cerca de mil casas

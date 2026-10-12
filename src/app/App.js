@@ -446,8 +446,10 @@ export class App {
 
     #introStep(dt) {
         const it = this.intro
-        // Hold softly inside the clouds until the city is ready — never a frozen frame
-        const limit = this.worldReady ? 1 : 0.3
+        // Hold softly inside the clouds until the city is built; then keep coming down to it while
+        // the barrio and the guide load behind (the clouds open on the way), and only the last
+        // stretch waits for them — never a frozen frame, never stuck in the clouds
+        const limit = this.worldReady ? 1 : this.city?.ready ? 0.95 : 0.3
         const target = Math.min(it.target, limit)
         const rate = this.reducedMotion ? 10 : it.auto ? 1.7 : 2.6
         it.p += (target - it.p) * (1 - Math.exp(-dt * rate))
@@ -456,7 +458,8 @@ export class App {
         this.rig.pos.copy(INTRO_CURVE.getPoint(e))
         this.rig.target.lerpVectors(INTRO_TARGET_FROM, CITY_VIEW.target, e)
         this.rig.apply()
-        this.$('.descent-caption').classList.toggle('is-waiting', !this.worldReady && it.p > 0.25)
+        if (!this.worldReady && this.city?.ready) this.cloudPresence = Math.min(this.cloudPresence, 1 - THREE.MathUtils.smoothstep(it.p, 0.45, 0.95) * 0.85)
+        this.$('.descent-caption').classList.toggle('is-waiting', !this.worldReady && it.p > limit - 0.04)
         this.$('.skip-intro').hidden = false
         this.$('.skip-intro').classList.toggle('is-ready', this.worldReady && it.p > 0.12)
         if (it.target >= 1 && this.worldReady && it.p > 0.992) this.enterCity()

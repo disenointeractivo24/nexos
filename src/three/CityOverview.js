@@ -4,6 +4,7 @@ import { COLLECTION_POINTS } from '../data/collectionPoints.js'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { ZONES } from '../data/zones.js'
 import { CALI_ZONES, CALI_FRAME } from '../data/caliMap.js'
+import { AVENUES, STREETS } from '../data/caliRoads.js'
 import { WORLD, HOUSE_SCHEMES, sharedMaterial } from './materials.js'
 import { canopyGeometry, trunkGeometry, palmGeometry } from './procedural/nature.js'
 import { canvasTexture, crossTexture } from './procedural/textures.js'
@@ -36,8 +37,8 @@ const MAP_HOUSES = {
     norte: ['house-estrato4', 'house-estrato5', 'house-two-story', 'house-estrato3'],
     oeste: ['house-estrato5', 'house-estrato4', 'house-estrato3', 'house-two-story'],
 }
-/** How wide a house lot is on the map (the blocks are laid out every 3.7). */
-const MAP_LOT = 3.1
+/** How wide a house is on the map (its lot is LOT wide). */
+const MAP_LOT = 2.6
 
 /** A steady number in [0, 1) for a lot, so the houses do not take from the city's random sequence. */
 function lotHash(i, j, zone) {
@@ -203,28 +204,30 @@ const FOCUS_FEATHER = 6
 const BORDER_LIGHT_HEIGHT = 1.2
 
 /**
- * The street grid: one for the whole city, turned a little, like Cali's own. Blocks are
- * `bu` by `bv` from one street to the next; every `every`-th street is an avenue (wider,
- * with a centre line and palms). The origin sits in the centre.
+ * The avenues and main streets are Cali's own (caliRoads.js). Between them each zone lays out
+ * its blocks on its own street grid, turned the way the streets run there in Cali (measured
+ * on OpenStreetMap): north–south in the centre, the west and the south, on the diagonal in
+ * the north, at 45° in Aguablanca. Blocks are `bu` by `bv` from one street to the next,
+ * counted from the zone's aid point.
  */
-const GRID = { angle: 0.12, x: 4, z: 4, bu: 18.5, bv: 14.8, every: 3, reach: 12 }
-const GRID_COS = Math.cos(GRID.angle), GRID_SIN = Math.sin(GRID.angle)
-const STREET_W = 2
-const AVENUE_W = 3.6
+const ZONE_GRID = { centro: 0.087, norte: -0.305, oeste: 0.044, oriente: 0.785, sur: 0.044 }
+const BLOCK = { bu: 15.6, bv: 12.6, reach: 17 }
+const STREET_W = 1.7
+const MAIN_STREET_W = 2
+const AVENUE_W = 3
 /** Pavement between the street and the first lot. */
 const SIDEWALK = 0.5
 /** How wide a lot is, at most: a block holds as many as fit. */
-const LOT = 3.6
+const LOT = 3
+/** Yumbo, on the horizon to the north (where the same map puts it). */
+const YUMBO = [44, -259]
 
-const fromGrid = (u, v) => [GRID.x + u * GRID_COS - v * GRID_SIN, GRID.z + u * GRID_SIN + v * GRID_COS]
-const toGrid = (x, z) => [(x - GRID.x) * GRID_COS + (z - GRID.z) * GRID_SIN, -(x - GRID.x) * GRID_SIN + (z - GRID.z) * GRID_COS]
-const isAvenue = (k) => ((k % GRID.every) + GRID.every) % GRID.every === 0
-const streetWidth = (k) => (isAvenue(k) ? AVENUE_W : STREET_W)
-
-/** True when (x, z) is within `margin` of a street's centre line (any street, clipped or not). */
-function nearStreet(x, z, margin) {
-    const [u, v] = toGrid(x, z)
-    return Math.abs(u - Math.round(u / GRID.bu) * GRID.bu) < margin || Math.abs(v - Math.round(v / GRID.bv) * GRID.bv) < margin
+/** A zone's grid: from (u, v), along and across its streets, to the map. */
+function zoneGrid(id) {
+    const zone = ZONES.find((z) => z.id === id)
+    const a = ZONE_GRID[id], c = Math.cos(a), s = Math.sin(a)
+    const [ox, oz] = zone.label
+    return { angle: a, from: (u, v) => [ox + u * c - v * s, oz + u * s + v * c] }
 }
 
 /**
@@ -251,31 +254,142 @@ const LANDMARK_GROUNDS = [
 const STREET_KEEP_OUT = [...PARKS, ...LANDMARK_GROUNDS, ...ZONES.map((z) => ({ x: z.label[0], z: z.label[1], r: 6 }))]
 
 /**
- * Every street of the grid, as straight stretches: each line is walked a metre at a time
- * and kept only inside the city, off the hills and the river, and short of the places above.
+ * Cali's roads as lists of points, cut where they would climb into the hills, and (with
+ * `inCity`) where they leave the city (or Yumbo): the avenues run on out to the horizon, the streets stop.
  */
-function gridStreets(rivers) {
-    const runs = []
-    for (const dir of ['u', 'v']) {
-        const period = dir === 'u' ? GRID.bu : GRID.bv
-        for (let k = -GRID.reach; k <= GRID.reach; k++) {
-            const w = streetWidth(k)
-            let run = []
-            const flush = () => {
-                if (run.length >= 6) runs.push({ dir, avenue: isAvenue(k), w, pts: run })
+function roadLines(list, inCity = false) {
+    const out = []
+    for (const flat of list) {
+        let run = []
+        for (let i = 0; i < flat.length; i += 2) {
+            const x = flat[i], z = flat[i + 1]
+            if (heightAt(x, z) > 0.2 || (inCity && urbanMask(x, z) < 0.3 && Math.hypot(x - YUMBO[0], z - YUMBO[1]) > 42)) {
+                if (run.length > 1) out.push(run)
                 run = []
+            } else run.push({ x, z })
+        }
+        if (run.length > 1) out.push(run)
+    }
+    return out
+}
+
+/** A line laid out again with a point every `step` metres. */
+function resample(pts, step) {
+    const out = [pts[0]]
+    let carry = 0
+    for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i]
+        const L = Math.hypot(b.x - a.x, b.z - a.z)
+        let t = step - carry
+        for (; t <= L; t += step) out.push({ x: a.x + ((b.x - a.x) * t) / L, z: a.z + ((b.z - a.z) * t) / L })
+        carry = L - (t - step)
+    }
+    return out
+}
+
+/** The grid the roads are measured on: a metre a side, wide enough to take in Yumbo. */
+const ROADS_GRID = { x0: -160, z0: -310, w: 420, h: 620 }
+
+/**
+ * How far each cell of ROADS_GRID is from the nearest road (in metres, 0 on the road), given
+ * the roads as [lines, width] pairs: drawn into a picture, then a chamfer distance pass.
+ */
+function roadDistance(sets) {
+    const { w: W, h: H } = ROADS_GRID
+    const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(W, H) : Object.assign(document.createElement('canvas'), { width: W, height: H })
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    ctx.setTransform(1, 0, 0, 1, -ROADS_GRID.x0, -ROADS_GRID.z0)
+    ctx.lineCap = ctx.lineJoin = 'round'
+    ctx.strokeStyle = '#fff'
+    for (const [lines, width] of sets) {
+        ctx.lineWidth = width
+        for (const l of lines) {
+            ctx.beginPath()
+            l.forEach((p, i) => (i ? ctx.lineTo(p.x, p.z) : ctx.moveTo(p.x, p.z)))
+            ctx.stroke()
+        }
+    }
+    const px = ctx.getImageData(0, 0, W, H).data
+    const d = new Float32Array(W * H)
+    for (let i = 0; i < W * H; i++) d[i] = px[i * 4 + 3] > 127 ? 0 : 1e6
+    const D = Math.SQRT2
+    for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+            const i = y * W + x
+            let v = d[i]
+            if (x > 0) v = Math.min(v, d[i - 1] + 1)
+            if (y > 0) {
+                v = Math.min(v, d[i - W] + 1)
+                if (x > 0) v = Math.min(v, d[i - W - 1] + D)
+                if (x < W - 1) v = Math.min(v, d[i - W + 1] + D)
             }
-            for (let t = -230; t <= 230; t += 1) {
-                const [x, z] = dir === 'u' ? fromGrid(k * period, t) : fromGrid(t, k * period)
-                const ok =
-                    urbanMask(x, z) >= 0.8 &&
-                    mountainFactor(x, z) < 0.02 &&
-                    !STREET_KEEP_OUT.some((o) => (x - o.x) ** 2 + (z - o.z) ** 2 < (o.r + w / 2 + 0.5) ** 2) &&
-                    !rivers.some((r) => distToSamples(x, z, r.samples) < r.clear)
-                if (ok) run.push({ x, z })
-                else flush()
+            d[i] = v
+        }
+    }
+    for (let y = H - 1; y >= 0; y--) {
+        for (let x = W - 1; x >= 0; x--) {
+            const i = y * W + x
+            let v = d[i]
+            if (x < W - 1) v = Math.min(v, d[i + 1] + 1)
+            if (y < H - 1) {
+                v = Math.min(v, d[i + W] + 1)
+                if (x < W - 1) v = Math.min(v, d[i + W + 1] + D)
+                if (x > 0) v = Math.min(v, d[i + W - 1] + D)
             }
-            flush()
+            d[i] = v
+        }
+    }
+    return d
+}
+
+/** A distance from roadDistance at (x, z); far away outside its grid. */
+function roadDistanceAt(d, x, z) {
+    const i = Math.floor(x - ROADS_GRID.x0), j = Math.floor(z - ROADS_GRID.z0)
+    if (i < 0 || j < 0 || i >= ROADS_GRID.w || j >= ROADS_GRID.h) return 1e6
+    return d[j * ROADS_GRID.w + i]
+}
+
+/** The zone at (x, z), as Cali's MIO zones group into the app's five (see caliMap.js). */
+function zoneIdAt(x, z) {
+    if (urbanMask(x, z) < 0.5) return null
+    const S = SHAPE.size
+    const i = Math.round(x - SHAPE.x0 - 0.5), j = Math.round(z - SHAPE.z0 - 0.5)
+    if (i < 0 || j < 0 || i >= S || j >= S) return null
+    const k = caliShape().zone[j * S + i]
+    return k >= 0 ? ZONES[k].id : null
+}
+
+/**
+ * Each zone's local streets, as straight stretches of its own grid: each line is walked a
+ * metre at a time and kept only inside its zone, off the hills and the river, short of the
+ * parks, landmarks and aid points, and off Cali's own roads (`mainAt`: distance to them).
+ */
+function localStreets(rivers, mainAt) {
+    const runs = []
+    for (const zone of ZONES) {
+        const g = zoneGrid(zone.id)
+        for (const dir of ['u', 'v']) {
+            const period = dir === 'u' ? BLOCK.bu : BLOCK.bv
+            for (let k = -BLOCK.reach; k <= BLOCK.reach; k++) {
+                let run = []
+                const flush = () => {
+                    if (run.length >= 6) runs.push({ dir, pts: run })
+                    run = []
+                }
+                for (let t = -270; t <= 270; t += 1) {
+                    const [x, z] = dir === 'u' ? g.from(k * period, t) : g.from(t, k * period)
+                    const ok =
+                        zoneIdAt(x, z) === zone.id &&
+                        urbanMask(x, z) >= 0.8 &&
+                        mountainFactor(x, z) < 0.02 &&
+                        mainAt(x, z) > 0.6 &&
+                        !STREET_KEEP_OUT.some((o) => (x - o.x) ** 2 + (z - o.z) ** 2 < (o.r + STREET_W / 2 + 0.5) ** 2) &&
+                        !(x > 95 && rivers.some((r) => distToSamples(x, z, r.samples) < r.clear))
+                    if (ok) run.push({ x, z })
+                    else flush()
+                }
+                flush()
+            }
         }
     }
     return runs
@@ -418,9 +532,16 @@ export class CityOverview {
         this.ready = false
         this.riverScale = theme?.cues.city.includes('highRiver') ? 1.3 : 1
         this.riverSamples = RIVERS.map((r) => ({ ...r, width: r.width * this.riverScale, samples: sampleCurve(curveFrom(r.points), 2) }))
-        // the street grid; the avenues, sampled every two metres, are what palms line and houses keep off
-        this.streets = gridStreets(this.riverSamples)
-        this.roadSamples = this.streets.filter((r) => r.avenue).map((r) => r.pts.filter((_, i) => i % 2 === 0))
+        // Cali's own avenues and main streets; each zone's local streets fill in between them
+        this.avenues = roadLines(AVENUES)
+        this.mainStreets = roadLines(STREETS, true)
+        const main = roadDistance([[this.avenues, AVENUE_W], [this.mainStreets, MAIN_STREET_W]])
+        this.localStreets = localStreets(this.riverSamples, (x, z) => roadDistanceAt(main, x, z))
+        // how far each place is from any road (what lots and trees keep off) and from an avenue
+        this.roadDist = roadDistance([[this.avenues, AVENUE_W], [this.mainStreets, MAIN_STREET_W], [this.localStreets.map((r) => r.pts), STREET_W]])
+        this.avenueDist = roadDistance([[this.avenues, AVENUE_W]])
+        // the avenues every two metres: what palms line, and what the stadium lies along
+        this.roadSamples = this.avenues.map((l) => resample(l, 2))
     }
 
     /**
@@ -436,6 +557,7 @@ export class CityOverview {
             () => this.#zones(),
             () => this.#blocks(),
             () => this.#vegetation(),
+            () => this.#yumbo(),
             () => this.#aidPoints(),
             () => this.#themeCues(),
             () => this.#groundTextures(),
@@ -592,12 +714,7 @@ export class CityOverview {
 
     /** The zone at (x, z), as Cali's MIO zones group into the app's five (see caliMap.js). */
     zoneAt(x, z) {
-        if (urbanMask(x, z) < 0.5) return null
-        const S = SHAPE.size
-        const i = Math.round(x - SHAPE.x0 - 0.5), j = Math.round(z - SHAPE.z0 - 0.5)
-        if (i < 0 || j < 0 || i >= S || j >= S) return null
-        const k = caliShape().zone[j * S + i]
-        return k >= 0 ? ZONES[k].id : null
+        return zoneIdAt(x, z)
     }
 
     labelAnchor(zoneId, out = new THREE.Vector3()) {
@@ -1016,17 +1133,18 @@ export class CityOverview {
     }
 
     #roads() {
-        // all the streets in one mesh, the avenues in another (with the painted asphalt) and their
-        // centre lines in a third; the avenues sit a hair higher so the crossings never flicker
-        const streets = [], avenues = [], lines = []
-        for (const r of this.streets) {
-            const ends = [r.pts[0], r.pts[r.pts.length - 1]].map((p) => new THREE.Vector3(p.x, 0, p.z))
-            const lift = r.dir === 'u' ? 0 : 0.005
-            if (r.avenue) {
-                avenues.push(ribbonGeometry(ends, r.w, 0.12 + lift))
-                lines.push(ribbonGeometry(ends, 0.18, 0.14 + lift))
-            } else streets.push(ribbonGeometry(ends, r.w, 0.11))
-        }
+        // the local streets in one mesh, Cali's main streets in another, the avenues (with the
+        // painted asphalt) in a third and their centre lines in a fourth; each kind sits a hair
+        // above the one below, and the avenues alternate, so no crossing ever flickers
+        const v3 = (p) => new THREE.Vector3(p.x, 0, p.z)
+        const streets = this.localStreets.map((r) => ribbonGeometry([r.pts[0], r.pts[r.pts.length - 1]].map(v3), STREET_W, 0.11))
+        const mains = this.mainStreets.map((l) => ribbonGeometry(l.map(v3), MAIN_STREET_W, 0.115))
+        const avenues = [], lines = []
+        this.avenues.forEach((l, i) => {
+            const lift = (i % 3) * 0.002
+            avenues.push(ribbonGeometry(l.map(v3), AVENUE_W, 0.12 + lift))
+            lines.push(ribbonGeometry(l.map(v3), 0.18, 0.14 + lift))
+        })
         const add = (list, mat, ground) => {
             if (!list.length) return
             const mesh = new THREE.Mesh(mergeGeometries(list), mat)
@@ -1034,7 +1152,9 @@ export class CityOverview {
             if (ground) mesh.userData.ground = ground
             this.group.add(mesh)
         }
-        add(streets, new THREE.MeshStandardMaterial({ color: WORLD.road, roughness: 0.95 }), null)
+        const asphalt = new THREE.MeshStandardMaterial({ color: WORLD.road, roughness: 0.95 })
+        add(streets, asphalt, null)
+        add(mains, asphalt, null)
         add(avenues, new THREE.MeshStandardMaterial({ color: WORLD.road, roughness: 0.95 }), 'avenidas')
         add(lines, new THREE.MeshBasicMaterial({ color: '#F4F1EA' }), 'lineas_centrales')
     }
@@ -1111,53 +1231,58 @@ export class CityOverview {
     #isFree(x, z, clearance = 0) {
         for (const e of this.exclusions) if ((x - e.x) ** 2 + (z - e.z) ** 2 < (e.r + clearance) ** 2) return false
         for (const r of this.riverSamples) if (distToSamples(x, z, r.samples) < r.clear + clearance) return false
-        for (const s of this.roadSamples) if (distToSamples(x, z, s) < 3 + clearance) return false
+        if (roadDistanceAt(this.roadDist, x, z) < 1.35 + clearance) return false
         return true
     }
 
     /** True when (x, z) is within `margin` metres of an avenue's centre line. */
     #onRoad(x, z, margin) {
-        return this.roadSamples.some((s) => distToSamples(x, z, s) < margin)
+        return roadDistanceAt(this.avenueDist, x, z) < margin - AVENUE_W / 2
     }
 
     #blocks() {
         // how many lots are built on, and how often a block has a tower on one corner (more
         // often on an avenue). Towers stand all over the city, but not in the east.
-        const fill = { centro: 0.92, norte: 0.9, sur: 0.84, oriente: 0.95, oeste: 0.88 }
-        const towerChance = { centro: 0.5, norte: 0.36, sur: 0.32, oriente: 0, oeste: 0.32 }
+        const fill = { centro: 0.97, norte: 0.96, sur: 0.93, oriente: 0.98, oeste: 0.95 }
+        const towerChance = { centro: 0.3, norte: 0.22, sur: 0.2, oriente: 0, oeste: 0.2 }
         const houses = []
         const towers = []
-        const edge = (k) => streetWidth(k) / 2 + SIDEWALK
+        const edge = STREET_W / 2 + SIDEWALK
 
-        for (let i = -GRID.reach; i < GRID.reach; i++) {
-            for (let j = -GRID.reach; j < GRID.reach; j++) {
-                const u0 = i * GRID.bu + edge(i), u1 = (i + 1) * GRID.bu - edge(i + 1)
-                const v0 = j * GRID.bv + edge(j), v1 = (j + 1) * GRID.bv - edge(j + 1)
-                const nu = Math.max(1, Math.floor((u1 - u0) / LOT)), nv = Math.max(1, Math.floor((v1 - v0) / LOT))
-                const su = (u1 - u0) / nu, sv = (v1 - v0) / nv
-                // a whole block belongs to one zone
-                const zone = this.zoneAt(...fromGrid((u0 + u1) / 2, (v0 + v1) / 2))
-                if (!zone) continue
-                const avenue = { u0: isAvenue(i), u1: isAvenue(i + 1), v0: isAvenue(j), v1: isAvenue(j + 1) }
-                const onAvenue = avenue.u0 || avenue.u1 || avenue.v0 || avenue.v1
-                let tower = null
-                if (nu >= 2 && nv >= 2 && rnd() < towerChance[zone] * (onAvenue ? 1.7 : 0.6)) {
-                    // the corner on the avenue, when the block has one
-                    const cu = avenue.u1 ? nu - 2 : avenue.u0 ? 0 : rnd() < 0.5 ? 0 : nu - 2
-                    const cv = avenue.v1 ? nv - 2 : avenue.v0 ? 0 : rnd() < 0.5 ? 0 : nv - 2
-                    const [x, z] = fromGrid(u0 + (cu + 1) * su, v0 + (cv + 1) * sv)
-                    if (urbanMask(x, z) >= 0.85 && this.#isFree(x, z, 2.5)) {
-                        tower = { cu, cv }
-                        towers.push({ x, z, a: GRID.angle, zone, w: 2 * Math.min(su, sv) - 1.2 })
+        for (const zone of ZONES) {
+            const g = zoneGrid(zone.id)
+            for (let i = -BLOCK.reach; i < BLOCK.reach; i++) {
+                for (let j = -BLOCK.reach; j < BLOCK.reach; j++) {
+                    const u0 = i * BLOCK.bu + edge, u1 = (i + 1) * BLOCK.bu - edge
+                    const v0 = j * BLOCK.bv + edge, v1 = (j + 1) * BLOCK.bv - edge
+                    const nu = Math.floor((u1 - u0) / LOT), nv = Math.floor((v1 - v0) / LOT)
+                    const su = (u1 - u0) / nu, sv = (v1 - v0) / nv
+                    const centre = g.from((u0 + u1) / 2, (v0 + v1) / 2)
+                    if (zoneIdAt(...centre) !== zone.id) continue
+                    let tower = null
+                    const onAvenue = roadDistanceAt(this.avenueDist, ...centre) < Math.max(u1 - u0, v1 - v0) / 2 + 2
+                    if (rnd() < towerChance[zone.id] * (onAvenue ? 1.6 : 0.5)) {
+                        // of the corners with room for it, the one nearest an avenue
+                        const corners = [[0, 0], [nu - 2, 0], [0, nv - 2], [nu - 2, nv - 2]]
+                            .map(([cu, cv]) => {
+                                const at = g.from(u0 + (cu + 1) * su, v0 + (cv + 1) * sv)
+                                return { cu, cv, at, d: roadDistanceAt(this.avenueDist, ...at) }
+                            })
+                            .filter((c) => urbanMask(...c.at) >= 0.85 && zoneIdAt(...c.at) === zone.id && this.#isFree(...c.at, 1.6))
+                        const c = corners.length ? corners.reduce((a, b) => (b.d < a.d ? b : a)) : null
+                        if (c) {
+                            tower = c
+                            towers.push({ x: c.at[0], z: c.at[1], a: g.angle, zone: zone.id, w: 2 * Math.min(su, sv) - 1.2 })
+                        }
                     }
-                }
-                for (let a = 0; a < nu; a++) {
-                    for (let b = 0; b < nv; b++) {
-                        if (tower && a >= tower.cu && a < tower.cu + 2 && b >= tower.cv && b < tower.cv + 2) continue
-                        const [x, z] = fromGrid(u0 + (a + 0.5) * su + (rnd() - 0.5) * 0.2, v0 + (b + 0.5) * sv + (rnd() - 0.5) * 0.2)
-                        if (urbanMask(x, z) < 0.85 || !this.#isFree(x, z)) continue
-                        if (rnd() > fill[zone]) continue
-                        houses.push({ x, z, a: GRID.angle + (rnd() - 0.5) * 0.04, zone, face: facingStreet(a, b, nu, nv), mix: lotHash(i * 8 + a, j * 8 + b, zone) })
+                    for (let a = 0; a < nu; a++) {
+                        for (let b = 0; b < nv; b++) {
+                            if (tower && a >= tower.cu && a < tower.cu + 2 && b >= tower.cv && b < tower.cv + 2) continue
+                            const [x, z] = g.from(u0 + (a + 0.5) * su + (rnd() - 0.5) * 0.2, v0 + (b + 0.5) * sv + (rnd() - 0.5) * 0.2)
+                            if (urbanMask(x, z) < 0.85 || zoneIdAt(x, z) !== zone.id || !this.#isFree(x, z)) continue
+                            if (rnd() > fill[zone.id]) continue
+                            houses.push({ x, z, a: g.angle + (rnd() - 0.5) * 0.04, zone: zone.id, face: facingStreet(a, b, nu, nv), mix: lotHash(i * 8 + a, j * 8 + b, zone.id) })
+                        }
                     }
                 }
             }
@@ -1244,6 +1369,86 @@ export class CityOverview {
         this.stats = { houses: houses.length, towers: towers.length }
     }
 
+    /* ---------------- Yumbo ---------------- */
+
+    /**
+     * Yumbo, on the horizon to the north: its houses (its roads are drawn with Cali's, from the
+     * same map) and a few industrial sheds on the way to Cali, in muted greys, inside a dashed
+     * boundary and named in grey, with no marker: part of the view, not of the app. It is not a
+     * zone, so nothing there can be picked.
+     */
+    #yumbo() {
+        const [cx, cz] = YUMBO
+        const a = -0.3, ca = Math.cos(a), sa = Math.sin(a)
+        const spots = []
+        for (let i = -9; i <= 9; i++) {
+            for (let j = -7; j <= 7; j++) {
+                const u = i * 4.2, v = j * 4.2
+                const x = cx + u * ca - v * sa + (rnd() - 0.5) * 0.6
+                const z = cz + u * sa + v * ca + (rnd() - 0.5) * 0.6
+                const r = Math.hypot(u / 34, v / 24) + (vnoise(x * 0.08, z * 0.08) - 0.5) * 0.5
+                if (r > 1 || heightAt(x, z) > 0.3 || roadDistanceAt(this.roadDist, x, z) < 1.6 || rnd() < 0.18) continue
+                spots.push({ x, z, a: a + (rnd() - 0.5) * 0.1, w: 2.2 + rnd() * 0.8, d: 2.4 + rnd() * 0.8, h: 1.6 + rnd() * 1.2 })
+            }
+        }
+        // sheds along the road down to Cali (the industrial strip between the two)
+        for (let k = 0; k < 14; k++) {
+            const t = k / 13
+            const x = lerp(cx - 6, 26, t) + (rnd() - 0.5) * 14, z = lerp(cz + 26, -166, t) + (rnd() - 0.5) * 8
+            if (heightAt(x, z) > 0.3 || roadDistanceAt(this.roadDist, x, z) < 4) continue
+            spots.push({ x, z, a: a + (rnd() - 0.5) * 0.3, w: 6 + rnd() * 5, d: 4 + rnd() * 3, h: 1.6 + rnd() * 0.8, shed: true })
+        }
+        const { body, roof } = props.cityBlockGeometries()
+        const haze = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 1 })
+        const bodies = new THREE.InstancedMesh(body, haze('#FFFFFF'), spots.length)
+        const roofs = new THREE.InstancedMesh(roof, haze('#FFFFFF'), spots.length)
+        const walls = ['#C9CDD2', '#D3D5D8', '#BFC4CA'].map((c) => new THREE.Color(c))
+        const tops = ['#A9AEB5', '#B3B0AC', '#9FA5AD'].map((c) => new THREE.Color(c))
+        const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0)
+        spots.forEach((h, i) => {
+            q.setFromAxisAngle(up, -h.a)
+            bodies.setMatrixAt(i, m.compose(p.set(h.x, 0, h.z), q, sc.set(h.w, h.h, h.d)))
+            bodies.setColorAt(i, pick(walls))
+            roofs.setMatrixAt(i, m.compose(p.set(h.x, h.h, h.z), q, sc.set(h.w * 1.1, h.shed ? 0.5 : 0.8, h.d * 1.08)))
+            roofs.setColorAt(i, pick(tops))
+        })
+        for (const im of [bodies, roofs]) {
+            im.receiveShadow = true
+            im.computeBoundingSphere()
+            this.group.add(im)
+        }
+
+        // its boundary, dashed, a little out from the houses
+        const dashes = []
+        const N = 96
+        for (let k = 0; k < N; k += 2) {
+            const pt = (t) => {
+                const ang = (t / N) * Math.PI * 2
+                const u = Math.cos(ang) * 41, v = Math.sin(ang) * 30
+                return new THREE.Vector3(cx + u * ca - v * sa, 0, cz + u * sa + v * ca)
+            }
+            dashes.push(ribbonGeometry([pt(k), pt(k + 1)], 0.5, 0.25))
+        }
+        const edge = new THREE.Mesh(mergeGeometries(dashes), new THREE.MeshBasicMaterial({ color: '#7C8591', transparent: true, opacity: 0.75, depthWrite: false }))
+        edge.renderOrder = 3
+        this.group.add(edge)
+
+        // and its name, in grey
+        const label = canvasTexture(512, 128, (ctx, w, h) => {
+            ctx.clearRect(0, 0, w, h)
+            ctx.font = '600 64px system-ui, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.fillStyle = 'rgba(70, 78, 92, 0.75)'
+            ctx.fillText('Yumbo', w / 2, h / 2)
+        })
+        const name = new THREE.Sprite(new THREE.SpriteMaterial({ map: label, transparent: true, depthWrite: false, opacity: 0.8 }))
+        name.position.set(cx, 18, cz)
+        name.scale.set(28, 7, 1)
+        name.renderOrder = 7
+        this.group.add(name)
+    }
+
     /* ---------------- vegetation ---------------- */
 
     #vegetation() {
@@ -1285,7 +1490,7 @@ export class CityOverview {
             if (u > 0.2 && !this.#isFree(x, z, -1.2)) continue
             if (u <= 0.2 && rnd() > 0.5) continue
             if (this.#onRoad(x, z, 2.8)) continue
-            if (u > 0.2 && nearStreet(x, z, 1.8)) continue
+            if (u > 0.2 && roadDistanceAt(this.roadDist, x, z) < 0.6) continue
             trees.push({ x, z, y: 0, s: 1.2 + rnd() * 0.9 })
         }
         // Palms along the avenues (a Cali signature)
