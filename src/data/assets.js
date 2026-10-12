@@ -189,6 +189,15 @@ export const ASSETS = {
 
 export const HOUSE_MODELS = ['house-tile', 'house-two-story', 'house-zinc', 'house-estrato2', 'house-estrato3', 'house-estrato4', 'house-estrato5']
 
+/*
+ * The same houses for the map of Cali: lighter copies (tools/casas_mapa.py) of each barrio
+ * house, so the city and the barrios share one look. Same façade, same stray parts dropped.
+ */
+for (const id of HOUSE_MODELS) {
+    const def = ASSETS[id]
+    ASSETS[`map-${id}`] = { ...def, id: `map-${id}`, model: def.model.replace('/houses/', '/houses/mapa/') }
+}
+
 export function getAsset(id) {
     const def = ASSETS[id]
     if (!def) throw new Error(`[assets] Unknown asset id "${id}"`)

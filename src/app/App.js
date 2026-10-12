@@ -258,9 +258,12 @@ export class App {
         this.#cityLighting()
         // the textured Torre de Cali and stadium, while the rest loads
         const landmarks = this.city.useLandmarkModels(this.loader)
+        // and the barrio's own houses across the city, in place of the drawn ones
+        const cityHouses = this.city.useHouseModels(this.loader)
 
         await assets
         await landmarks
+        await cityHouses
         this.hood = new NeighborhoodScene(this.loader, this.theme)
         // hidden from the start: the frame loop runs while it loads its models, and a visible
         // barrio would be updated before its guide exists

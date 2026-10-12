@@ -9,6 +9,7 @@ import { canvasTexture, crossTexture } from './procedural/textures.js'
 import { stylize, stylizeWater, stylizeRiver } from './stylize.js'
 import { buildCityCues } from './ThemeCues.js'
 import * as props from './props.js'
+import { PHONE } from './Stage.js'
 
 /** Live map colours: a donation on its way, in the point, handed out; a transfer. */
 const LIVE_COLOURS = { aporte: '#F5333F', recibido: '#1F8A4C', entregado: '#E39B1B', traslado: '#1E6FD9', 'traslado-recibido': '#1E6FD9' }
@@ -25,6 +26,35 @@ const LIVE_DOT = new THREE.SphereGeometry(2.6, 20, 14)
 /* ---------------- deterministic helpers ---------------- */
 let seed = 1234567
 const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+
+/** The barrio houses each zone of the map is built with (light copies, see useHouseModels). */
+const MAP_HOUSES = {
+    oriente: ['house-estrato2', 'house-zinc', 'house-tile', 'house-estrato2', 'house-zinc'],
+    sur: ['house-tile', 'house-estrato2', 'house-estrato3', 'house-two-story', 'house-zinc'],
+    centro: ['house-two-story', 'house-estrato3', 'house-tile', 'house-estrato4'],
+    norte: ['house-estrato4', 'house-estrato5', 'house-two-story', 'house-estrato3'],
+    oeste: ['house-estrato5', 'house-estrato4', 'house-estrato3', 'house-two-story'],
+}
+/** How wide a house lot is on the map (the blocks are laid out every 3.7). */
+const MAP_LOT = 3.1
+
+/** A steady number in [0, 1) for a lot, so the houses do not take from the city's random sequence. */
+function lotHash(i, j, zone) {
+    let h = 2166136261
+    for (const c of `${i},${j},${zone}`) h = Math.imul(h ^ c.charCodeAt(0), 16777619)
+    return ((h >>> 0) % 100000) / 100000
+}
+
+/**
+ * The turn that points a house (facing +Z) at the nearest street of its block: blocks are
+ * four lots by three, with a street after each (see #blocks).
+ */
+function facingStreet(i, j) {
+    const ii = ((i % 5) + 5) % 5, jj = ((j % 4) + 4) % 4
+    if (jj === 0) return Math.PI // the street before the block, on -Z
+    if (jj === 2) return 0
+    return ii <= 1 ? -Math.PI / 2 : Math.PI / 2
+}
 const pick = (arr) => arr[Math.floor(rnd() * arr.length)]
 const smooth = THREE.MathUtils.smoothstep
 const lerp = THREE.MathUtils.lerp
@@ -455,6 +485,68 @@ export class CityOverview {
                 this.landmarks[id] = model
             })
         )
+    }
+
+    /**
+     * Swap the drawn box houses for the barrio's own houses (their light map copies), one
+     * instanced mesh per piece of each model. Each zone gets the houses that suit it: the
+     * simple ones in the east, the larger ones north and west. If the models fail to load,
+     * the drawn houses stay.
+     */
+    async useHouseModels(loader) {
+        const spots = this.houseSpots
+        if (!spots?.length) return
+        const templates = new Map()
+        await Promise.all(
+            Object.values(MAP_HOUSES)
+                .flat()
+                .filter((id, i, all) => all.indexOf(id) === i)
+                .map(async (id) => {
+                    const t = await loader.load(`map-${id}`).catch(() => null)
+                    if (t?.source === 'glb') templates.set(id, t)
+                })
+        )
+        if (!templates.size) return
+        const byModel = new Map()
+        for (const h of spots) {
+            const choices = MAP_HOUSES[h.zone].filter((id) => templates.has(id))
+            const id = choices.length ? choices[Math.floor(h.mix * choices.length) % choices.length] : [...templates.keys()][0]
+            byModel.set(id, [...(byModel.get(id) ?? []), h])
+        }
+        const m = new THREE.Matrix4()
+        const place = new THREE.Matrix4()
+        const q = new THREE.Quaternion()
+        const sc = new THREE.Vector3()
+        const p = new THREE.Vector3()
+        const up = new THREE.Vector3(0, 1, 0)
+        for (const [id, list] of byModel) {
+            const t = templates.get(id)
+            // each house fills its lot: the widest side of the model (with its yard) is MAP_LOT
+            const k = MAP_LOT / Math.max(t.size.x, t.size.z)
+            const placements = list.map((h) => {
+                q.setFromAxisAngle(up, -h.a + h.face)
+                const s = k * (0.92 + ((h.mix * 7.31) % 1) * 0.12)
+                return place.compose(p.set(h.x, 0, h.z), q, sc.set(s, s, s)).clone()
+            })
+            t.object.updateMatrixWorld(true)
+            t.object.traverse((o) => {
+                if (!o.isMesh) return
+                const im = new THREE.InstancedMesh(o.geometry, o.material, placements.length)
+                placements.forEach((pl, i) => im.setMatrixAt(i, m.multiplyMatrices(pl, o.matrixWorld)))
+                // on a phone the thousand houses skip the shadow pass: from up here it hardly shows
+                im.castShadow = !PHONE
+                im.receiveShadow = true
+                im.instanceMatrix.needsUpdate = true
+                im.computeBoundingSphere()
+                im.name = `casa-mapa:${id}`
+                this.group.add(im)
+            })
+        }
+        for (const im of this.drawnHouses ?? []) {
+            this.group.remove(im)
+            im.dispose()
+        }
+        this.drawnHouses = []
     }
 
     /** Yaw that lays a model's length (its local Z) along the avenue closest to (x, z). */
@@ -1029,7 +1121,7 @@ export class CityOverview {
                     if (!this.#isFree(x, z)) continue
                     if (rnd() > fill[zone.id]) continue
                     const isTower = rnd() < towerChance[zone.id] * (1 - Math.min(1, Math.hypot(x - 20, z + 10) / 120))
-                    ;(isTower ? towers : houses).push({ x, z, a: a + (rnd() - 0.5) * 0.06, zone: zone.id })
+                    ;(isTower ? towers : houses).push({ x, z, a: a + (rnd() - 0.5) * 0.06, zone: zone.id, face: facingStreet(i, j), mix: lotHash(i, j, zone.id) })
                 }
             }
         }
@@ -1074,6 +1166,9 @@ export class CityOverview {
             }
         })
         roofMesh.count = r
+        // drawn houses until the barrio models arrive (see useHouseModels)
+        this.houseSpots = houses
+        this.drawnHouses = [bodyMesh, roofMesh]
         for (const im of [bodyMesh, roofMesh]) {
             im.castShadow = true
             im.receiveShadow = true
