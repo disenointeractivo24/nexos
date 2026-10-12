@@ -585,7 +585,7 @@ export class CityOverview {
                 // (glTF and Blender count v from the other edge), so the picture is read unflipped
                 tex.flipY = false
                 // the avenues and the river measure their length in metres along the strip
-                tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+                tex.wrapS = tex.wrapT = k === 'terreno' ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping
                 tex.anisotropy = 8
                 for (const mats of new Set(meshes.map((m) => m.material))) {
                     for (const m of [mats].flat()) {
@@ -1044,11 +1044,24 @@ export class CityOverview {
     /* ---------------- terrain ---------------- */
 
     #terrain() {
-        const size = 1100
-        const seg = 220
-        const geo = new THREE.PlaneGeometry(size, size, seg, seg).rotateX(-Math.PI / 2)
-        geo.translate(10, 0, 0)
+        // the ground runs out to the horizon, so its edge never shows, whatever the screen: some
+        // 6 m a cell round the city, about 10 m on the hills behind it, and growing from there to
+        // the far edge, 4 km out
+        const seg = 300
+        const reach = 4000
+        const near = 900
+        const stretch = (u) => near * u + (reach - near) * Math.sign(u) * Math.abs(u) ** 6
+        const geo = new THREE.PlaneGeometry(2, 2, seg, seg).rotateX(-Math.PI / 2)
         const pos = geo.attributes.position
+        const uv = geo.attributes.uv
+        for (let i = 0; i < pos.count; i++) {
+            const x = stretch(pos.getX(i)) + 10, z = stretch(pos.getZ(i))
+            pos.setX(i, x)
+            pos.setZ(i, z)
+            // the painted floor (cali_piso) was painted on the 1100 m square the ground used to
+            // be: it keeps its place, and its edges carry on outwards (see #groundTextures)
+            uv.setXY(i, (x - 10 + 550) / 1100, (550 - z) / 1100)
+        }
         const colors = new Float32Array(pos.count * 3)
         const cGrass = new THREE.Color(WORLD.grass)
         const cField = new THREE.Color(WORLD.field)

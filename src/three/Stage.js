@@ -29,7 +29,8 @@ export class Stage {
         this.scene = new THREE.Scene()
         this.scene.fog = new THREE.Fog(WORLD.fog, 300, 1400)
 
-        this.camera = new THREE.PerspectiveCamera(38, 1, 0.5, 3000)
+        // far enough to see the ground out to the horizon (it reaches 4 km from the city)
+        this.camera = new THREE.PerspectiveCamera(38, 1, 0.5, 6000)
         this.scene.add(this.camera)
 
         // Soft reflections for glossy materials (very low intensity)

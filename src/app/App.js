@@ -309,7 +309,7 @@ export class App {
 
     #cityLighting() {
         this.stage.setShadowFrame(new THREE.Vector3(20, 0, 0), 175, { mapSize: 2048, normalBias: 0.8 })
-        this.stage.setFog(380, 1500)
+        this.stage.setFog(420, 3400)
     }
 
     #barrioLighting() {
