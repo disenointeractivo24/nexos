@@ -417,8 +417,9 @@ export class Stage {
 
     /**
      * Every screen gets the same picture. If this computer takes too long over its frames
-     * (under some 40 a second, over a couple of seconds), it draws them with fewer pixels — a
-     * step at a time, down to 60 % — and goes back up once it has room to spare.
+     * (under some 28 a second, over a couple of seconds), it draws them with fewer pixels — a
+     * step at a time, down to 60 % — and goes back up once it has room to spare. A browser that
+     * holds the page to 30 frames on purpose (a battery saver, Opera GX's limiter) is left alone.
      */
     #adapt(raw) {
         const q = this.quality
@@ -431,7 +432,7 @@ export class Stage {
         const avg = q.time / q.frames
         q.time = q.frames = 0
         let scale = q.scale
-        if (avg > 1 / 40 && scale > q.min) {
+        if (avg > 1 / 28 && scale > q.min) {
             scale = Math.max(q.min, scale * 0.85)
             q.good = 0
         } else if (avg < 1 / 57 && scale < 1 && ++q.good >= 3) {

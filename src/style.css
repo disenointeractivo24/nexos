@@ -18,7 +18,6 @@
     --glass-bg-strong: rgba(255, 255, 255, 0.9);
     --glass-tile: rgba(255, 255, 255, 0.58);
     --glass-border: rgba(255, 255, 255, 0.9);
-    --glass-blur: 18px;
     --shadow-soft: 0 12px 32px rgba(1, 30, 65, 0.14), 0 2px 6px rgba(1, 30, 65, 0.06);
     --shadow-lift: 0 18px 44px rgba(1, 30, 65, 0.18), 0 3px 8px rgba(1, 30, 65, 0.08);
 
@@ -68,11 +67,11 @@ canvas.webgl {
     z-index: 0;
 }
 
+/* only as big as what it draws (see ItemStage): placed and sized from script */
 canvas.items {
     position: fixed;
-    inset: 0;
-    width: 100%;
-    height: 100%;
+    left: 0;
+    top: 0;
     pointer-events: none;
     z-index: 30;
 }
@@ -88,18 +87,15 @@ canvas.items {
 /* ----------------------------------------------------------
    Glass surface
    ---------------------------------------------------------- */
+/* No backdrop blur: everything sits over the 3D scene, which changes every frame, so a blur
+   behind each panel would be redone in every frame — light work for Chrome, very heavy for
+   other browsers (Opera, Firefox, Safari). A nearly opaque white reads the same. */
 .glass {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0.12) 46%, rgba(255, 255, 255, 0) 100%),
-        var(--glass-bg);
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.15);
-    backdrop-filter: blur(var(--glass-blur)) saturate(1.15);
+        var(--glass-bg-strong);
     border: 1px solid var(--glass-border);
     box-shadow: var(--shadow-soft), inset 0 1px 0 rgba(255, 255, 255, 0.95);
-}
-
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .glass { background: var(--glass-bg-strong); }
 }
 
 /* ----------------------------------------------------------
@@ -528,10 +524,27 @@ canvas.items {
 }
 .wlabel.is-compact .wlabel-dot.is-high { background: var(--red); }
 .wlabel.is-compact .wlabel-dot.is-ok { background: #2E7D5B; }
-.wlabel.is-compact .wlabel-dot.is-urgent { background: var(--red); animation: dot-pulse 1.8s var(--ease-calm) infinite; }
-@keyframes dot-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 51, 63, 0.5); }
-    55% { box-shadow: 0 0 0 7px rgba(245, 51, 63, 0); }
+.wlabel.is-compact .wlabel-dot.is-urgent { background: var(--red); }
+/* The red dots that call for attention pulse with a ring that grows and fades: a transform and
+   an opacity, which the browser animates on its own, instead of a shadow it would repaint in
+   every frame over the 3D scene. */
+.wlabel.is-compact .wlabel-dot.is-urgent::after,
+.need-alert.is-high::after,
+.live-dot::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: 50%;
+    background: rgba(245, 51, 63, 0.55);
+    pointer-events: none;
+    animation: ring-ping 1.8s var(--ease-calm) infinite;
+}
+@keyframes ring-ping {
+    0% { transform: scale(1); opacity: 0.7; }
+    60%, 100% { transform: scale(2.2); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .wlabel.is-compact .wlabel-dot.is-urgent::after, .need-alert.is-high::after, .live-dot::after { animation: none; opacity: 0; }
 }
 
 .wlabel-icon {
@@ -899,8 +912,8 @@ canvas.items {
 .veil span {
     position: absolute;
     border-radius: 50%;
-    background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.85) 40%, rgba(255, 255, 255, 0) 70%);
-    filter: blur(6px);
+    /* already soft at its edge: no blur filter, which would cost a pass over most of the screen */
+    background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.85) 40%, rgba(255, 255, 255, 0) 72%);
 }
 .veil span:nth-child(1) { width: 70vw; height: 50vw; left: -10vw; top: 5vh; }
 .veil span:nth-child(2) { width: 60vw; height: 45vw; right: -8vw; top: 30vh; }
@@ -1679,7 +1692,7 @@ canvas.items {
     font-weight: 900;
     line-height: 1;
 }
-.need-alert.is-high { background: var(--red); animation: dot-pulse 1.8s var(--ease-calm) infinite; }
+.need-alert.is-high { background: var(--red); }
 @keyframes bubble-pop {
     from { opacity: 0; transform: translateY(-50%) scale(0.6); }
     to { opacity: 1; transform: translateY(-50%) scale(1); }
@@ -2454,9 +2467,7 @@ canvas.items {
 .live-note[hidden] { display: none; }
 .live-note b { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--red-press); }
 .live-text { overflow: hidden; text-overflow: ellipsis; }
-.live-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 0 rgba(245, 51, 63, 0.6); animation: live-ping 1.6s ease-out infinite; }
-@keyframes live-ping { 0% { box-shadow: 0 0 0 0 rgba(245, 51, 63, 0.55); } 100% { box-shadow: 0 0 0 10px rgba(245, 51, 63, 0); } }
-@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+.live-dot { position: relative; width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--red); }
 @media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
     .live-note { top: 118px; font-size: 14px; padding: 6px 12px; }
 }

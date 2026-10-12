@@ -5,7 +5,9 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
  * Draws small 3D objects inside DOM elements (supply tiles, the guide portrait)
  * using ONE transparent canvas layered above the interface. Each element gets
  * its own viewport + scissor, so there is a single extra WebGL context no
- * matter how many tiles are on screen.
+ * matter how many tiles are on screen. The canvas only covers the elements it
+ * draws in (and hides when there are none): a transparent layer the size of the
+ * screen would have to be blended over the scene in every frame.
  */
 export class ItemStage {
     constructor(canvas, { reducedMotion = false } = {}) {
@@ -34,7 +36,6 @@ export class ItemStage {
         this.camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50)
         this.views = new Map()
         this.size = { w: 0, h: 0 }
-        this.wasEmpty = false
     }
 
     /**
@@ -95,27 +96,55 @@ export class ItemStage {
         if (v) v.selected = on
     }
 
-    #resize() {
-        const w = window.innerWidth
-        const h = window.innerHeight
-        if (w === this.size.w && h === this.size.h) return
-        this.size = { w, h }
-        this.renderer.setSize(w, h, false)
+    /** Place the canvas over the screen box (left, top, w, h), in CSS pixels. */
+    #place(left, top, w, h) {
+        w = Math.max(1, Math.ceil(w))
+        h = Math.max(1, Math.ceil(h))
+        if (w !== this.size.w || h !== this.size.h) {
+            this.size = { w, h }
+            this.renderer.setSize(w, h, false)
+            this.canvas.style.width = `${w}px`
+            this.canvas.style.height = `${h}px`
+        }
+        if (left !== this.size.left || top !== this.size.top) {
+            this.size.left = left
+            this.size.top = top
+            this.canvas.style.transform = `translate(${left}px, ${top}px)`
+        }
     }
 
     render(dt, t) {
-        this.#resize()
-        const { w: W, h: H } = this.size
         const r = this.renderer
-        r.setScissorTest(false)
-        r.setViewport(0, 0, W, H)
-
-        if (!this.views.size) {
-            if (!this.wasEmpty) r.clear()
-            this.wasEmpty = true
+        // where on screen there is something to draw, clipped to the window
+        const W = window.innerWidth, H = window.innerHeight
+        const boxes = []
+        for (const v of this.views.values()) {
+            if (!v.el.isConnected) continue
+            const rect = v.el.getBoundingClientRect()
+            if (rect.width < 4 || rect.height < 4) continue
+            if (rect.bottom < 0 || rect.top > H || rect.right < 0 || rect.left > W) continue
+            let left = rect.left, top = rect.top, right = rect.right, bottom = rect.bottom
+            if (v.clipEl) {
+                const c = v.clipEl.getBoundingClientRect()
+                left = Math.max(left, c.left)
+                top = Math.max(top, c.top)
+                right = Math.min(right, c.right)
+                bottom = Math.min(bottom, c.bottom)
+                if (right - left < 1 || bottom - top < 1) continue
+            }
+            boxes.push({ v, rect, left: Math.max(0, left), top: Math.max(0, top), right: Math.min(W, right), bottom: Math.min(H, bottom) })
+        }
+        if (!boxes.length) {
+            this.canvas.style.display = 'none'
             return
         }
-        this.wasEmpty = false
+        this.canvas.style.display = ''
+        const L = Math.floor(Math.min(...boxes.map((b) => b.left))), T = Math.floor(Math.min(...boxes.map((b) => b.top)))
+        const R = Math.ceil(Math.max(...boxes.map((b) => b.right))), B = Math.ceil(Math.max(...boxes.map((b) => b.bottom)))
+        this.#place(L, T, R - L, B - T)
+        const ch = this.size.h
+        r.setScissorTest(false)
+        r.setViewport(0, 0, this.size.w, ch)
         r.clear()
         r.setScissorTest(true)
 
@@ -134,23 +163,7 @@ export class ItemStage {
             }
         }
 
-        for (const v of this.views.values()) {
-            const el = v.el
-            if (!el.isConnected) continue
-            const rect = el.getBoundingClientRect()
-            if (rect.width < 4 || rect.height < 4) continue
-            if (rect.bottom < 0 || rect.top > H || rect.right < 0 || rect.left > W) continue
-
-            let left = rect.left, top = rect.top, right = rect.right, bottom = rect.bottom
-            if (v.clipEl) {
-                const c = v.clipEl.getBoundingClientRect()
-                left = Math.max(left, c.left)
-                top = Math.max(top, c.top)
-                right = Math.min(right, c.right)
-                bottom = Math.min(bottom, c.bottom)
-                if (right - left < 1 || bottom - top < 1) continue
-            }
-
+        for (const { v, rect, left, top, right, bottom } of boxes) {
             const alpha = v.getAlpha ? v.getAlpha() : 1
             if (alpha < 0.01) continue
             if (alpha !== v.lastAlpha) {
@@ -162,8 +175,9 @@ export class ItemStage {
             }
 
             this.#frameCamera(v, rect.width / rect.height)
-            r.setViewport(rect.left, H - rect.bottom, rect.width, rect.height)
-            r.setScissor(left, H - bottom, right - left, bottom - top)
+            // the canvas starts at (L, T) on screen, and GL counts y up from its bottom edge
+            r.setViewport(rect.left - L, ch - (rect.bottom - T), rect.width, rect.height)
+            r.setScissor(left - L, ch - (bottom - T), right - left, bottom - top)
             v.pivot.visible = true
             r.render(this.scene, this.camera)
             v.pivot.visible = false
@@ -177,7 +191,8 @@ export class ItemStage {
      * @returns {string} a PNG data URL
      */
     snapshot(object, px = 112) {
-        this.#resize()
+        // drawn in the canvas' bottom-left corner: it must be at least that big
+        this.#place(this.size.left ?? 0, this.size.top ?? 0, Math.max(px, this.size.w), Math.max(px, this.size.h))
         const r = this.renderer
         const dpr = r.getPixelRatio()
         const pivot = new THREE.Group()
@@ -201,7 +216,6 @@ export class ItemStage {
         r.clear()
         r.setScissorTest(false)
         this.scene.remove(pivot)
-        this.wasEmpty = false
         return out.toDataURL('image/png')
     }
 
