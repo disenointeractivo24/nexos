@@ -242,6 +242,14 @@ export class App {
 
     setState(s) {
         this.state = s
+        // the descent's own controls exist only during the descent, however it is left (into the
+        // city, or back out to the opening screen before it ends)
+        if (s !== 'intro') {
+            const skip = this.$('.skip-intro')
+            skip.classList.remove('is-ready')
+            skip.hidden = true
+            this.$('.descent-caption').classList.remove('is-waiting')
+        }
         this.audio.setScene(['barrio', 'walking', 'leaving', 'entering'].includes(s) ? 'barrio' : s === 'point' ? 'house' : ['role', 'login', 'boot', 'intro', 'exiting'].includes(s) ? 'intro' : 'city')
         this.ui.dataset.state = s
         this.ui.dataset.role = session.role ?? ''
