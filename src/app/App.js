@@ -537,7 +537,7 @@ export class App {
             ? `<span class="need-bubble" aria-hidden="true">${missing
                   .map(
                       ([cat]) => `
-                <span class="need-chip" style="background:${CATEGORIES[cat].color}">${icon(CATEGORIES[cat].icon)}</span>`
+                <span class="need-chip" style="background:${CATEGORIES[cat].tint};color:${CATEGORIES[cat].color}">${icon(CATEGORIES[cat].icon)}</span>`
                   )
                   .join('')}</span>`
             : ''
@@ -1492,10 +1492,7 @@ export class App {
     }
 
     #syncChrome() {
-        const chip = this.$('.role-chip')
-        if (session.role === 'collector') chip.innerHTML = `${icon('box')}<span>Punto de acopio</span>`
-        else if (session.role === 'donor') chip.innerHTML = `${icon('heart')}<span>Donante</span>`
-        else chip.innerHTML = ''
+        // the role needs no label of its own: the steps and the place say it, and leaving says it again
         const exit = this.$('.js-exit')
         const label = session.role === 'collector' ? 'Cerrar sesión' : 'Salir'
         exit.setAttribute('aria-label', label)

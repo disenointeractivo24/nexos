@@ -88,7 +88,7 @@ class Panel {
 
 export const catIcon = (catId, extra = '') => {
     const c = CATEGORIES[catId]
-    return `<span class="wlabel-icon ${extra}" style="background:${c.color}">${icon(c.icon)}</span>`
+    return `<span class="wlabel-icon is-category ${extra}" style="background:${c.tint};color:${c.color}">${icon(c.icon)}</span>`
 }
 
 /* ================================================================= */
@@ -370,7 +370,7 @@ export class DonorPanel extends Panel {
                         return `
                         <button class="cat-tab ${on ? 'is-on' : ''}" type="button" role="tab" aria-selected="${on}"
                             data-cat="${g.category}" title="${c.label}" aria-label="${c.label}">
-                            <span class="cat-icon" style="background:${c.color}">${icon(c.icon)}</span>
+                            <span class="cat-icon" style="background:${c.tint};color:${c.color}">${icon(c.icon)}</span>
                             <span class="cat-label">${c.label}</span>
                             ${urgent ? '<span class="cat-dot"></span>' : ''}
                         </button>`

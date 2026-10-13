@@ -1056,7 +1056,8 @@ export class CityOverview {
 
             const fill = new THREE.Mesh(
                 fillGeo,
-                new THREE.MeshBasicMaterial({ color: zone.color, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 })
+                // lit like the ground it lies on, so the wash dims with the evening instead of glowing
+                new THREE.MeshLambertMaterial({ color: zone.color, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 })
             )
             fill.position.y = 0.55
             fill.renderOrder = 2

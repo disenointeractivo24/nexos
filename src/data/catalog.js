@@ -3,12 +3,18 @@
  * so they stay short and plain.
  */
 
+/**
+ * A category is drawn as a light tile (`tint`) with its icon in a deep ink (`color`, also the
+ * tape on the shelf crates); a zone is a solid disc in its own colour. The shape tells them
+ * apart, and no category borrows a colour that already means something: red (the main action,
+ * what is critical), navy (what is chosen), the green of "enough" or the amber of a high need.
+ */
 export const CATEGORIES = {
-    alimentos: { id: 'alimentos', label: 'Alimentos', icon: 'apple', color: '#B8642A' },
-    agua: { id: 'agua', label: 'Agua', icon: 'drop', color: '#2F69A3' },
-    medicinas: { id: 'medicinas', label: 'Medicinas', icon: 'cross', color: '#F5333F' },
-    higiene: { id: 'higiene', label: 'Higiene', icon: 'soap', color: '#2E7D5B' },
-    refugio: { id: 'refugio', label: 'Refugio', icon: 'home', color: '#011E41' },
+    alimentos: { id: 'alimentos', label: 'Alimentos', icon: 'apple', color: '#9A5B1E', tint: '#F5E7DA' },
+    agua: { id: 'agua', label: 'Agua', icon: 'drop', color: '#2F69A3', tint: '#E2ECF7' },
+    medicinas: { id: 'medicinas', label: 'Medicinas', icon: 'cross', color: '#6E4BB0', tint: '#ECE6F7' },
+    higiene: { id: 'higiene', label: 'Higiene', icon: 'soap', color: '#1F7A86', tint: '#DDF0F2' },
+    refugio: { id: 'refugio', label: 'Refugio', icon: 'home', color: '#5B6170', tint: '#E9EBEF' },
 }
 
 /**
