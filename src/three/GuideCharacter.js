@@ -13,6 +13,11 @@ const hold = (u, edge = 0.25) => smooth(u / edge) * smooth((1 - u) / edge)
  * Little things a character does while it waits, so it never stands like a statue.
  * Each returns the offsets it adds to the pose at time u (0–1), and how long it lasts.
  * `side` is ±1, picked each time. Only the guide (`lively`) waves and stretches.
+ *
+ * The guide's head is big and its arms are short: an arm raised much past the shoulder ends with
+ * the hand inside the helmet, and turns the inside of the arm (darker, where the ambient
+ * occlusion is baked) to the camera. So no gesture lifts an arm beyond some 75°, and the raised
+ * ones also come a little forward, keeping the hand in front of the head.
  */
 const IDLE = {
     // a look to one side, eyes first, a little tilt, then back
@@ -40,12 +45,12 @@ const IDLE = {
     // a wave with the right hand, smiling
     wave: { weight: 1, lively: true, seconds: 2.6, pose: (u) => {
         const k = hold(u, 0.2)
-        return { armRUp: 2.4 * k, armRWave: Math.sin(u * Math.PI * 10) * 0.35 * k, headZ: 0.12 * k, headY: 0.15 * k, mood: k > 0.4 ? 'happy' : null, bodyZ: -0.05 * k }
+        return { armRUp: 1.55 * k, armRWave: Math.sin(u * Math.PI * 10) * 0.25 * k, headZ: 0.12 * k, headY: 0.15 * k, mood: k > 0.4 ? 'happy' : null, bodyZ: -0.05 * k }
     } },
-    // a stretch: arms up, up on tiptoe, eyes shut, then a happy little shake
+    // a stretch: arms open wide, up on tiptoe, eyes shut
     stretch: { weight: 1, lively: true, seconds: 2.8, pose: (u) => {
         const k = hold(u, 0.3)
-        return { armsUp: 2.5 * k, hop: 0.05 * k, headX: -0.18 * k, bodyX: -0.08 * k, mood: k > 0.5 ? 'joy' : null }
+        return { armsUp: 1.2 * k, arms: -0.25 * k, hop: 0.05 * k, headX: -0.18 * k, bodyX: -0.08 * k, mood: k > 0.5 ? 'joy' : null }
     } },
     // a happy little hop
     hop: { weight: 1, seconds: 1.1, pose: (u) => {
@@ -373,9 +378,9 @@ export class GuideCharacter {
             const idleArms = Math.sin(ti * 1.9 + 0.5) * 0.05 * amb
             const back = o.arms ?? 0
             const sway = o.armSwing ?? 0
-            P.armL.rotation.x = -sw * swing + idleArms + back - sway
-            P.armR.rotation.x = sw * swing + idleArms + back + sway - this.gesture.arm * 1.0 - (o.armRUp ? 0.25 * Math.min(1, o.armRUp) : 0)
-            const out = (o.armsOut ?? 0) + (o.armsUp ?? 0) + 2.6 * cheer
+            P.armL.rotation.x = -sw * swing + idleArms + back - sway - 0.3 * cheer
+            P.armR.rotation.x = sw * swing + idleArms + back + sway - this.gesture.arm * 1.0 - (o.armRUp ? 0.6 * Math.min(1, o.armRUp) : 0) - 0.3 * cheer
+            const out = (o.armsOut ?? 0) + (o.armsUp ?? 0) + 1.25 * cheer
             P.armL.rotation.z = this.armRest.L * (1 - 0.35 * w) + (breath * 0.035 - shift * 0.03) * amb - out
             P.armR.rotation.z = this.armRest.R * (1 - 0.35 * w) - (breath * 0.035 + shift * 0.03) * amb + out + (o.armRUp ?? 0) + (o.armRWave ?? 0) - this.gesture.arm * 0.2
         }
