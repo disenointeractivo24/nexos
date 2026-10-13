@@ -664,13 +664,6 @@ canvas.items {
 }
 .guide-dock .guide-portrait { width: 360px; height: 475px; margin: 0 -43px -128px max(8px, env(safe-area-inset-left)); }
 .guide-dock .bubble-dock { margin-bottom: calc(170px + env(safe-area-inset-bottom)); }
-/* on the opening screen the guide is there without a word (the screen says what to choose),
-   above the white the screen fades in on; a phone has no room for it beside the buttons */
-.ui[data-state="role"] .guide-dock { z-index: 16; }
-.ui[data-state="role"] .bubble-dock { display: none; }
-@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
-    .ui[data-state="role"] .guide-dock { display: none; }
-}
 .bubble {
     position: relative;
     max-width: 380px;
@@ -2173,7 +2166,8 @@ canvas.items {
     overflow: auto;
     padding: 22px;
     border-radius: 24px;
-    background: var(--glass-bg-strong);
+    /* opaque: whatever lies behind (the map, a list of zones) would show through the text */
+    background: var(--white);
     color: var(--navy);
 }
 .dialog-head { display: flex; align-items: center; gap: 12px; }
@@ -2429,7 +2423,7 @@ canvas.items {
     display: grid;
     gap: 14px;
     border-radius: var(--radius-lg);
-    background: var(--glass-bg-strong);
+    background: var(--white);
     box-shadow: var(--shadow-lift);
 }
 .track-head { display: flex; align-items: flex-start; gap: 14px; }
@@ -2448,7 +2442,8 @@ canvas.items {
 .track-card-head { display: flex; align-items: center; gap: 10px; }
 .track-code { font-size: var(--fs-xl); letter-spacing: 0.06em; color: var(--navy); }
 .state-pill { margin-left: auto; padding: 4px 12px; border-radius: var(--radius-pill); font-size: var(--fs-sm); font-weight: 600; background: #E8ECF1; color: var(--navy); white-space: nowrap; }
-.state-pill[data-state="Agendado"], .state-pill[data-state="En camino"] { background: #FFF1D6; color: #7A4B00; }
+/* on its way is neutral (amber means a high need); received is blue, delivered green */
+.state-pill[data-state="Agendado"], .state-pill[data-state="En camino"] { background: var(--navy-06); color: var(--navy); }
 .state-pill[data-state="Recibido"] { background: #DCE9F7; color: #12406F; }
 .state-pill[data-state="Entregado"] { background: #D3EBDB; color: #1E5B36; }
 .timeline { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 0; }
@@ -2602,10 +2597,11 @@ canvas.items {
 .lite-feed li { display: flex; gap: 10px; justify-content: space-between; font-size: var(--fs-sm); }
 .lite-feed time { flex: none; color: #6B7280; }
 .lite-zones { display: grid; gap: 12px; }
-.lite-zone { border-left: 6px solid var(--zone); }
 .lite-zone-head { display: flex; align-items: center; gap: 8px; }
 .lite-zone-head h2 small { font-weight: 400; color: #5F6368; font-size: var(--fs-sm); }
-.lite-zone-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--zone); flex: none; }
+/* a zone is a solid disc in its own colour with its house, as on the map */
+.lite-zone-dot { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: var(--zone); color: #fff; flex: none; }
+.lite-zone-dot [data-icon] { width: 19px; height: 19px; }
 .need-pill { margin-left: auto; flex: none; font-size: var(--fs-xs); font-weight: 600; padding: 3px 10px; border-radius: var(--radius-pill); background: #E8ECF1; color: var(--navy); }
 .need-pill[data-level="alta"] { background: var(--amber-soft); color: var(--amber-ink); }
 .need-pill[data-level="media"] { background: #EEF1F5; color: #3E4651; }
@@ -2695,11 +2691,12 @@ html.is-lite,
 .lite-zone-name h2 { margin: 0; font-size: var(--fs-lg); line-height: 1.15; color: var(--navy); }
 .lite-zone-name small { font-size: var(--fs-sm); color: #5F6368; }
 .lite-zone-head { align-items: flex-start; }
-.lite-zone-dot { margin-top: 6px; }
+.lite-zone-dot { margin-top: 2px; }
 .lite-chip { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-sm); font-weight: 600; padding: 5px 10px; border-radius: var(--radius-pill); background: #F3F5F8; color: var(--navy); white-space: nowrap; }
 .lite-chip [data-icon] { width: 16px; height: 16px; flex: none; }
-.lite-chip[data-level="alta"] { background: var(--amber-soft); color: var(--amber-ink); }
-.lite-chip[data-level="media"] { background: #EEF1F5; color: #3E4651; }
+/* a supply is its category's light tile (colours set inline from CATEGORIES); a high need adds an amber dot */
+.lite-chip { box-shadow: inset 0 0 0 1.5px currentColor; }
+.lite-chip[data-level="alta"]::after { content: ""; width: 7px; height: 7px; margin-left: 2px; border-radius: 50%; background: var(--amber); }
 .lite-zone .btn { width: 100%; justify-content: center; }
 /* the notch and the home bar on iPhone */
 .lite-top { padding-top: max(10px, env(safe-area-inset-top)); padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }

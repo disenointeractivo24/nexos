@@ -241,12 +241,7 @@ export class App {
     }
 
     setState(s) {
-        const was = this.state
         this.state = s
-        // the guide already stands in its corner on the opening screen, so the person meets it
-        // before the descent; it steps out while the camera comes down, and is back in the city
-        if (s === 'role' && this.portrait) this.#showGuideDock('', '')
-        else if (was === 'role') this.#hideGuideDock()
         this.audio.setScene(['barrio', 'walking', 'leaving', 'entering'].includes(s) ? 'barrio' : s === 'point' ? 'house' : ['role', 'login', 'boot', 'intro', 'exiting'].includes(s) ? 'intro' : 'city')
         this.ui.dataset.state = s
         this.ui.dataset.role = session.role ?? ''
@@ -305,7 +300,6 @@ export class App {
         this.portrait = new GuideCharacter(this.loader.instanceSync(guideT), guideT.animations, { reducedMotion: this.reducedMotion, face: true, lively: true })
         this.portrait.place(new THREE.Vector3(), 0.32)
         this.portrait.blob.visible = false
-        if (this.state === 'role') this.#showGuideDock('', '')
 
         await landmarks
         await cityHouses

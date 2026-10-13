@@ -257,13 +257,13 @@ export class LiteApp {
                 return `
                 <article class="lite-card lite-zone" style="--zone:${z.color}">
                     <div class="lite-zone-head">
-                        <span class="lite-zone-dot" aria-hidden="true"></span>
+                        <span class="lite-zone-dot" aria-hidden="true">${icon('home')}</span>
                         <div class="lite-zone-name"><h2>${esc(z.name)}</h2><small>Barrio ${esc(z.barrio)}${z.id === lastZone() ? ' · <b class="lite-last">Tu última zona</b>' : ''}</small></div>
                         <span class="need-pill" data-level="${level}">${esc(NEED_WORD[level])}</span>
                     </div>
                     <p class="lite-muted">${icon('pin')} ${esc(p.name)} · ${esc(p.address)}</p>
                     <p class="lite-needs">${zoneNeeds(z, this.theme)
-                        .map(([cat, l]) => `<span class="lite-chip" data-level="${l}">${icon(CATEGORIES[cat].icon)} ${esc(CATEGORIES[cat].label)}</span>`)
+                        .map(([cat, l]) => `<span class="lite-chip" data-level="${l}" style="background:${CATEGORIES[cat].tint};color:${CATEGORIES[cat].color}">${icon(CATEGORIES[cat].icon)} ${esc(CATEGORIES[cat].label)}</span>`)
                         .join('')}</p>
                     ${critical.length ? `<p class="lite-urgent">${icon('alert')} Urgente: ${critical.map((s) => esc(s.label)).join(', ')}</p>` : ''}
                     <button class="btn btn-primary js-zone" type="button" data-zone="${z.id}">Donar en ${esc(z.name)} ${icon('chevron-right')}</button>
