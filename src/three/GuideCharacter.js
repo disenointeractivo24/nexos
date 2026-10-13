@@ -13,6 +13,11 @@ const hold = (u, edge = 0.25) => smooth(u / edge) * smooth((1 - u) / edge)
  * Little things a character does while it waits, so it never stands like a statue.
  * Each returns the offsets it adds to the pose at time u (0–1), and how long it lasts.
  * `side` is ±1, picked each time. Only the guide (`lively`) waves and stretches.
+ *
+ * The guide's head is big and its arms are short: an arm raised much past the shoulder ends with
+ * the hand inside the helmet, and turns the inside of the arm (darker, where the ambient
+ * occlusion is baked) to the camera. So no gesture lifts an arm beyond some 75°, and the raised
+ * ones also come a little forward, keeping the hand in front of the head.
  */
 const IDLE = {
     // a look to one side, eyes first, a little tilt, then back
@@ -40,12 +45,12 @@ const IDLE = {
     // a wave with the right hand, smiling
     wave: { weight: 1, lively: true, seconds: 2.6, pose: (u) => {
         const k = hold(u, 0.2)
-        return { armRUp: 2.4 * k, armRWave: Math.sin(u * Math.PI * 10) * 0.35 * k, headZ: 0.12 * k, headY: 0.15 * k, mood: k > 0.4 ? 'happy' : null, bodyZ: -0.05 * k }
+        return { armRUp: 1.55 * k, armRWave: Math.sin(u * Math.PI * 10) * 0.25 * k, headZ: 0.12 * k, headY: 0.15 * k, mood: k > 0.4 ? 'happy' : null, bodyZ: -0.05 * k }
     } },
-    // a stretch: arms up, up on tiptoe, eyes shut, then a happy little shake
+    // a stretch: arms open wide, up on tiptoe, eyes shut
     stretch: { weight: 1, lively: true, seconds: 2.8, pose: (u) => {
         const k = hold(u, 0.3)
-        return { armsUp: 2.5 * k, hop: 0.05 * k, headX: -0.18 * k, bodyX: -0.08 * k, mood: k > 0.5 ? 'joy' : null }
+        return { armsUp: 1.2 * k, arms: -0.25 * k, hop: 0.05 * k, headX: -0.18 * k, bodyX: -0.08 * k, mood: k > 0.5 ? 'joy' : null }
     } },
     // a happy little hop
     hop: { weight: 1, seconds: 1.1, pose: (u) => {
@@ -54,6 +59,7 @@ const IDLE = {
     } },
 }
 const IDLE_NAMES = Object.keys(IDLE)
+const _target = new THREE.Vector3()
 
 const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a))
 
@@ -83,10 +89,19 @@ export class GuideCharacter {
      *   gestures too (waving, stretching), for the guide rather than the neighbours
      */
     /** @param idle  names from IDLE this character may play (all of them if not given) */
-    constructor(model, animations = [], { reducedMotion = false, face = false, lively = false, idle = null } = {}) {
+    /** @param stoop  forward lean of the body, in radians (older people) */
+    constructor(model, animations = [], { reducedMotion = false, face = false, lively = false, idle = null, stoop = 0 } = {}) {
         this.reducedMotion = reducedMotion
         this.lively = lively
         this.idleNames = idle ?? IDLE_NAMES
+        this.stoop = stoop
+        /** Someone this character keeps beside (a child with their parent), see follow(). */
+        this.leader = null
+        /** 0–1, set from outside each frame: how freely the way ahead is clear (1 = walk on). */
+        this.hold = 1
+        /** Metres to keep to the right (+) or left (−) of the path, to pass someone; set from outside. */
+        this.sideWant = 0
+        this.side = 0
         this.root = new THREE.Group()
         this.root.name = 'guide-root'
         this.model = cloneMaterials(model)
@@ -207,6 +222,26 @@ export class GuideCharacter {
         })
     }
 
+    /**
+     * Keep beside someone wherever they go, as a child does with a parent. `standing` is
+     * where to be in their frame (x across, z ahead) when they stand, `walking` when they
+     * walk (a little behind, in their footsteps, as if holding their hand). Walks when
+     * they walk, catches up when left behind, turns before setting off, and stands
+     * facing the way they face.
+     */
+    follow(leader, standing, walking = standing) {
+        this.leader = leader
+        this.followOffset = { standing, walking }
+    }
+
+    /** Where this character keeps beside its leader, for the leader at `pos` facing `yaw`. */
+    besideAt(pos, yaw, out = new THREE.Vector3(), walking = 0) {
+        const { standing: a, walking: b } = this.followOffset
+        const x = a.x + (b.x - a.x) * walking, z = a.z + (b.z - a.z) * walking
+        const c = Math.cos(yaw), s = Math.sin(yaw)
+        return out.set(pos.x + c * x + s * z, pos.y, pos.z - s * x + c * z)
+    }
+
     stop() {
         if (this.path) {
             this.path.resolve(false)
@@ -261,15 +296,42 @@ export class GuideCharacter {
             const align = THREE.MathUtils.clamp((Math.cos(wrapAngle(this.targetYaw - this.yaw)) - 0.35) / 0.5, 0, 1)
             const remaining = p.length - p.s
             const ramp = Math.min(1, (p.s + 0.4) / 1.4) * Math.min(1, remaining / 1.6 + 0.15)
-            this.speed = p.maxSpeed * ramp * align
+            this.speed = p.maxSpeed * ramp * align * this.hold
             p.s = Math.min(p.length, p.s + this.speed * dt)
             p.curve.getPointAt(p.s / p.length, this.root.position)
+            // stepping out a little to pass someone, and back onto the path before arriving
+            const room = Math.min(1, (p.length - p.s) / 1.5, p.s / 0.8)
+            this.side += (this.sideWant * room - this.side) * (1 - Math.exp(-dt * 4))
+            if (Math.abs(this.side) > 1e-3) {
+                this.root.position.x += Math.cos(this.targetYaw) * this.side
+                this.root.position.z -= Math.sin(this.targetYaw) * this.side
+            }
             moving = true
             if (p.s >= p.length - 1e-3) {
+                this.side = 0
                 this.path = null
                 this.speed = 0
                 p.resolve(true)
             }
+        } else if (this.leader) {
+            const L = this.leader
+            // in their footsteps on a real walk; beside them for a step or two (moving up a line)
+            const target = this.besideAt(L.position, L.yaw, _target, L.walkAmt * THREE.MathUtils.clamp((L.speed - 2) / 1.5, 0, 1))
+            const dx = target.x - this.root.position.x
+            const dz = target.z - this.root.position.z
+            const d = Math.hypot(dx, dz)
+            // as fast as the leader, a little faster to catch up; slowing into place. More than
+            // a hand's breadth away, they turn to face the way first, as anyone does
+            const ahead = d > 0.1 ? THREE.MathUtils.clamp((Math.cos(wrapAngle(Math.atan2(dx, dz) - this.yaw)) - 0.35) / 0.5, 0, 1) : 1
+            const pace = Math.min(d * 3.2, Math.max(L.speed * 1.3, 1.4)) * ahead
+            const step = Math.min(d, pace * dt)
+            if (d > 0.01) {
+                this.root.position.x += (dx / d) * step
+                this.root.position.z += (dz / d) * step
+            }
+            this.speed += (step / Math.max(dt, 1e-4) - this.speed) * (1 - Math.exp(-dt * 10))
+            moving = this.speed > 0.3 || d > 0.1
+            this.targetYaw = d > 0.1 ? Math.atan2(dx, dz) : L.yaw
         } else {
             this.speed = 0
         }
@@ -316,9 +378,9 @@ export class GuideCharacter {
             const idleArms = Math.sin(ti * 1.9 + 0.5) * 0.05 * amb
             const back = o.arms ?? 0
             const sway = o.armSwing ?? 0
-            P.armL.rotation.x = -sw * swing + idleArms + back - sway
-            P.armR.rotation.x = sw * swing + idleArms + back + sway - this.gesture.arm * 1.0 - (o.armRUp ? 0.25 * Math.min(1, o.armRUp) : 0)
-            const out = (o.armsOut ?? 0) + (o.armsUp ?? 0) + 2.6 * cheer
+            P.armL.rotation.x = -sw * swing + idleArms + back - sway - 0.3 * cheer
+            P.armR.rotation.x = sw * swing + idleArms + back + sway - this.gesture.arm * 1.0 - (o.armRUp ? 0.6 * Math.min(1, o.armRUp) : 0) - 0.3 * cheer
+            const out = (o.armsOut ?? 0) + (o.armsUp ?? 0) + 1.25 * cheer
             P.armL.rotation.z = this.armRest.L * (1 - 0.35 * w) + (breath * 0.035 - shift * 0.03) * amb - out
             P.armR.rotation.z = this.armRest.R * (1 - 0.35 * w) - (breath * 0.035 + shift * 0.03) * amb + out + (o.armRUp ?? 0) + (o.armRWave ?? 0) - this.gesture.arm * 0.2
         }
@@ -328,10 +390,10 @@ export class GuideCharacter {
         const squash = (bob - 0.5) * 0.03 * w
         P.body.scale.set(B.scale.x * (1 - breath * 0.008 * amb + squash), B.scale.y * (1 + breath * 0.012 * amb - squash), B.scale.z * (1 - breath * 0.008 * amb + squash))
         P.body.rotation.z = sw * 0.045 * w + shift * 0.03 * amb + (o.bodyZ ?? 0)
-        P.body.rotation.x = (0.06 + Math.min(this.speed, 7) * 0.014) * w + (o.bodyX ?? 0)
+        P.body.rotation.x = (0.06 + Math.min(this.speed, 7) * 0.014) * w + (o.bodyX ?? 0) + this.stoop
         P.body.rotation.y = sw * 0.09 * w + (o.bodyY ?? 0)
         P.head.rotation.y = drift * amb + (o.headY ?? 0) - sw * 0.06 * w
-        P.head.rotation.x = this.gesture.nod * 0.2 + Math.sin(ti * 0.7) * 0.035 * amb - bob * 0.04 * w + (o.headX ?? 0) - 0.15 * cheer
+        P.head.rotation.x = this.gesture.nod * 0.2 + Math.sin(ti * 0.7) * 0.035 * amb - bob * 0.04 * w + (o.headX ?? 0) - 0.15 * cheer - this.stoop * 0.7
         P.head.rotation.z = -shift * 0.04 * amb + (o.headZ ?? 0) + Math.sin(t * 6) * 0.06 * cheer
         // hops lift the whole figure; the root stays on the ground for the app
         this.model.position.y = (o.hop ?? 0) * amb + 0.22 * jump

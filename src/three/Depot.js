@@ -3,9 +3,8 @@ import gsap from 'gsap'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { CATEGORIES } from '../data/catalog.js'
 import { stockCap, stockState, stockRatio } from '../data/inventory.js'
-import { sharedMaterial, WORLD } from './materials.js'
+import { sharedMaterial } from './materials.js'
 import { crossTexture } from './procedural/textures.js'
-import { canopyGeometry, trunkGeometry } from './procedural/nature.js'
 import { supplyBox } from './props.js'
 import { stylize } from './stylize.js'
 
@@ -38,8 +37,13 @@ const unitW = COLS * BAY_W + (COLS + 1) * POST
 const colX = (c) => -unitW / 2 + POST + BAY_W / 2 + c * (BAY_W + POST)
 const rowFloor = (r) => FLOOR + r * (BAY_H + BOARD)
 
-/** Everything the frontal view has to show, for framing it: width, bottom, top. */
+/** The whole stand, roof included: width, bottom, top (the textured model is sized to it). */
 export const DEPOT_BOUNDS = { width: 9.8, bottom: 0, top: 4.25 }
+/**
+ * What the frontal view frames: the shelves with their boxes and the point's banner over
+ * them (9.2 wide, its top at 3.3). The roof and the street around stay out of the picture.
+ */
+export const DEPOT_FRAME = { width: 9.4, bottom: 0.05, top: 3.4 }
 
 function roundRect(ctx, x, y, w, h, r) {
     ctx.beginPath()
@@ -108,28 +112,12 @@ export class Depot {
         const base = new THREE.Mesh(new THREE.BoxGeometry(26, 0.5, 0.5), trim)
         base.position.set(0, 0.25, -2.95)
         this.group.add(back, base)
-
-        // a few trees at the sides frame the stand without competing with it
-        const leaf = stylize(sharedMaterial('dp:leaf', { color: WORLD.leaf[1], roughness: 0.9 }), { sway: 0.4 })
-        const bark = stylize(sharedMaterial('dp:bark', { color: WORLD.trunk, roughness: 0.9 }))
-        const canopy = canopyGeometry(1)
-        const trunk = trunkGeometry()
-        for (const [x, z, s] of [[-7.8, -1.6, 1.9], [-10, 0.6, 1.5], [8, -1.4, 2.0], [10.2, 0.9, 1.4]]) {
-            const t = new THREE.Group()
-            const tr = new THREE.Mesh(trunk, bark)
-            const cn = new THREE.Mesh(canopy, leaf)
-            cn.position.y = 1.15
-            t.add(tr, cn)
-            t.scale.setScalar(s)
-            t.position.set(x, 0, z)
-            this.group.add(t)
-        }
     }
 
     /**
      * The textured stand replaces the drawn canopy, big enough to roof the whole shelving.
      * Its own desk, shelf and crates make way for the live bays; its floor sits flush with
-     * the ground. The camera frames it through DEPOT_BOUNDS.
+     * the ground. The camera frames its shelves (DEPOT_FRAME).
      */
     setStand(model) {
         const hide = /escritorio|estanteria|cajas/i
@@ -371,8 +359,8 @@ export class Depot {
         for (const bay of this.bays.values()) bay.qty = null
     }
 
-    /** Where the stand's middle is, for the frontal camera. */
+    /** The middle of what the frontal camera frames (DEPOT_FRAME). */
     get center() {
-        return new THREE.Vector3(0, (DEPOT_BOUNDS.bottom + DEPOT_BOUNDS.top) / 2, 0)
+        return new THREE.Vector3(0, (DEPOT_FRAME.bottom + DEPOT_FRAME.top) / 2, 0)
     }
 }

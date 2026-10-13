@@ -127,3 +127,21 @@ export class Dialog {
 
 /** Help as a short list of concrete steps. */
 export const helpList = (steps) => `<ol class="help-steps">${steps.map((s) => `<li>${s}</li>`).join('')}</ol>`
+
+/**
+ * A button that says it is working while the sheet answers (and cannot be tapped twice).
+ * @returns a function that puts it back as it was
+ */
+export function busyButton(button, label) {
+    if (!button) return () => {}
+    const html = button.innerHTML
+    button.disabled = true
+    button.setAttribute('aria-busy', 'true')
+    button.innerHTML = `<span class="sync-spin" aria-hidden="true"></span>${label}`
+    return () => {
+        if (!button.isConnected) return
+        button.disabled = false
+        button.removeAttribute('aria-busy')
+        button.innerHTML = html
+    }
+}

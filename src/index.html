@@ -31,7 +31,6 @@
                     <span class="context-sub">Cali, Valle del Cauca</span>
                 </span>
             </div>
-            <span class="topbar-divider" aria-hidden="true"></span>
             <div class="clock" role="timer" title="Hora y clima en Cali">
                 <span class="clock-icon" data-icon="sun" aria-hidden="true"></span>
                 <span class="clock-text">
@@ -43,7 +42,6 @@
                 <span data-icon="sound" aria-hidden="true"></span>
             </button>
             <div class="session">
-                <span class="role-chip"></span>
                 <button class="exit-btn js-exit" type="button" aria-label="Salir" title="Salir">
                     <span data-icon="logout" aria-hidden="true"></span>
                 </button>
@@ -76,6 +74,10 @@
                         <span class="role-text"><strong>Soy punto de acopio</strong><span>Ingresa y actualiza el inventario de tu zona.</span></span>
                         <span class="role-go" data-icon="chevron-right" aria-hidden="true"></span>
                     </button>
+                </div>
+                <div class="role-links">
+                    <button class="role-track js-track" type="button"><span data-icon="search" aria-hidden="true"></span>¿Ya donaste? Sigue tu aporte</button>
+                    <button class="role-track js-lite" type="button"><span data-icon="phone" aria-hidden="true"></span>Versión ligera, sin 3D</button>
                 </div>
             </div>
         </section>
@@ -113,20 +115,23 @@
         <!-- Floating labels anchored to the 3D world -->
         <div class="labels" aria-label="Lugares disponibles"></div>
 
+        <!-- Phones: the zones as a list at the side, so the markers do not cover the city -->
+        <nav class="zone-list" aria-label="Zonas de la ciudad"></nav>
+
         <!-- Guide (city view: docked portrait) -->
         <div class="guide-dock" hidden>
             <div class="guide-portrait" aria-hidden="true"></div>
             <div class="bubble bubble-dock glass" role="status" aria-live="polite"></div>
         </div>
 
-        <!-- Guide (neighborhood: speech anchored to the character) -->
-        <div class="bubble bubble-world glass" role="status" aria-live="polite" hidden></div>
-
         <!-- Map helper (limited orbit) -->
         <button class="recenter glass" type="button" hidden>
             <span data-icon="target" aria-hidden="true"></span>
             <span>Centrar mapa</span>
         </button>
+
+        <!-- Live map: what is happening right now, anywhere -->
+        <p class="live-note glass" role="status" aria-live="polite" hidden><span class="live-dot" aria-hidden="true"></span><b>En vivo</b><span class="live-text"></span></p>
 
         <!-- Zone card -->
         <aside class="zone-card glass" aria-labelledby="zone-title" hidden></aside>
@@ -138,6 +143,11 @@
         <div class="toast glass" role="status" aria-live="polite" hidden></div>
 
         <!-- Questions before something that cannot be undone, and help -->
+        <!-- ¿Dónde está mi ayuda? (following a donation by its code) -->
+        <section class="track" aria-labelledby="track-title" hidden>
+            <div class="track-card" role="dialog" aria-modal="true" aria-labelledby="track-title"></div>
+        </section>
+
         <div class="dialog-backdrop" hidden>
             <div class="dialog glass" role="alertdialog" aria-modal="true" aria-labelledby="dialog-title"></div>
         </div>

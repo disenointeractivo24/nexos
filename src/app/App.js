@@ -11,11 +11,11 @@ import { GuideCharacter } from '../three/GuideCharacter.js'
 import { ItemStage } from '../three/ItemStage.js'
 import { Rain } from '../three/ThemeCues.js'
 import { Families } from '../three/Families.js'
-import { Depot, DEPOT_BOUNDS } from '../three/Depot.js'
+import { Depot, DEPOT_FRAME } from '../three/Depot.js'
 import { HOUSE_MODELS, ASSETS } from '../data/assets.js'
 import { ZONES, NEED_WORD, buildBarrio, zoneLevel, zoneNeeds, applyDonation, barrioCovered, useStock, refreshBarrioNeeds } from '../data/zones.js'
 import { CATEGORIES, SUPPLIES, money } from '../data/catalog.js'
-import { validateCredentials, pointForZone } from '../data/collectionPoints.js'
+import { validateCredentials, pointForZone, COLLECTION_POINTS } from '../data/collectionPoints.js'
 import { Labels, Bubble } from '../ui/Labels.js'
 import { ZoneCard, DonorPanel, InventoryPanel, isNarrow } from '../ui/panels.js'
 import { InventoryStore } from './inventoryStore.js'
@@ -27,8 +27,13 @@ import { stockState } from '../data/inventory.js'
 import { Progress, STEPS } from '../ui/Progress.js'
 import { icon, hydrateIcons } from '../ui/icons.js'
 import { Toast, Dialog } from '../ui/feedback.js'
-import { makeNeighbour } from '../three/neighbour.js'
+import { TrackView } from '../ui/track.js'
+import { ledger, localQueue } from './donations.js'
+import { setLite } from '../lite/detect.js'
+import { makeNeighbour, preloadNeighbours } from '../three/neighbour.js'
 import { session } from './session.js'
+
+const COLLECTION_POINTS_BY_ID = Object.fromEntries(COLLECTION_POINTS.map((p) => [p.id, p]))
 import { Audio } from './audio.js'
 
 /**
@@ -49,14 +54,18 @@ import { Audio } from './audio.js'
  * clouds while the person chooses a role, so there is no dead pause after it.
  */
 
-const CITY_VIEW = { pos: new THREE.Vector3(60, 232, 262), target: new THREE.Vector3(14, 0, 14) }
+// Cali runs long from north to south: seen a little more from above, and set off to the right of the guide
+const CITY_VIEW = { pos: new THREE.Vector3(-50, 340, 304), target: new THREE.Vector3(-30, 0, 30) }
+// the descent comes down from high above the city straight into CITY_VIEW, already looking
+// almost where it ends, so the camera never swings round on arrival
+const INTRO_START = new THREE.Vector3(CITY_VIEW.target.x + 4, 720, CITY_VIEW.target.z + 60)
 const INTRO_CURVE = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(8, 720, 70),
-    new THREE.Vector3(26, 520, 150),
-    new THREE.Vector3(46, 330, 210),
+    INTRO_START.clone(),
+    INTRO_START.clone().lerp(CITY_VIEW.pos, 0.45).setY(520),
+    INTRO_START.clone().lerp(CITY_VIEW.pos, 0.8).setY(400),
     CITY_VIEW.pos.clone(),
 ])
-const INTRO_TARGET_FROM = new THREE.Vector3(12, 0, -10)
+const INTRO_TARGET_FROM = CITY_VIEW.target.clone().add(new THREE.Vector3(0, 0, -24))
 /**
  * A collection point's view of its own zone: camera distance, in zone radii,
  * and how much steeper than the city view it looks down, so the towers of the
@@ -128,12 +137,19 @@ export class App {
         this.stage.afterRender = (dt, t) => this.items.render(dt, t)
         this.loader = new AssetLoader()
         this.labels = new Labels(this.$('.labels'), this.stage.camera)
+        // on a phone the zones are a list at the side instead of markers over the map; turning
+        // the phone (or resizing the window) across that width swaps one for the other
+        this.zoneList = this.$('.zone-list')
+        window.matchMedia('(max-width: 760px), (max-height: 560px) and (max-width: 1000px)').addEventListener('change', () => {
+            if (this.state === 'city') this.#showZoneLabels()
+        })
         this.dockBubble = new Bubble(this.$('.bubble-dock'))
-        this.worldBubble = new Bubble(this.$('.bubble-world'))
         this.progress = new Progress(this.$('.progress'))
 
         this.toast = new Toast(this.$('.toast'), { reducedMotion: this.reducedMotion })
         this.dialog = new Dialog(this.$('.dialog-backdrop'), { reducedMotion: this.reducedMotion })
+        // ¿Dónde está mi ayuda?: from the first screen, the end of a donation, or a donation's QR link
+        this.track = new TrackView(this.$('.track'), { reducedMotion: this.reducedMotion, audio: this.audio })
         const opts = { reducedMotion: this.reducedMotion, audio: this.audio, toast: this.toast, dialog: this.dialog }
         const panelEl = this.$('.supply-panel')
         this.zoneCard = new ZoneCard(this.$('.zone-card'), opts, {
@@ -146,6 +162,7 @@ export class App {
             onClose: () => this.closePoint(),
             onStep: (step) => this.#onDonorStep(step),
             onConfirm: (barrio, basket, record) => this.registerSupport(barrio, basket, record),
+            onTrack: (code) => this.track.show(code),
             onExitMap: () => this.returnToMap(),
             // whatever goes into the basket appears on the stand's counter
             onBasket: (basket) => this.hood?.setDisplay(basket),
@@ -166,6 +183,12 @@ export class App {
         session.stock = this.board
         this.board.on(() => this.#onStock())
         this.board.start()
+        // donations made offline go out as soon as the sheet answers again
+        this.board.on(() => ledger.flush())
+        ledger.flush()
+        // what is done on this device shows on the live map at once; the rest arrives with the sheet
+        ledger.on((e) => this.board.event({ ...e, id: `${e.kind}:${e.code}`, at: new Date().toISOString() }))
+        this.board.onEvent((e) => this.#live(e))
 
         this.state = 'boot'
         this.intro = { p: 0, target: 0, auto: false }
@@ -207,6 +230,9 @@ export class App {
         setTimeout(() => {
             this.setState('role')
             this.$('.role-donor').focus({ preventScroll: true })
+            // opened from a donation's QR or link: show where that donation is
+            const code = new URLSearchParams(location.search).get('aporte')
+            if (code) this.track.show(code)
         }, 80)
         this.world = this.#loadWorld().catch((err) => {
             console.error(err)
@@ -215,7 +241,12 @@ export class App {
     }
 
     setState(s) {
+        const was = this.state
         this.state = s
+        // the guide already stands in its corner on the opening screen, so the person meets it
+        // before the descent; it steps out while the camera comes down, and is back in the city
+        if (s === 'role' && this.portrait) this.#showGuideDock('', '')
+        else if (was === 'role') this.#hideGuideDock()
         this.audio.setScene(['barrio', 'walking', 'leaving', 'entering'].includes(s) ? 'barrio' : s === 'point' ? 'house' : ['role', 'login', 'boot', 'intro', 'exiting'].includes(s) ? 'intro' : 'city')
         this.ui.dataset.state = s
         this.ui.dataset.role = session.role ?? ''
@@ -241,9 +272,11 @@ export class App {
         this.#cityLighting()
         // the textured Torre de Cali and stadium, while the rest loads
         const landmarks = this.city.useLandmarkModels(this.loader)
+        // and the barrio's own houses across the city, in place of the drawn ones
+        const cityHouses = this.city.useHouseModels(this.loader)
 
+        // the barrio starts as soon as its own models are in, without waiting for the map's
         await assets
-        await landmarks
         this.hood = new NeighborhoodScene(this.loader, this.theme)
         // hidden from the start: the frame loop runs while it loads its models, and a visible
         // barrio would be updated before its guide exists
@@ -265,12 +298,19 @@ export class App {
         this.families = new Families({
             parent: this.hood.group,
             reducedMotion: this.reducedMotion,
-            makePerson: guideT.source === 'glb' ? (n) => makeNeighbour(this.loader, guideT, n) : null,
+            makePerson: guideT.source === 'glb' ? (n, age) => makeNeighbour(this.loader, guideT, n, age) : null,
         })
+        // the textured neighbours arrive in the background; until then the painted ones stand in
+        if (guideT.source === 'glb') preloadNeighbours(this.loader)
         this.portrait = new GuideCharacter(this.loader.instanceSync(guideT), guideT.animations, { reducedMotion: this.reducedMotion, face: true, lively: true })
         this.portrait.place(new THREE.Vector3(), 0.32)
         this.portrait.blob.visible = false
+        if (this.state === 'role') this.#showGuideDock('', '')
 
+        await landmarks
+        await cityHouses
+        // the textured landmarks and houses cast their own shadows
+        this.stage.invalidateShadows()
         // Compile shaders now (not on first view) to avoid hitches later
         await this.stage.renderer.compileAsync?.(this.stage.scene, this.stage.camera).catch(() => {})
         this.worldReady = true
@@ -283,11 +323,16 @@ export class App {
 
     #cityLighting() {
         this.stage.setShadowFrame(new THREE.Vector3(20, 0, 0), 175, { mapSize: 2048, normalBias: 0.8 })
-        this.stage.setFog(380, 1500)
+        // nothing moves in the city: its shadows are drawn once and kept
+        this.stage.setShadowsLive(false)
+        this.stage.setClip(2.5, 6000)
+        this.stage.setFog(420, 3400)
     }
 
     #barrioLighting() {
         this.stage.setShadowFrame(new THREE.Vector3(0, 0, -10), 38, { mapSize: 2048, normalBias: 0.05 })
+        this.stage.setShadowsLive(true)
+        this.stage.setClip(0.5, 2000)
         this.stage.setFog(70, 260)
         this.stage.setInk(INK.barrio[0], INK.barrio[1])
     }
@@ -335,7 +380,6 @@ export class App {
 
         const { w, h } = this.stage.size
         this.labels.project(w, h, this.#chromeRects())
-        this.#placeWorldBubble(w, h)
     }
 
     /* ================================================================
@@ -387,7 +431,7 @@ export class App {
         session.point = point
         // the board is live from this moment: the sheet is read while the camera descends
         this.inventory?.stop()
-        this.inventory = new InventoryStore({ pointId: point.id })
+        this.inventory = new InventoryStore({ pointId: point.id, localQueue })
         this.inventory.start()
         form.querySelectorAll('input').forEach((i) => i.removeAttribute('aria-invalid'))
         gsap.to(form, {
@@ -420,17 +464,26 @@ export class App {
 
     #introStep(dt) {
         const it = this.intro
-        // Hold softly inside the clouds until the city is ready — never a frozen frame
-        const limit = this.worldReady ? 1 : 0.3
+        // One continuous move from the clouds to the city, however long the loading takes: while
+        // the city is still being built the camera keeps coming down through the clouds (they hide
+        // it), and while the barrio and the guide load behind, it carries on towards the final view.
+        // The pace follows the loading — slower while there is more to come — and changes gently,
+        // so the descent stretches over the wait instead of stopping and starting again
+        const built = !!this.city?.ready
+        const limit = this.worldReady ? 1 : built ? 0.985 : 0.55
         const target = Math.min(it.target, limit)
-        const rate = this.reducedMotion ? 10 : it.auto ? 1.7 : 2.6
+        const pace = this.worldReady ? 1 : built ? 0.45 : 0.3
+        it.pace = (it.pace ?? pace) + (pace - (it.pace ?? pace)) * (1 - Math.exp(-dt * 1.5))
+        const rate = this.reducedMotion ? 10 : (it.auto ? 1.7 : 2.6) * it.pace
         it.p += (target - it.p) * (1 - Math.exp(-dt * rate))
         const e = it.p * it.p * (3 - 2 * it.p)
         INTRO_CURVE.points[3].copy(this.#cityFrame().pos)
         this.rig.pos.copy(INTRO_CURVE.getPoint(e))
         this.rig.target.lerpVectors(INTRO_TARGET_FROM, CITY_VIEW.target, e)
         this.rig.apply()
-        this.$('.descent-caption').classList.toggle('is-waiting', !this.worldReady && it.p > 0.25)
+        // the clouds open as the camera comes down through them: clear well before the end
+        if (built) this.cloudPresence = Math.min(this.cloudPresence, 1 - THREE.MathUtils.smoothstep(it.p, 0.3, 0.8))
+        this.$('.descent-caption').classList.toggle('is-waiting', !this.worldReady && it.p > 0.9)
         this.$('.skip-intro').hidden = false
         this.$('.skip-intro').classList.toggle('is-ready', this.worldReady && it.p > 0.12)
         if (it.target >= 1 && this.worldReady && it.p > 0.992) this.enterCity()
@@ -483,11 +536,8 @@ export class App {
         const bubble = missing.length
             ? `<span class="need-bubble" aria-hidden="true">${missing
                   .map(
-                      ([cat, lvl]) => `
-                <span class="need-chip" style="background:${CATEGORIES[cat].color}">
-                    ${icon(CATEGORIES[cat].icon)}
-                    <span class="need-alert ${lvl === 'alta' ? 'is-high' : ''}">!</span>
-                </span>`
+                      ([cat]) => `
+                <span class="need-chip" style="background:${CATEGORIES[cat].tint};color:${CATEGORIES[cat].color}">${icon(CATEGORIES[cat].icon)}</span>`
                   )
                   .join('')}</span>`
             : ''
@@ -498,6 +548,58 @@ export class App {
                 <span class="wlabel-dot ${urgent ? 'is-urgent' : high ? 'is-high' : ''}"></span>
             </span>
             ${bubble}`
+    }
+
+    /**
+     * The zones as a list down the side of a phone screen, under the steps: each with its house
+     * in its own colour, the urgency dot, its name and how much it needs. Touching one picks it,
+     * as its marker would; pressing on one lights its outline on the map.
+     */
+    #showZoneList(own = null) {
+        const list = this.zoneList
+        list.innerHTML = ZONES.map((zone) => `
+            <button type="button" class="zone-item glass${own && zone.id !== own ? ' is-dim' : ''}" data-zone="${zone.id}" aria-label="${this.#zoneAria(zone)}">${this.#zoneItemHtml(zone)}</button>`).join('')
+        hydrateIcons(list)
+        for (const b of list.querySelectorAll('.zone-item')) {
+            const id = b.dataset.zone
+            b.addEventListener('click', () => this.selectZone(id))
+            b.addEventListener('pointerenter', () => this.city?.setHover(id))
+            b.addEventListener('pointerleave', () => this.city?.setHover(null))
+        }
+        // under the steps: measured where they come to rest (they may still be fading and rising in)
+        const steps = this.$('.progress')
+        const stepsBottom = steps && !steps.hidden && steps.getClientRects().length ? steps.offsetTop + steps.offsetHeight : 0
+        list.style.top = `${Math.max(this.#chromeBottom(), stepsBottom) + 10}px`
+        list.classList.add('is-on')
+        if (this.state === 'city') this.#frameForPanel(null)
+    }
+
+    #zoneItemHtml(zone) {
+        const level = zoneLevel(zone, this.theme)
+        const urgent = session.zoneHasUrgent(zone.id)
+        const high = level === 'alta' || urgent
+        return `
+            <span class="wlabel-icon" style="background:${zone.color}">
+                ${icon('home')}
+                <span class="wlabel-dot ${urgent ? 'is-urgent' : high ? 'is-high' : ''}"></span>
+            </span>
+            <span class="zone-item-text">
+                <strong>${zone.name.replace(/^Zona /, '')}</strong>
+                <span>${NEED_WORD[level]}</span>
+            </span>`
+    }
+
+    /** The zones' markers (or the phone's list) say again what each zone needs. */
+    #refreshZones() {
+        for (const z of ZONES) this.labels.update(`zone:${z.id}`, this.#zoneLabelHtml(z), this.#zoneAria(z))
+        if (!this.zoneList.classList.contains('is-on')) return
+        for (const z of ZONES) {
+            const b = this.zoneList.querySelector(`[data-zone="${z.id}"]`)
+            if (!b) continue
+            b.innerHTML = this.#zoneItemHtml(z)
+            b.setAttribute('aria-label', this.#zoneAria(z))
+            hydrateIcons(b)
+        }
     }
 
     /** The categories a zone is short of, most pressing first (at most three). */
@@ -513,6 +615,12 @@ export class App {
     #showZoneLabels() {
         this.labels.clear()
         const own = session.role === 'collector' ? session.point?.zone : null
+        // a phone screen is too small for a marker over each zone: they hide the city
+        if (isNarrow()) return this.#showZoneList(own)
+        if (this.zoneList.classList.contains('is-on')) {
+            this.zoneList.classList.remove('is-on')
+            if (this.state === 'city') this.#frameForPanel(null)
+        }
         ZONES.forEach((zone, i) => {
             const el = this.labels.add(`zone:${zone.id}`, {
                 className: 'is-compact has-needs',
@@ -563,7 +671,8 @@ export class App {
         this.#flyCity(view.pos, view.target, 1.4)
         this.#frameForPanel(this.zoneCard, 420)
 
-        this.dockBubble.say('Esta zona necesita apoyo.', 'Puedes entrar al barrio para ver las casas.')
+        // the card says what the zone needs; the guide only says what to do next
+        this.dockBubble.say('', 'Entra al barrio para ver dónde llega tu ayuda.')
         if (isNarrow()) this.$('.guide-dock').hidden = true
         requestAnimationFrame(() => this.zoneCard.focusPrimary())
 
@@ -643,6 +752,8 @@ export class App {
         this.depotSync = store.on(() => this.depot.sync(store))
         this.depot.group.visible = true
         this.stage.setShadowFrame(new THREE.Vector3(0, 1.5, -0.6), 11, { mapSize: 2048, normalBias: 0.05 })
+        this.stage.setShadowsLive(true)
+        this.stage.setClip(0.5, 800)
         this.stage.setFog(40, 160)
         this.stage.setInk(INK.barrio[0], INK.barrio[1])
     }
@@ -655,8 +766,8 @@ export class App {
 
     /**
      * Frame the stand straight from the front, in the band the board leaves
-     * free between the top bar and itself: as close as it can be while the
-     * whole stand still fits, and centred in that band.
+     * free between the top bar and itself: as close as it can be while its
+     * shelves and banner still fit (DEPOT_FRAME), and centred in that band.
      */
     #frameDepot() {
         const cam = this.stage.camera
@@ -667,9 +778,9 @@ export class App {
         const panelTop = this.inventoryPanel.el.offsetTop || h * 0.6
         const free = Math.max(140, panelTop - top - 8)
         const tan = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2)
-        const height = DEPOT_BOUNDS.top - DEPOT_BOUNDS.bottom
+        const height = DEPOT_FRAME.top - DEPOT_FRAME.bottom
         const byHeight = (height * h) / (2 * tan * free)
-        const byWidth = (DEPOT_BOUNDS.width * h) / (2 * tan * w * 0.96)
+        const byWidth = (DEPOT_FRAME.width * h) / (2 * tan * w * 0.96)
         const dist = Math.max(byHeight, byWidth) * 1.04
         const look = this.depot.center
         this.rig.set(new THREE.Vector3(look.x, look.y, look.z + dist), look)
@@ -790,14 +901,22 @@ export class App {
 
     #cityFrame() {
         const a = this.stage.size.w / this.stage.size.h
-        const k = Math.min(1.3, Math.max(1, 0.85 / a))
+        // a phone also keeps the zone list down the left side: a little farther back, so the whole
+        // city still fits in what is left beside it
+        const k = Math.min(isNarrow() ? 1.55 : 1.3, Math.max(1, 0.85 / a))
         const dir = CITY_VIEW.pos.clone().sub(CITY_VIEW.target)
         return { pos: CITY_VIEW.target.clone().addScaledVector(dir, k), zoneK: Math.min(1.8, Math.max(1, 1.15 / a)) }
     }
 
+    /** With the phone's zone list down the left side, the city sits in what is left on the right. */
+    #restOffsetX() {
+        if (!isNarrow() || !this.zoneList.classList.contains('is-on')) return 0
+        return -(this.zoneList.getBoundingClientRect().right || 170) * 0.12
+    }
+
     #frameForPanel(panel, fallbackW = 640) {
         const vo = this.stage.viewOffset
-        let x = 0, y = 0
+        let x = panel ? 0 : this.#restOffsetX(), y = 0
         if (panel) {
             if (isNarrow()) {
                 // centre the scene in the band left between the top of the screen and the sheet
@@ -1066,7 +1185,7 @@ export class App {
         const { points } = this.hood.route(this.currentNode, 'acopio')
         points[0] = this.guide.position.clone().setY(0)
         const around = (stand.asidePath ?? [stand.aside]).map((p) => p.clone())
-        const way = this.hood.smoothPath([...points, ...around])
+        const way = this.hood.findPath(points[0], stand.aside) ?? this.hood.smoothPath([...points, ...around])
         // the camera closes in on the stand as the guide walks to it, arriving together,
         // so the barrio and the counter read as one continuous place
         const arrived = this.guide.walk(way)
@@ -1113,17 +1232,9 @@ export class App {
         else this.say('', 'Puedes dejar más suministros cuando quieras.')
     }
 
-    #onDonorStep(step) {
+    #onDonorStep() {
         this.#syncProgress()
-        const lines = {
-            supplies: ['', 'Elige qué dejar en el punto de acopio.'],
-            method: ['', 'Elige cómo quieres aportar.'],
-            details: ['', 'Necesitamos pocos datos para coordinar.'],
-            summary: ['Revisa el resumen.', 'Si todo está bien, confirma.'],
-            payment: ['', 'Elige un medio de pago.'],
-            done: ['Las familias salieron a recoger.', 'Puedes seguir apoyando cuando quieras.'],
-        }
-        if (lines[step]) this.say(...lines[step])
+        // the panel itself says what each step asks; the guide does not repeat it
         requestAnimationFrame(() => this.#frameForPanel(this.panel))
     }
 
@@ -1134,9 +1245,18 @@ export class App {
     registerSupport(barrio, basket, record) {
         // the panel plays the completion sound as it moves to its last step
         const served = applyDonation(barrio, basket)
-        // the donation goes onto the point's shelves and into the sheet, so the point's board,
-        // the sheet and the next donor all count it
-        this.board.donate(pointForZone(barrio.zone.id).id, basket)
+        // The donation is recorded in the sheet, where it can be followed by its code. In money,
+        // the team buys the supplies and they count in the point's stock at once (shown here
+        // straight away; the sheet adds them itself). Brought in person, they count only when the
+        // point receives them and scans the donation's QR.
+        const pointId = pointForZone(barrio.zone.id).id
+        if (record.mode === 'money') this.board.donate(pointId, basket, { push: false })
+        ledger.donate({ ...record, point: pointId }).then((out) => {
+            if (out.rows) this.board.applyRows(pointId, out.rows)
+            // a sheet with the previous script: the donation goes into the stock straight away, as before
+            if (out.unsupported) record.mode === 'money' ? this.board.resend(pointId, basket.keys()) : this.board.donate(pointId, basket)
+            else if (!out.ok) console.warn('[NEXOS] La hoja no registró el aporte:', out.error)
+        })
         session.donations.push(record)
         // what was left stays on the counter, and the families come in line to take their share of it
         this.hood.commitDisplay()
@@ -1151,6 +1271,30 @@ export class App {
     }
 
     /**
+     * Live map: a donation or a transfer just happened somewhere. On the map of Cali it pulses
+     * over its zone and a short line says what it was; elsewhere it passes quietly.
+     */
+    #live(e) {
+        const onMap = ['city', 'zone'].includes(this.state)
+        if (onMap) this.city?.pulse(e)
+        const zone = (pointId) => ZONES.find((z) => z.id === COLLECTION_POINTS_BY_ID[pointId]?.zone)?.name ?? ''
+        const text = {
+            aporte: `Nuevo aporte agendado · ${zone(e.point)}`,
+            recibido: `Llegó un aporte al punto · ${zone(e.point)}`,
+            entregado: `Las familias recogieron un aporte · ${zone(e.point)}`,
+            traslado: `Traslado en camino · ${zone(e.point)} → ${zone(e.to)}`,
+            'traslado-recibido': `Traslado recibido · ${zone(e.point)}`,
+        }[e.kind]
+        const note = this.$('.live-note')
+        if (!note || !text || !onMap) return
+        note.querySelector('.live-text').textContent = text
+        note.hidden = false
+        gsap.killTweensOf(note)
+        gsap.fromTo(note, { opacity: 0, y: -6 }, { opacity: 1, y: 0, duration: this.reducedMotion ? 0.01 : 0.35 })
+        gsap.to(note, { opacity: 0, duration: 0.5, delay: 4.5, onComplete: () => (note.hidden = true) })
+    }
+
+    /**
      * Shortages are no longer flagged by hand: whatever the board shows below its
      * critical line is what donors see first in this zone. The point's own board
      * is mirrored at once; the sheet carries it to every other device.
@@ -1161,9 +1305,7 @@ export class App {
 
     /** The stock of some point moved (the sheet, a point's board, a donation): what donors read follows. */
     #onStock() {
-        if (['city', 'zone'].includes(this.state)) {
-            for (const z of ZONES) this.labels.update(`zone:${z.id}`, this.#zoneLabelHtml(z), this.#zoneAria(z))
-        }
+        if (['city', 'zone'].includes(this.state)) this.#refreshZones()
         if (this.state === 'zone' && this.zone && this.zoneCard.open) this.zoneCard.render(this.zone)
         if (this.barrio) refreshBarrioNeeds(this.barrio)
         if (this.state === 'point' && session.role === 'donor') this.donorPanel.refreshNeeds()
@@ -1183,7 +1325,6 @@ export class App {
         this.hood.setFocusMode(false)
         this.hood.setSelected(false)
         this.labels.clear()
-        this.worldBubble.hide()
         this.#hideBack()
         this.#frameForPanel(null)
 
@@ -1213,7 +1354,8 @@ export class App {
         this.city.setSelected(null)
         this.#cityLighting()
         this.stage.setInk(INK.city[0], INK.city[1])
-        this.stage.viewOffset.x = this.stage.viewOffset.y = 0
+        this.stage.viewOffset.x = this.#restOffsetX()
+        this.stage.viewOffset.y = 0
         this.stage.applyViewOffset()
         this.#setContext('map', 'Mapa de ayuda', 'Cali, Valle del Cauca')
     }
@@ -1232,7 +1374,6 @@ export class App {
         if (this.panel.open) this.panel.close()
         this.zoneCard.open && this.zoneCard.hide()
         this.labels.clear()
-        this.worldBubble.hide()
         this.#hideGuideDock()
         this.#hideBack()
         this.#frameForPanel(null)
@@ -1314,8 +1455,14 @@ export class App {
        Shared UI
        ================================================================ */
 
+    /**
+     * The guide speaks from its corner (its portrait over the navy triangle) wherever the person
+     * is: one voice, in one place. At the counter the panel already says each step, so the guide
+     * keeps quiet there instead of repeating it.
+     */
     say(lead, action) {
-        this.worldBubble.say(lead, action)
+        if (this.state === 'point') return this.#hideGuideDock()
+        this.#showGuideDock(lead, action)
     }
 
     #caption(text) {
@@ -1345,54 +1492,11 @@ export class App {
     }
 
     #syncChrome() {
-        const chip = this.$('.role-chip')
-        if (session.role === 'collector') chip.innerHTML = `${icon('box')}<span>Punto de acopio</span>`
-        else if (session.role === 'donor') chip.innerHTML = `${icon('heart')}<span>Donante</span>`
-        else chip.innerHTML = ''
+        // the role needs no label of its own: the steps and the place say it, and leaving says it again
         const exit = this.$('.js-exit')
         const label = session.role === 'collector' ? 'Cerrar sesión' : 'Salir'
         exit.setAttribute('aria-label', label)
         exit.title = label
-    }
-
-    #placeWorldBubble(w, h) {
-        const el = this.$('.bubble-world')
-        if (el.hidden) return
-        const panelOpen = this.panel.open
-        // the supply panel sits on the left; nothing is placed underneath it
-        const panelRight = panelOpen && !isNarrow() ? this.panel.el.getBoundingClientRect().right + 16 : 24
-        if (!this.guide?.root.visible) {
-            // collection points have no character on screen, so the line is simply docked
-            el.classList.remove('is-left')
-            el.style.maxWidth = `${Math.min(420, w - panelRight - 24)}px`
-            el.style.transform = `translate3d(${panelRight}px, ${h - el.offsetHeight - 24}px, 0)`
-            return
-        }
-        if (isNarrow()) {
-            const top = panelOpen ? (this.$('.progress').getBoundingClientRect().bottom || this.$('.topbar').getBoundingClientRect().bottom || 80) + 10 : h - el.offsetHeight - 16
-            el.classList.remove('is-left')
-            el.style.transform = `translate3d(12px, ${top}px, 0)`
-            el.style.maxWidth = `${w - 24}px`
-            return
-        }
-        el.style.maxWidth = ''
-        const p = this._bub ?? (this._bub = new THREE.Vector3())
-        p.copy(this.guide.position).setY(this.guide.position.y + 2.2).project(this.stage.camera)
-        const x = (p.x * 0.5 + 0.5) * w
-        const y = (-p.y * 0.5 + 0.5) * h
-        const bw = el.offsetWidth
-        const bh = el.offsetHeight
-        let left = x + 46
-        let isLeft = false
-        if (left + bw > w - 24 && x - 46 - bw >= panelRight) {
-            left = x - 46 - bw
-            isLeft = true
-        }
-        left = Math.max(panelRight, Math.min(left, w - bw - 24))
-        const minTop = (this.$('.progress').getBoundingClientRect().bottom || 120) + 12
-        const top = Math.min(Math.max(minTop, y - bh + 24), h - bh - 24)
-        el.classList.toggle('is-left', isLeft)
-        el.style.transform = `translate3d(${left.toFixed(1)}px, ${top.toFixed(1)}px, 0)`
     }
 
     #chromeRects() {
@@ -1610,6 +1714,8 @@ export class App {
         )
 
         this.ui.querySelectorAll('.role-btn').forEach((b) => b.addEventListener('click', () => this.chooseRole(b.dataset.role)))
+        this.ui.querySelector('.js-track')?.addEventListener('click', () => this.track.show())
+        this.ui.querySelector('.js-lite')?.addEventListener('click', () => setLite(true))
         this.$('.login-card').addEventListener('submit', (e) => this.#submitLogin(e))
         this.$('.js-login-back').addEventListener('click', () => this.#loginBack())
         this.$('.back-btn').addEventListener('click', () => this.back())
@@ -1659,7 +1765,7 @@ export class App {
         // Alerts made by a collection point show up live on the map
         session.on((type) => {
             if (type !== 'alerts' || !['city', 'zone'].includes(this.state)) return
-            for (const z of ZONES) this.labels.update(`zone:${z.id}`, this.#zoneLabelHtml(z), this.#zoneAria(z))
+            this.#refreshZones()
         })
     }
 }

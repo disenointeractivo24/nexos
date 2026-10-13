@@ -36,6 +36,16 @@ const stylized = { ao: 0.28, aoHeight: 3.2, rim: 0.1 } // keeps the textures; ad
 
 export const ASSETS = {
     /* ---------------- characters ---------------- */
+    /*
+     * The neighbours, textured in Substance on the guide's own body (tools/exportar_npcs_texturas.py):
+     * every young one (adult, teenager, child) has the teenager's hairstyle; the child wears shorts.
+     * Two sets of clothes for the young ones, alternated; the app sets each age's size.
+     */
+    'npc-joven-1': { id: 'npc-joven-1', category: 'characters', label: 'Vecino', model: '/assets/characters/npc-joven-1.glb', procedural: null, scale: 1.6 / 4 },
+    'npc-joven-2': { id: 'npc-joven-2', category: 'characters', label: 'Vecino', model: '/assets/characters/npc-joven-2.glb', procedural: null, scale: 1.6 / 4 },
+    'npc-nino-1': { id: 'npc-nino-1', category: 'characters', label: 'Niño', model: '/assets/characters/npc-nino-1.glb', procedural: null, scale: 1.6 / 4 },
+    'npc-nino-2': { id: 'npc-nino-2', category: 'characters', label: 'Niño', model: '/assets/characters/npc-nino-2.glb', procedural: null, scale: 1.6 / 4 },
+    'npc-mayor': { id: 'npc-mayor', category: 'characters', label: 'Vecino mayor', model: '/assets/characters/npc-mayor.glb', procedural: null, scale: 1.6 / 4 },
     guide: {
         id: 'guide',
         category: 'characters',
@@ -161,6 +171,7 @@ export const ASSETS = {
      * tools/exportar_props.py). The landmarks are sized to the city map; the collection
      * point is the stand donors walk to and the one a point works from.
      */
+    ermita: { id: 'ermita', category: 'landmarks', label: 'La Ermita', model: '/assets/buildings/ermita.glb', procedural: null, front: '+x', fit: { height: 15.5 }, stylize: { ao: 0.15, aoHeight: 2, rim: 0.1 } },
     'torre-de-cali': { id: 'torre-de-cali', category: 'landmarks', label: 'Torre de Cali', model: '/assets/buildings/torre-de-cali.glb', procedural: null, fit: { height: 42 }, stylize: { ao: 0.15, aoHeight: 4, rim: 0.1 } },
     estadio: { id: 'estadio', category: 'landmarks', label: 'Estadio Pascual Guerrero', model: '/assets/buildings/estadio.glb', procedural: null, fit: { size: 36 }, stylize: { ao: 0.2, aoHeight: 1, rim: 0.1 } },
     'collection-point': { id: 'collection-point', category: 'buildings', label: 'Punto de acopio', model: '/assets/buildings/punto-de-acopio.glb', procedural: null, front: '+x', stylize: { ao: 0.25, aoHeight: 1.6, rim: 0.1 } },
@@ -177,6 +188,15 @@ export const ASSETS = {
 }
 
 export const HOUSE_MODELS = ['house-tile', 'house-two-story', 'house-zinc', 'house-estrato2', 'house-estrato3', 'house-estrato4', 'house-estrato5']
+
+/*
+ * The same houses for the map of Cali: lighter copies (tools/casas_mapa.py) of each barrio
+ * house, so the city and the barrios share one look. Same façade, same stray parts dropped.
+ */
+for (const id of HOUSE_MODELS) {
+    const def = ASSETS[id]
+    ASSETS[`map-${id}`] = { ...def, id: `map-${id}`, model: def.model.replace('/houses/', '/houses/mapa/') }
+}
 
 export function getAsset(id) {
     const def = ASSETS[id]

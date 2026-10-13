@@ -8,11 +8,22 @@ import { shaderTime } from './stylize.js'
  * Renderer, scene, camera, lights, sky and the frame loop.
  * One renderer; the city and the neighborhood are groups toggled in/out.
  */
+/**
+ * Phones: a touch screen of phone size draws fewer pixels (the difference does not show at
+ * that size) and smaller shadow maps, which keeps the frame rate up and the phone cool.
+ */
+export const PHONE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 820
+
 export class Stage {
     constructor(canvas) {
         this.canvas = canvas
-        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75))
+        // no antialiasing on the canvas itself: the scene is drawn into a multisampled target
+        // (see #post) and only a flat picture reaches the screen, so it would be paid for twice
+        this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' })
+        // the sharpest this screen gets; a computer that cannot keep up draws a little less (see #adapt)
+        this.basePixelRatio = Math.min(window.devicePixelRatio, 1.5)
+        this.quality = { scale: 1, min: 0.6, time: 0, frames: 0, good: 0, warm: 3 }
+        this.renderer.setPixelRatio(this.basePixelRatio)
         this.renderer.outputColorSpace = THREE.SRGBColorSpace
         this.renderer.toneMapping = THREE.NeutralToneMapping
         this.renderer.toneMappingExposure = 1.04
@@ -23,7 +34,8 @@ export class Stage {
         this.scene = new THREE.Scene()
         this.scene.fog = new THREE.Fog(WORLD.fog, 300, 1400)
 
-        this.camera = new THREE.PerspectiveCamera(38, 1, 0.5, 3000)
+        // far enough to see the ground out to the horizon (it reaches 4 km from the city)
+        this.camera = new THREE.PerspectiveCamera(38, 1, 0.5, 6000)
         this.scene.add(this.camera)
 
         // Soft reflections for glossy materials (very low intensity)
@@ -122,8 +134,24 @@ export class Stage {
         }
     }
 
+    /**
+     * Shadows: redrawn every frame where things move (the barrio, the stand), and only when
+     * asked where nothing does — the city's shadow map is drawn once and kept, which spares
+     * a whole second pass over it in every frame.
+     */
+    setShadowsLive(live) {
+        this.renderer.shadowMap.autoUpdate = live
+        this.renderer.shadowMap.needsUpdate = true
+    }
+
+    /** Redraw the kept shadows once (something that casts them came or went). */
+    invalidateShadows() {
+        this.renderer.shadowMap.needsUpdate = true
+    }
+
     /** Fit the sun's shadow camera around an area (city or neighborhood). */
     setShadowFrame(center, radius, { mapSize = 2048, normalBias } = {}) {
+        if (PHONE) mapSize = Math.min(mapSize, 1024)
         const s = this.sun
         s.target.position.copy(center)
         s.position.copy(center).addScaledVector(this.sunDir, radius * 3)
@@ -135,12 +163,29 @@ export class Stage {
         cam.near = 0.5
         cam.far = radius * 7
         cam.updateProjectionMatrix()
+        this.renderer.shadowMap.needsUpdate = true
         if (normalBias !== undefined) s.shadow.normalBias = normalBias
         if (s.shadow.mapSize.x !== mapSize) {
             s.shadow.mapSize.set(mapSize, mapSize)
             s.shadow.map?.dispose()
             s.shadow.map = null
         }
+    }
+
+    /**
+     * How near and how far the camera sees. Depth precision is spread over the ratio between the
+     * two, so each place asks for what it needs: the city, seen from high up out to the horizon,
+     * starts a few metres out (or its stacked roads and the stadium's pitch flicker against the
+     * ground); the barrio and the stand, seen from close, start right in front of the lens.
+     */
+    setClip(near, far) {
+        const c = this.camera
+        if (c.near === near && c.far === far) return
+        c.near = near
+        c.far = far
+        c.updateProjectionMatrix()
+        this.postUniforms.uNear.value = near
+        this.postUniforms.uFar.value = far
     }
 
     /** The fog of the current place (city or barrio); the weather brings it closer (see #frame). */
@@ -386,8 +431,41 @@ export class Stage {
         this.camera.updateProjectionMatrix()
     }
 
+    /**
+     * Every screen gets the same picture. If this computer takes too long over its frames
+     * (under some 28 a second, over a couple of seconds), it draws them with fewer pixels — a
+     * step at a time, down to 60 % — and goes back up once it has room to spare. A browser that
+     * holds the page to 30 frames on purpose (a battery saver, Opera GX's limiter) is left alone.
+     */
+    #adapt(raw) {
+        const q = this.quality
+        // the first seconds (loading, compiling) and a hidden tab say nothing about the machine
+        if (q.warm > 0) return void (q.warm -= raw)
+        if (raw > 0.25) return
+        q.time += raw
+        q.frames++
+        if (q.time < 2) return
+        const avg = q.time / q.frames
+        q.time = q.frames = 0
+        let scale = q.scale
+        if (avg > 1 / 28 && scale > q.min) {
+            scale = Math.max(q.min, scale * 0.85)
+            q.good = 0
+        } else if (avg < 1 / 57 && scale < 1 && ++q.good >= 3) {
+            scale = Math.min(1, scale * 1.1)
+            q.good = 0
+        }
+        if (scale === q.scale) return
+        q.scale = scale
+        this.renderer.setPixelRatio(this.basePixelRatio * scale)
+        this.size = { w: 0, h: 0 }
+        this.resize()
+    }
+
     #frame() {
-        const dt = Math.min(this.clock.getDelta(), 1 / 20)
+        const raw = this.clock.getDelta()
+        this.#adapt(raw)
+        const dt = Math.min(raw, 1 / 20)
         const t = this.clock.elapsedTime
         gsap.updateRoot(t + this.gsapOffset)
         shaderTime.value = t

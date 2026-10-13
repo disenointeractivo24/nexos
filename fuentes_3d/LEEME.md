@@ -115,3 +115,106 @@ texturas). Se exportan con el mismo script de los props, hacia `static/assets/bu
 - `punto-de-acopio.glb` es el puesto del barrio (lo que el donante deja va sobre su
   escritorio) y el de la vista del punto de acopio (`setStand` en `src/three/Depot.js`,
   donde su escritorio, estantería y cajas se ocultan para mostrar el inventario en vivo).
+
+## Vecinos (NPC)
+
+`npcs/` tiene los modelos de los vecinos para texturizar, uno por edad:
+`npc_adulto.fbx`, `npc_adolescente.fbx`, `npc_nino.fbx` y `npc_mayor.fbx`, cada uno
+con una vista previa `.png`.
+
+Todos son el cuerpo del guía, con su misma geometría y su mismo rig (`body`, `head`,
+`armL`, `armR`, `legL` y `legR`), sin casco ni maletín. Lo añadido va en piezas
+aparte, cada una colgada de su articulación:
+
+- ropa: camiseta (torso y mangas), pantalón (cadera y perneras) y zapatos. Son capas
+  de tela que siguen la forma del cuerpo, con corte recto y grosor. La piel queda
+  debajo;
+- pelo: una sola malla limpia en quads, con sus propias UV;
+- orejas.
+
+Hay cinco materiales, que en Substance son cinco conjuntos de textura: `Piel`,
+`Camiseta`, `Pantalon`, `Zapatos` y `Pelo`.
+
+| Edad | Tamaño | Ropa | Pelo |
+|---|---|---|---|
+| adulto | 100 % | manga corta, pantalón largo | corto con flequillo |
+| adolescente | 87 % | manga corta, pantalón largo | flequillo largo con copete |
+| niño | 62 %, cabeza un poco más grande | manga corta, pantaloneta | corte de tazón |
+| mayor | 100 % | manga larga, pantalón largo | canoso, calvo arriba; el pelo rodea la nuca |
+
+La postura encorvada y el paso lento de los mayores los pone la aplicación, no el
+modelo. La aplicación ya viste a los vecinos con estos mismos cortes, pintados con
+colores. Cuando estén las texturas, se cambian por estos modelos.
+
+Para regenerarlos después de cambiar el guía, desde `starter/`:
+
+```
+"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python tools/exportar_npcs.py -- static/assets/characters/guia.glb fuentes_3d/npcs
+```
+
+## Modelos livianos para el celular
+
+`tools/optimizar_glb.py` cambia a JPEG las texturas PNG que vienen dentro de un `.glb`
+(las que no usan transparencia). La geometría y los materiales no se tocan: solo las
+imágenes. Las casas «dos pisos», «techo ondulado» y «teja» pasaron de 4–6 MB a ~1 MB cada
+una sin diferencia visible. Conviene correrlo cada vez que se exporte un modelo nuevo con
+texturas PNG. Desde `starter/`:
+
+```
+"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python tools/optimizar_glb.py -- static/assets/houses/casa-teja.glb
+```
+
+### Forma de la ciudad
+
+`mapa_cali/Zonificacion-SITM-MIO.svg` es el mapa de zonas del MIO. Sus contornos están copiados en
+`src/data/caliMap.js` (cada zona del MIO con la zona de la aplicación a la que pertenece: norte =
+Menga y Calima, centro = Centro y Prado, oriente = Aguablanca y Ciudad Córdoba, sur = Valle del Lilí
+y Guadalupe, oeste = Cañaveralejo). El mapa de la aplicación los dibuja en una cuadrícula y suaviza
+los bordes, así que la ciudad tiene la forma de Cali sin copiarla al detalle. Si cambia el SVG, hay
+que volver a copiar los contornos de cada `<path>` en ese archivo.
+
+### Vías de la ciudad
+
+`mapa_cali/Map_of_Cali.svg` es un mapa de OpenStreetMap con las vías de Cali y Yumbo.
+`tools/vias_cali.mjs` lo superpone al mapa del MIO, deja una sola línea por corredor (las
+calzadas de una avenida van juntas), separa las calles al menos media cuadra y escribe
+`src/data/caliRoads.js`: las avenidas (vías troncales y primarias) y las calles principales
+(secundarias y terciarias). Entre ellas, cada zona arma sus manzanas con su propia orientación,
+como corren las calles de Cali allí (`ZONE_GRID` en `src/three/CityOverview.js`). Desde `starter/`:
+
+```
+node tools/vias_cali.mjs fuentes_3d/mapa_cali/Map_of_Cali.svg src/data/caliRoads.js
+```
+
+### Casas del mapa de Cali
+
+El mapa de Cali usa las mismas casas de los barrios, en una versión liviana: cerca de mil casas
+vistas desde arriba no necesitan cada detalle. `tools/casas_mapa.py` toma cada casa de
+`static/assets/houses/`, le deja unos 450 triángulos (mismo contorno y mismas texturas, a 256 px)
+y la escribe en `static/assets/houses/mapa/`. Cada zona usa las casas que le van: las sencillas
+en el oriente y las más grandes en el norte y el oeste (`MAP_HOUSES` en `src/three/CityOverview.js`).
+Cada vez que cambie una casa del barrio hay que volver a correrlo, desde `starter/`:
+
+```
+"C:Program FilesBlender FoundationBlender 5.0lender.exe" -b --factory-startup --python tools/casas_mapa.py -- static/assets/houses static/assets/houses/mapa
+```
+
+### Texturas de los vecinos
+
+Las texturas pintadas en Substance van en `npcs/Textures/`, una carpeta por juego:
+`NPC1`, `NPC2`… (ropa para los jóvenes), `Niño` (solo el pantalón: la pantaloneta del niño)
+y `Abuelo` (el mayor). Se pintaron sobre `npcs/npc1.glb` (el joven) y `npcs/abuelo.glb` (el
+mayor), que son los mismos modelos con UV propias; los `.fbx` solo le dicen al script a qué
+articulación va cada pieza. El adulto, el adolescente y el niño usan el mismo peinado; el niño
+lleva la pantaloneta de `npc_nino.fbx` y, debajo, las piernas en el tono de la piel (esa parte
+de la textura quedó sin pintar, porque iba bajo el pantalón largo). Cada carpeta
+`NPC<n>` da dos modelos (`npc-joven-<n>` y `npc-nino-<n>`) y la aplicación los alterna.
+
+Para regenerarlos, desde `starter/`:
+
+```
+"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python tools/exportar_npcs_texturas.py -- fuentes_3d/npcs static/assets/characters
+```
+
+Basta con añadir otra carpeta `NPC3` (con los mismos nombres de material) para tener otro
+juego de ropa; luego hay que sumarlo en `src/data/assets.js` y en `src/three/neighbour.js`.

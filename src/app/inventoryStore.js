@@ -105,10 +105,16 @@ export function sheetsEndpoint() {
 }
 
 export class InventoryStore {
-    /** @param {{pointId: string, endpoint?: string}} opts */
-    constructor({ pointId, endpoint = sheetsEndpoint() }) {
+    /**
+     * @param {{pointId: string, endpoint?: string, localQueue?: (pointId) => object}} opts
+     *        localQueue: the point's pending work when there is no sheet (app/donations.js)
+     */
+    constructor({ pointId, endpoint = sheetsEndpoint(), localQueue = null }) {
         this.pointId = pointId
         this.endpoint = endpoint
+        this.localQueue = localQueue
+        /** What waits for this point: donations to receive and to hand out, transfers coming and gone. */
+        this.queue = { scheduled: [], toDeliver: [], incoming: [], outgoing: [] }
         this.stock = readLocalStock(pointId)
         this.pending = new Map() // item → qty waiting to be pushed
         this.pendingAt = new Map() // item → when that change was made
@@ -284,6 +290,7 @@ export class InventoryStore {
         this.stopped = false
         if (!this.endpoint) {
             this.status = 'local'
+            if (this.localQueue) this.queue = this.localQueue(this.pointId)
             this.#emit()
             return
         }
@@ -387,6 +394,7 @@ export class InventoryStore {
                 return this.#push()
             }
             this.#applyRows(data.rows, seen)
+            if (data.queue) this.queue = data.queue
             this.#ok()
         } catch (err) {
             this.#fail(err)
@@ -413,6 +421,17 @@ export class InventoryStore {
             }
         }
         if (changed) this.#writeLocal()
+    }
+
+    /**
+     * The sheet changed this point's stock itself (a donation received, a transfer):
+     * take its numbers, and read the pending lists again.
+     */
+    take(rows) {
+        this.#applyRows(rows)
+        if (!this.endpoint && this.localQueue) this.queue = this.localQueue(this.pointId)
+        this.#emit()
+        if (this.endpoint) this.refresh()
     }
 
     /** One line for the panel: where the numbers are coming from right now. */
