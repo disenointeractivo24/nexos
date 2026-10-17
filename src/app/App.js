@@ -1671,10 +1671,13 @@ export class App {
             }
         })
 
-        // Wheel: speeds up the descent above the clouds, zooms inside a barrio
+        // Wheel: speeds up the descent above the clouds, zooms inside a barrio. Only over the scene
+        // itself (or the markers on it): over a panel, a card or the top bar the wheel scrolls that,
+        // and the map stays where it is
         window.addEventListener(
             'wheel',
             (e) => {
+                if (!(e.target === canvas || e.target.closest?.('.labels'))) return
                 if (this.state === 'intro') return this.advanceIntro(Math.max(-0.2, Math.min(0.2, e.deltaY * 0.001)))
                 if (['barrio', 'walking', 'point'].includes(this.state)) this.zoomBy(Math.max(-0.12, Math.min(0.12, e.deltaY * 0.0012)))
             },
