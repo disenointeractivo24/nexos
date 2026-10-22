@@ -5,3 +5,6 @@ dist/
 .vite/
 tools/export-models/out/
 .env
+
+# the design panel stays on this computer (see src/script.js)
+src/ui/DesignDebug.js

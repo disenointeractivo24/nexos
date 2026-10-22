@@ -20,5 +20,6 @@ if (liteWanted()) {
     import('./app/App.js').then(({ App }) => (window.nexos = new App()), failed)
 }
 
-// the design panel: debug only (the dev server, or ?debug in the address), in either version
-if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) import('./ui/DesignDebug.js').then((m) => m.start())
+// the design panel: only on this computer's dev server. It is kept out of the repository
+// (.gitignore), so the published page has none; where the file is missing, nothing loads
+if (import.meta.env.DEV) Object.values(import.meta.glob('./ui/DesignDebug.js'))[0]?.().then((m) => m.start())
