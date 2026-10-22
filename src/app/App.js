@@ -31,6 +31,7 @@ import { TrackView } from '../ui/track.js'
 import { ledger, localQueue } from './donations.js'
 import { setLite } from '../lite/detect.js'
 import { makeNeighbour, preloadNeighbours } from '../three/neighbour.js'
+import { boot } from '../boot.js'
 import { session } from './session.js'
 
 const COLLECTION_POINTS_BY_ID = Object.fromEntries(COLLECTION_POINTS.map((p) => [p.id, p]))
@@ -200,6 +201,8 @@ export class App {
         this.zoom = { value: 1, target: 1 }
         this.cloudPresence = 1
         this.worldReady = false
+        // under the loading screen nothing is drawn: the computer's time goes to loading
+        this.stage.hold = true
 
         // Clouds and sky first: they are the "loading screen"
         this.clouds = new CloudLayer({ reducedMotion: this.reducedMotion })
@@ -227,17 +230,27 @@ export class App {
         this.#bindInput()
         this.#fillRoleCard()
 
-        setTimeout(() => {
-            this.setState('role')
-            this.$('.role-donor').focus({ preventScroll: true })
-            // opened from a donation's QR or link: show where that donation is
-            const code = new URLSearchParams(location.search).get('aporte')
-            if (code) this.track.show(code)
-        }, 80)
-        this.world = this.#loadWorld().catch((err) => {
-            console.error(err)
-            this.#caption('No pudimos cargar el mapa. Recarga la página para intentarlo de nuevo.')
-        })
+        this.world = this.#loadWorld().then(
+            () => this.#open(),
+            (err) => {
+                console.error(err)
+                boot.fail('No pudimos cargar el mapa. Recarga la página para intentarlo de nuevo.')
+            }
+        )
+    }
+
+    /** Everything is in: the loading screen gives way to the opening screen. */
+    async #open() {
+        this.stage.hold = false
+        // a few frames drawn under the loading screen first, so what it uncovers is already moving
+        await new Promise((r) => setTimeout(r, 150))
+        const gone = boot.done()
+        this.setState('role')
+        await gone
+        this.$('.role-donor').focus({ preventScroll: true })
+        // opened from a donation's QR or link: show where that donation is
+        const code = new URLSearchParams(location.search).get('aporte')
+        if (code) this.track.show(code)
     }
 
     setState(s) {
@@ -266,12 +279,22 @@ export class App {
        ================================================================ */
 
     async #loadWorld() {
+        // the loading screen's bar: the city's streets and the barrio's models come in together
+        let built = 0
+        let loaded = 0
+        const report = (label) => boot.set(0.12 + built * 0.2 + loaded * 0.3, label)
+        report('Dibujando las calles de Cali…')
         const supplyAssets = Object.values(ASSETS).filter((a) => a.category === 'supplies').map((a) => a.id)
-        const assets = this.loader.preload([...HOUSE_MODELS, 'lamp-post', 'guide', ...supplyAssets])
+        const assets = this.loader.preload([...HOUSE_MODELS, 'lamp-post', 'guide', ...supplyAssets], (f) => {
+            loaded = f
+            report()
+        })
 
         this.city = new CityOverview(this.theme)
         this.stage.scene.add(this.city.group)
         await this.city.build()
+        built = 1
+        report('Levantando los barrios…')
         this.#cityLighting()
         // the textured Torre de Cali and stadium, while the rest loads
         const landmarks = this.city.useLandmarkModels(this.loader)
@@ -282,6 +305,7 @@ export class App {
 
         // the barrio starts as soon as its own models are in, without waiting for the map's
         await assets
+        boot.set(0.64, 'Levantando los barrios…')
         this.hood = new NeighborhoodScene(this.loader, this.theme)
         // hidden from the start: the frame loop runs while it loads its models, and a visible
         // barrio would be updated before its guide exists
@@ -295,6 +319,7 @@ export class App {
         const stand = await this.loader.load('collection-point')
         if (stand.source === 'glb') this.depot.setStand(this.loader.instanceSync(stand))
 
+        boot.set(0.74, 'Llamando al guía…')
         const guideT = await this.loader.load('guide')
         // the guide has a face that moves, and the larger idle gestures (waving, stretching)
         this.guide = new GuideCharacter(this.loader.instanceSync(guideT), guideT.animations, { reducedMotion: this.reducedMotion, face: true, lively: true })
@@ -311,9 +336,11 @@ export class App {
         this.portrait.place(new THREE.Vector3(), 0.32)
         this.portrait.blob.visible = false
 
+        boot.set(0.8, 'Acomodando los edificios…')
         await landmarks
         await cityHouses
         await cityTowers
+        boot.set(0.92, 'Casi listo…')
         // the textured landmarks and houses cast their own shadows
         this.stage.invalidateShadows()
         // Compile shaders now (not on first view) to avoid hitches later
@@ -1468,12 +1495,6 @@ export class App {
     say(lead, action) {
         if (this.state === 'point') return this.#hideGuideDock()
         this.#showGuideDock(lead, action)
-    }
-
-    #caption(text) {
-        const c = this.$('.descent-caption')
-        c.textContent = text
-        c.classList.add('is-waiting')
     }
 
     #syncProgress() {

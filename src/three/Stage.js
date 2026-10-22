@@ -3,6 +3,7 @@ import gsap from 'gsap'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { WORLD } from './materials.js'
 import { shaderTime } from './stylize.js'
+import { softwareGraphics } from '../lite/detect.js'
 
 /**
  * Renderer, scene, camera, lights, sky and the frame loop.
@@ -14,6 +15,12 @@ import { shaderTime } from './stylize.js'
  */
 export const PHONE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 820
 
+/**
+ * A browser drawing 3D without the graphics card (acceleration turned off) and opened in 3D all
+ * the same: it starts at fewer pixels, may go lower still, and keeps smaller shadow maps.
+ */
+const SOFTWARE = softwareGraphics()
+
 export class Stage {
     constructor(canvas) {
         this.canvas = canvas
@@ -21,9 +28,9 @@ export class Stage {
         // (see #post) and only a flat picture reaches the screen, so it would be paid for twice
         this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' })
         // the sharpest this screen gets; a computer that cannot keep up draws a little less (see #adapt)
-        this.basePixelRatio = Math.min(window.devicePixelRatio, 1.5)
-        this.quality = { scale: 1, min: 0.6, time: 0, frames: 0, good: 0, warm: 3 }
-        this.renderer.setPixelRatio(this.basePixelRatio)
+        this.basePixelRatio = SOFTWARE ? 1 : Math.min(window.devicePixelRatio, 1.5)
+        this.quality = SOFTWARE ? { scale: 0.7, min: 0.45, time: 0, frames: 0, good: 0, warm: 3 } : { scale: 1, min: 0.6, time: 0, frames: 0, good: 0, warm: 3 }
+        this.renderer.setPixelRatio(this.basePixelRatio * this.quality.scale)
         this.renderer.outputColorSpace = THREE.SRGBColorSpace
         this.renderer.toneMapping = THREE.NeutralToneMapping
         this.renderer.toneMappingExposure = 1.04
@@ -151,7 +158,7 @@ export class Stage {
 
     /** Fit the sun's shadow camera around an area (city or neighborhood). */
     setShadowFrame(center, radius, { mapSize = 2048, normalBias } = {}) {
-        if (PHONE) mapSize = Math.min(mapSize, 1024)
+        if (PHONE || SOFTWARE) mapSize = Math.min(mapSize, 1024)
         const s = this.sun
         s.target.position.copy(center)
         s.position.copy(center).addScaledVector(this.sunDir, radius * 3)
@@ -464,6 +471,8 @@ export class Stage {
 
     #frame() {
         const raw = this.clock.getDelta()
+        // held (under the loading screen): nothing to draw, only the interface's clock runs
+        if (this.hold) return void gsap.updateRoot(this.clock.elapsedTime + this.gsapOffset)
         this.#adapt(raw)
         const dt = Math.min(raw, 1 / 20)
         const t = this.clock.elapsedTime

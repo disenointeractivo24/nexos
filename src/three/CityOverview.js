@@ -51,7 +51,7 @@ const TOWER_MODELS = {
 }
 
 /**
- * Which building each zone's complexes are built of: the brick tower in the north, east and
+ * Which building each zone's complexes are built of: the slim tower in the north, east and
  * centre; the white square block and connected row in the west and south. Every zone has the
  * same number of complexes.
  */

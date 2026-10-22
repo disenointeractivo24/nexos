@@ -12,6 +12,18 @@
     <link rel="stylesheet" href="./style.css">
 </head>
 <body>
+    <!-- Loading screen: in the page itself, so it shows before any script arrives (see boot.js) -->
+    <div class="boot" role="status">
+        <div class="boot-figure" aria-hidden="true">
+            <span class="boot-shadow"></span>
+            <img class="boot-guide" src="assets/ui/guia.webp" width="150" height="200" alt="" fetchpriority="high">
+        </div>
+        <p class="boot-logo" aria-label="NEXOS">NE<span class="brand-x">X</span>OS</p>
+        <div class="boot-bar" role="progressbar" aria-label="Cargando" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="boot-fill"></span></div>
+        <p class="boot-text">Preparando el mapa…</p>
+        <p class="boot-slow" hidden><span>¿Va lento?</span><button class="boot-link" type="button">Abrir la versión ligera</button></p>
+    </div>
+
     <!-- 3D world -->
     <canvas class="webgl" aria-hidden="true"></canvas>
     <div class="vignette" aria-hidden="true"></div>

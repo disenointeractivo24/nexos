@@ -225,7 +225,7 @@ export class LiteApp {
                     <button class="role-btn role-donor js-donor" type="button" data-autofocus><span class="role-icon" data-icon="heart" aria-hidden="true"></span><span class="role-text"><strong>Quiero donar</strong><span>Elige una zona y arma una cesta de apoyo.</span></span><span class="role-go" data-icon="chevron-right" aria-hidden="true"></span></button>
                     <button class="role-btn role-point js-point" type="button"><span class="role-icon" data-icon="box" aria-hidden="true"></span><span class="role-text"><strong>Soy punto de acopio</strong><span>Ingresa y actualiza el inventario de tu zona.</span></span><span class="role-go" data-icon="chevron-right" aria-hidden="true"></span></button>
                 </div>
-                ${why ? `<p class="lite-muted lite-why">${icon('info')} Abrimos la versión ligera porque tu dispositivo tiene ${esc(why)}.</p>` : ''}
+                ${why ? `<p class="lite-muted lite-why">${icon('info')} Abrimos la versión ligera porque ${esc(why)}.</p>` : ''}
             </section>
             ${this.#feedHtml()}`
     }

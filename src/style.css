@@ -192,7 +192,7 @@ canvas.items {
    ---------------------------------------------------------- */
 .brand-mark,
 .intro-logo,
-.loader-logo {
+.boot-logo {
     font-weight: 800;
     letter-spacing: 0.04em;
     color: var(--navy);
@@ -967,38 +967,90 @@ canvas.items {
 .veil span:nth-child(4) { width: 50vw; height: 35vw; left: 30vw; top: -12vh; }
 
 /* ----------------------------------------------------------
-   Loader
+   Loading screen (see boot.js): the guide bobbing over its shadow, the logo, a bar.
+   Above everything, in both versions, until the app closes it.
    ---------------------------------------------------------- */
-.loader {
+.boot {
     position: fixed;
     inset: 0;
-    z-index: 50;
-    display: grid;
-    place-content: center;
-    justify-items: center;
-    gap: 22px;
-    background: var(--white);
-    transition: opacity 700ms var(--ease-calm), visibility 0s linear 700ms;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 24px;
+    background: #F3F6F9;
+    color: var(--navy);
+    font-family: var(--font);
+    transition: opacity 520ms var(--ease-calm), visibility 0s linear 520ms;
 }
-.ui:not([data-state="boot"]) .loader { opacity: 0; visibility: hidden; transition: opacity 320ms var(--ease-calm), visibility 0s linear 320ms; }
-.loader-logo { font-size: 56px; }
-.loader-bar {
-    width: 240px;
-    height: 8px;
-    border-radius: 8px;
-    background: rgba(1, 30, 65, 0.1);
+/* the bar completes first, then the screen fades */
+.boot.is-done { opacity: 0; visibility: hidden; transition-delay: 240ms, 760ms; pointer-events: none; }
+.boot-figure {
+    position: relative;
+    isolation: isolate;
+    width: 150px;
+    height: 200px;
+    margin-bottom: 6px;
+}
+.boot-guide {
+    display: block;
+    width: 100%;
+    height: 100%;
+    animation: boot-bob 1.3s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+.boot-shadow {
+    position: absolute;
+    z-index: -1;
+    left: 50%;
+    bottom: 18px;
+    width: 76px;
+    height: 14px;
+    margin-left: -38px;
+    border-radius: 50%;
+    background: var(--navy-12);
+    animation: boot-shadow 1.3s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+@keyframes boot-bob { to { transform: translateY(-9px); } }
+@keyframes boot-shadow { to { transform: scaleX(0.8); opacity: 0.6; } }
+.boot-logo { margin: 0; font-size: var(--fs-2xl); }
+.boot-bar {
+    width: min(240px, 64vw);
+    height: 6px;
+    border-radius: var(--radius-pill);
+    background: var(--navy-12);
     overflow: hidden;
 }
-.loader-bar span {
+.boot-fill {
     display: block;
     height: 100%;
-    width: 0%;
     background: var(--navy);
-    border-radius: 8px;
-    transition: width 300ms var(--ease-calm);
+    transform-origin: left center;
+    transform: scaleX(var(--p, 0));
 }
-.loader-text { margin: 0; font-size: var(--fs-md); color: var(--charcoal); }
-.loader.is-error .loader-text { color: var(--red-press); }
+.boot.is-done .boot-fill { transition: transform 240ms var(--ease-calm); }
+.boot-text { margin: 0; min-height: 1.4em; font-size: var(--fs-sm); color: var(--navy-70); text-align: center; }
+.boot-slow { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 8px; margin: 4px 0 0; font-size: var(--fs-sm); color: var(--navy-70); }
+.boot-slow[hidden] { display: none; }
+.boot-link {
+    min-height: 44px;
+    padding: 0 6px;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-weight: 600;
+    color: var(--navy);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+}
+.boot.is-failed .boot-fill { background: var(--red); }
+.boot.is-failed .boot-guide,
+.boot.is-failed .boot-shadow { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+    .boot-guide, .boot-shadow { animation: none; }
+}
 
 @keyframes fade-in {
     from { opacity: 0; }
@@ -1565,9 +1617,6 @@ canvas.items {
 .supply-foot .btn { min-width: 0; }
 .supply-foot .js-primary { min-width: 210px; }
 .btn [data-icon] { width: 24px; height: 24px; }
-
-/* Loader is only a first-paint cover now */
-.loader { background: linear-gradient(180deg, #F4F7F9 0%, #E9EEF1 100%); }
 
 /* Short screens — retune the single token; every proportion follows it */
 @media (max-height: 860px) {
