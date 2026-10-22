@@ -176,8 +176,8 @@ que volver a copiar los contornos de cada `<path>` en ese archivo.
 ### Edificios de la ciudad e iglesia de San Antonio
 
 - `edificios/ciudad/Edificio 1|2|3/` (GLB + Texturas) dan `static/assets/buildings/edificio-1|2|3.glb`:
-  los edificios del mapa de Cali, en las esquinas de manzana donde antes había torres dibujadas
-  (`useTowerModels` y `TOWER_MODELS` en `src/three/CityOverview.js`, que dan la escala de cada uno).
+  los edificios del mapa de Cali, agrupados en conjuntos residenciales (una manzana entera con
+  varias copias del mismo edificio; `complexLayout` y `TOWER_MODELS` en `src/three/CityOverview.js`).
 - `iglesia-san-antonio/IGLESIA/` (GLB + TEXTURAS) da `static/assets/buildings/iglesia-san-antonio.glb`:
   la iglesia en la cima del barrio San Antonio, con la entrada y la escalera hacia la calle. Su
   colina de césped no se usa (el barrio tiene su propia loma).

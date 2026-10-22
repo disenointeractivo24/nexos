@@ -38,11 +38,43 @@ const MAP_HOUSES = {
     oeste: ['house-estrato5', 'house-estrato4', 'house-estrato3', 'house-two-story'],
 }
 /**
- * The city's apartment buildings and the scale each takes on the map for a 4.8 m corner (see
- * useTowerModels): the slim tower (2 × 2 × 7.6 in its file) rises to some 15 m, the square block
- * (3.7 wide, 5.8 high) to about 7.5, the long connected row (3.1 × 8.2, 7 high) to about 5.6.
+ * The city's apartment buildings, at the scale of the houses around them (a house on the map is
+ * some 2.6 m wide and 3 m high): `k` is the scale, `size` the footprint in the file (x, z),
+ * `h` the height in the file, `gap` the space left between two buildings of one complex.
+ * The slim tower stands about 9 m, the square block 5.5, the long connected row 5.3.
  */
-const TOWER_MODELS = { 'edificio-1': 2.0, 'edificio-2': 1.3, 'edificio-3': 0.78 }
+const TOWER_MODELS = {
+    'edificio-1': { k: 1.2, size: [2, 2.06], h: 7.62, gap: 1.8 },
+    'edificio-2': { k: 0.95, size: [3.69, 3.69], h: 5.78, gap: 1.5 },
+    'edificio-3': { k: 0.75, size: [3.08, 8.22], h: 7.02, gap: 1.4 },
+}
+
+/**
+ * A residential complex: the same building repeated in rows over a whole block, the way a
+ * conjunto is built, rather than one building on its own. The long connected row lies with its
+ * length along the block's longer side. Returns each building's place in the block (u, v) and
+ * its turn, or nothing if not even two fit.
+ */
+function complexLayout(id, uLen, vLen) {
+    const t = TOWER_MODELS[id]
+    let [w, d] = t.size.map((s) => s * t.k)
+    let turn = 0
+    // the long row runs along the block's longer side (its length is the file's z)
+    if (d > w && uLen > vLen) {
+        ;[w, d] = [d, w]
+        turn = Math.PI / 2
+    }
+    const nu = Math.floor((uLen + t.gap) / (w + t.gap)), nv = Math.floor((vLen + t.gap) / (d + t.gap))
+    if (nu * nv < 2) return []
+    const spanU = nu * w + (nu - 1) * t.gap, spanV = nv * d + (nv - 1) * t.gap
+    const out = []
+    for (let a = 0; a < nu; a++) {
+        for (let b = 0; b < nv; b++) {
+            out.push({ u: (uLen - spanU) / 2 + a * (w + t.gap) + w / 2, v: (vLen - spanV) / 2 + b * (d + t.gap) + d / 2, turn })
+        }
+    }
+    return out
+}
 
 /** How wide a house is on the map (its lot is LOT wide). */
 const MAP_LOT = 2.6
@@ -761,11 +793,9 @@ export class CityOverview {
     }
 
     /**
-     * Swap the drawn towers for the city's apartment buildings (edificio-1, -2 and -3), one
-     * instanced mesh per piece of each. Each building has its own size on the map, so it fills
-     * the corner of a block a tower took: the slim tower stands tall, the square block is
-     * middling, and the long row of connected buildings lies low along one side. The tall
-     * one is likelier in the centre. If none loads, the drawn towers stay.
+     * Swap the drawn stand-ins for the city's apartment buildings (edificio-1, -2 and -3), one
+     * instanced mesh per piece of each: every complex its own building, repeated over its block
+     * (see complexLayout), at the scale of the houses. If none loads, the stand-ins stay.
      */
     async useTowerModels(loader) {
         const spots = this.towerSpots
@@ -778,25 +808,19 @@ export class CityOverview {
             })
         )
         if (!templates.size) return
-        const ids = [...templates.keys()]
         const byModel = new Map()
         for (const s of spots) {
-            const roll = lotHash(Math.round(s.x * 3), Math.round(s.z * 3), s.zone)
-            // the centre leans to the tall tower
-            const pool = s.zone === 'centro' && templates.has('edificio-1') ? [...ids, 'edificio-1'] : ids
-            const id = pool[Math.floor(roll * pool.length) % pool.length]
-            byModel.set(id, [...(byModel.get(id) ?? []), { ...s, roll }])
+            // a building that did not load falls back to one that did, keeping the complex whole
+            const id = templates.has(s.model) ? s.model : [...templates.keys()][0]
+            byModel.set(id, [...(byModel.get(id) ?? []), s])
         }
         const place = new THREE.Matrix4(), m = new THREE.Matrix4()
         const q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0)
         for (const [id, list] of byModel) {
             const t = templates.get(id)
-            const base = TOWER_MODELS[id]
+            const k = TOWER_MODELS[id].k
             const placements = list.map((s) => {
-                // a quarter turn now and then, so the same building does not always face the same way
-                const turn = (Math.floor(s.roll * 97) % 4) * (Math.PI / 2)
-                q.setFromAxisAngle(up, -s.a + turn)
-                const k = base * (s.w / 4.8) * (0.92 + ((s.roll * 13.7) % 1) * 0.18) * (s.zone === 'centro' ? 1.1 : 1)
+                q.setFromAxisAngle(up, -s.a + s.turn)
                 return place.compose(p.set(s.x, 0, s.z), q, sc.set(k, k, k)).clone()
             })
             t.object.updateMatrixWorld(true)
@@ -1375,10 +1399,13 @@ export class CityOverview {
     }
 
     #blocks() {
-        // how many lots are built on, and how often a block has a tower on one corner (more
-        // often on an avenue). Towers stand all over the city, but not in the east.
+        // how many lots are built on, and how often a whole block is a residential complex (more
+        // often on an avenue). Complexes stand all over the city, but not in the east.
         const fill = { centro: 0.97, norte: 0.96, sur: 0.93, oriente: 0.98, oeste: 0.95 }
-        const towerChance = { centro: 0.3, norte: 0.22, sur: 0.2, oriente: 0, oeste: 0.2 }
+        const complexChance = { centro: 0.2, norte: 0.14, sur: 0.12, oriente: 0, oeste: 0.12 }
+        // the three buildings take turns, so the city has some of each; the centre leans to the tall one
+        const complexIds = Object.keys(TOWER_MODELS)
+        let complexes = 0
         const houses = []
         const towers = []
         const edge = STREET_W / 2 + SIDEWALK
@@ -1393,25 +1420,23 @@ export class CityOverview {
                     const su = (u1 - u0) / nu, sv = (v1 - v0) / nv
                     const centre = g.from((u0 + u1) / 2, (v0 + v1) / 2)
                     if (zoneIdAt(...centre) !== zone.id) continue
-                    let tower = null
                     const onAvenue = roadDistanceAt(this.avenueDist, ...centre) < Math.max(u1 - u0, v1 - v0) / 2 + 2
-                    if (rnd() < towerChance[zone.id] * (onAvenue ? 1.6 : 0.5)) {
-                        // of the corners with room for it, the one nearest an avenue
-                        const corners = [[0, 0], [nu - 2, 0], [0, nv - 2], [nu - 2, nv - 2]]
-                            .map(([cu, cv]) => {
-                                const at = g.from(u0 + (cu + 1) * su, v0 + (cv + 1) * sv)
-                                return { cu, cv, at, d: roadDistanceAt(this.avenueDist, ...at) }
-                            })
-                            .filter((c) => urbanMask(...c.at) >= 0.85 && zoneIdAt(...c.at) === zone.id && this.#isFree(...c.at, 1.6))
-                        const c = corners.length ? corners.reduce((a, b) => (b.d < a.d ? b : a)) : null
-                        if (c) {
-                            tower = c
-                            towers.push({ x: c.at[0], z: c.at[1], a: g.angle, zone: zone.id, w: 2 * Math.min(su, sv) - 1.2 })
+                    if (rnd() < complexChance[zone.id] * (onAvenue ? 1.6 : 0.6)) {
+                        // a whole block of one building
+                        const pool = zone.id === 'centro' ? ['edificio-1', ...complexIds] : complexIds
+                        const id = pool[complexes % pool.length]
+                        const units = complexLayout(id, u1 - u0, v1 - v0)
+                            .map((p) => ({ ...p, at: g.from(u0 + p.u, v0 + p.v) }))
+                            .filter((p) => urbanMask(...p.at) >= 0.85 && zoneIdAt(...p.at) === zone.id && this.#isFree(...p.at, 0.4))
+                        // only a block that holds (nearly) the whole complex becomes one
+                        if (units.length >= 2 && units.length >= complexLayout(id, u1 - u0, v1 - v0).length * 0.6) {
+                            for (const p of units) towers.push({ x: p.at[0], z: p.at[1], a: g.angle, turn: p.turn, zone: zone.id, model: id })
+                            complexes++
+                            continue
                         }
                     }
                     for (let a = 0; a < nu; a++) {
                         for (let b = 0; b < nv; b++) {
-                            if (tower && a >= tower.cu && a < tower.cu + 2 && b >= tower.cv && b < tower.cv + 2) continue
                             const [x, z] = g.from(u0 + (a + 0.5) * su + (rnd() - 0.5) * 0.2, v0 + (b + 0.5) * sv + (rnd() - 0.5) * 0.2)
                             if (urbanMask(x, z) < 0.85 || zoneIdAt(x, z) !== zone.id || !this.#isFree(x, z)) continue
                             if (rnd() > fill[zone.id]) continue
@@ -1488,10 +1513,9 @@ export class CityOverview {
         )
         const towerColors = ['#F1F0EC', '#E6E8EA', '#DDE3E8', '#ECE6DC'].map((c) => new THREE.Color(c))
         towers.forEach((t, i) => {
-            const w = t.w * (0.88 + rnd() * 0.12)
-            const ht = 8 + rnd() * 14 * (t.zone === 'centro' ? 1.25 : 0.9)
-            q.setFromAxisAngle(up, -t.a)
-            m.compose(p.set(t.x, 0, t.z), q, sc.set(w, ht, w * (0.85 + rnd() * 0.15)))
+            const b = TOWER_MODELS[t.model]
+            q.setFromAxisAngle(up, -t.a + t.turn)
+            m.compose(p.set(t.x, 0, t.z), q, sc.set(b.size[0] * b.k, b.h * b.k, b.size[1] * b.k))
             towerMesh.setMatrixAt(i, m)
             towerMesh.setColorAt(i, pick(towerColors))
         })
