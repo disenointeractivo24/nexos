@@ -967,114 +967,38 @@ canvas.items {
 .veil span:nth-child(4) { width: 50vw; height: 35vw; left: 30vw; top: -12vh; }
 
 /* ----------------------------------------------------------
-   Loading screen and opening act (see boot.js). Above everything, in both versions, until
-   the app opens. The act fills the screen; the logo, the bar and what is loading sit below.
+   Loading screen (see boot.js): the logo and a bar. Above everything, in both versions,
+   until the app opens.
    ---------------------------------------------------------- */
 .boot {
     position: fixed;
     inset: 0;
     z-index: 100;
-    overflow: hidden;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 18px;
+    padding: 24px;
     background: var(--white);
     color: var(--navy);
     font-family: var(--font);
-    transform-origin: 50% 45%;
 }
-/* opening onto the app: a gentle push in as it fades */
+/* the bar completes, then the screen fades */
 .boot.is-done {
     opacity: 0;
-    transform: scale(1.04);
     visibility: hidden;
     pointer-events: none;
-    transition:
-        opacity 650ms var(--ease-calm) 100ms,
-        transform 950ms cubic-bezier(0.22, 1, 0.36, 1),
-        visibility 0s linear 950ms;
+    transition: opacity 500ms var(--ease-calm) 200ms, visibility 0s linear 700ms;
 }
-.boot-act,
-.boot-loop {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    opacity: 0;
-    pointer-events: none;
-}
-/* the act fades up from white as it starts; the loop takes over on the act's own last frame */
-.boot-act { transition: opacity 500ms var(--ease-calm); }
-.boot.is-playing .boot-act { opacity: 1; }
-.boot.is-looping .boot-loop { opacity: 1; }
-.boot.is-still .boot-act,
-.boot.is-still .boot-loop { display: none; }
-
-/* the guide's picture, where there is no film */
-.boot-figure {
-    display: none;
-    position: relative;
-    isolation: isolate;
-    width: 150px;
-    height: 200px;
-    margin-bottom: 120px;
-}
-.boot.is-still .boot-figure { display: block; }
-.boot-guide {
-    display: block;
-    width: 100%;
-    height: 100%;
-    animation: boot-bob 1.3s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
-}
-.boot-shadow {
-    position: absolute;
-    z-index: -1;
-    left: 50%;
-    bottom: 18px;
-    width: 76px;
-    height: 14px;
-    margin-left: -38px;
-    border-radius: 50%;
-    background: var(--navy-12);
-    animation: boot-shadow 1.3s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
-}
-@keyframes boot-bob { to { transform: translateY(-9px); } }
-@keyframes boot-shadow { to { transform: scaleX(0.8); opacity: 0.6; } }
-
-/* a soft white floor under the logo and the bar, so they read over the film */
-.boot::after {
-    content: "";
-    position: absolute;
-    inset: auto 0 0;
-    height: 34%;
-    background: linear-gradient(to top, rgba(255, 255, 255, 0.94) 35%, rgba(255, 255, 255, 0));
-    pointer-events: none;
-}
-.boot.is-still::after { display: none; }
-.boot-foot {
-    position: absolute;
-    left: 16px;
-    right: 16px;
-    bottom: calc(28px + env(safe-area-inset-bottom));
-    z-index: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-}
-/* the logo comes in as the guide waves: up and in, with a little spring */
 .boot-logo {
     margin: 0;
-    font-size: 44px;
-    opacity: 0;
-    transform: translateY(14px) scale(0.94);
-    transition: opacity 450ms var(--ease-calm), transform 750ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    font-size: 64px;
+    animation: boot-in 600ms var(--ease-calm) both;
 }
-.boot.show-logo .boot-logo { opacity: 1; transform: none; }
+@keyframes boot-in { from { opacity: 0; transform: translateY(8px); } }
 .boot-bar {
-    width: min(200px, 56vw);
+    width: min(220px, 60vw);
     height: 4px;
     border-radius: var(--radius-pill);
     background: var(--navy-12);
@@ -1087,7 +1011,7 @@ canvas.items {
     transform-origin: left center;
     transform: scaleX(var(--p, 0));
 }
-.boot.is-done .boot-fill { transition: transform 240ms var(--ease-calm); }
+.boot.is-done .boot-fill { transition: transform 200ms var(--ease-calm); }
 .boot-text { margin: 0; min-height: 1.4em; font-size: var(--fs-sm); color: var(--navy-70); text-align: center; }
 .boot-slow { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 8px; margin: 0; font-size: var(--fs-sm); color: var(--navy-70); }
 .boot-slow[hidden] { display: none; }
@@ -1103,50 +1027,13 @@ canvas.items {
     text-underline-offset: 3px;
     cursor: pointer;
 }
-/* once everything is in, the act can be cut short */
-.boot-skip {
-    position: absolute;
-    top: calc(20px + env(safe-area-inset-top));
-    right: 20px;
-    min-height: 44px;
-    padding: 0 18px;
-    border: 1px solid var(--navy-12);
-    border-radius: var(--radius-pill);
-    background: rgba(255, 255, 255, 0.86);
-    font: inherit;
-    font-size: var(--fs-sm);
-    font-weight: 600;
-    color: var(--navy);
-    cursor: pointer;
-    opacity: 0;
-    transform: translateY(-6px);
-    pointer-events: none;
-    transition: opacity 300ms var(--ease-calm), transform 400ms var(--ease-calm);
-}
-.boot.is-ready.has-act:not(.is-still) .boot-skip { opacity: 1; transform: none; pointer-events: auto; }
-.boot-skip:hover { background: var(--white); }
-.boot-skip:focus-visible,
 .boot-link:focus-visible { outline: 3px solid var(--navy); outline-offset: 2px; }
 .boot.is-failed .boot-fill { background: var(--red); }
-.boot.is-failed .boot-guide,
-.boot.is-failed .boot-shadow { animation: none; }
 @media (max-width: 640px) {
-    .boot-logo { font-size: 36px; }
-}
-/* tall screens (phones): the film is wide, so it takes a band across the middle, its top and
-   bottom melting into the white, and the whole guide stays in view */
-@media (max-aspect-ratio: 4/5) {
-    .boot-act,
-    .boot-loop {
-        top: 8%;
-        height: 68%;
-        -webkit-mask-image: linear-gradient(to bottom, transparent, #000 14%, #000 86%, transparent);
-        mask-image: linear-gradient(to bottom, transparent, #000 14%, #000 86%, transparent);
-    }
+    .boot-logo { font-size: 48px; }
 }
 @media (prefers-reduced-motion: reduce) {
-    .boot-guide, .boot-shadow { animation: none; }
-    .boot.is-done { transform: none; }
+    .boot-logo { animation: none; }
 }
 
 @keyframes fade-in {

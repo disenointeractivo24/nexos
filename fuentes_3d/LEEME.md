@@ -236,37 +236,3 @@ Para regenerarlos, desde `starter/`:
 
 Basta con añadir otra carpeta `NPC3` (con los mismos nombres de material) para tener otro
 juego de ropa; luego hay que sumarlo en `src/data/assets.js` y en `src/three/neighbour.js`.
-
-### Apertura (pantalla de carga)
-
-La apertura es un video del guía, no 3D en vivo. Así corre fluido en cualquier equipo, con o
-sin tarjeta gráfica, mientras la página carga por detrás. Son dos clips en `static/assets/ui/`:
-
-- `apertura-intro.mp4`: en el punto de acopio, primer plano de la cara del guía mirando la caja
-  que carga; levanta la vista y sonríe, la cámara se aleja en arco mientras lleva la caja al
-  estante más cercano y la desliza en el de abajo (sin soltarla en el aire), y luego se da
-  vuelta y saluda (ahí entra el logo, `LOGO_AT` en `boot.js`). Nada salta: todo entra y sale
-  con curvas suaves y los movimientos de cámara se encadenan sin detenerse.
-- `apertura-loop.mp4`: el guía respirando, mientras siga cargando.
-
-`src/boot.js` los reproduce y abre la app cuando termina la apertura y todo está cargado.
-
-Se filman con el código del propio guía (`GuideCharacter`, su cara y sus gestos). La
-coreografía, la cámara y las curvas están en `tools/apertura/apertura.js`. Para regenerarlos,
-desde `starter/`:
-
-1. `npm run dev` y abrir `http://localhost:5173/?ligero=0` en una ventana de 1600 × 900 (los
-   cuadros salen del propio lienzo de la página), hasta que salga la portada.
-2. `node tools/apertura/recibir.mjs cuadros_apertura`
-3. En la consola del navegador:
-   `eval(await fetch('http://127.0.0.1:5199/apertura.js').then(r => r.text()))`
-   Con `window.__aperturaPreview = [0, 1.4, 3, 6.2]` antes, solo arma una hoja de muestra
-   (`window.__aperturaSheet`) sin enviar cuadros.
-4. Codificar los dos clips (H.264, que reproduce cualquier navegador):
-
-```
-"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python tools/apertura/codificar.py -- cuadros_apertura intro_ static/assets/ui/apertura-intro.mp4 60
-"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python tools/apertura/codificar.py -- cuadros_apertura loop_ static/assets/ui/apertura-loop.mp4 60
-```
-
-La carpeta `cuadros_apertura` se puede borrar después.

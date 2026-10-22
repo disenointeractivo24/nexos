@@ -16,7 +16,6 @@ if (liteWanted()) {
         boot.done()
     }, failed)
 } else {
-    boot.play()
     boot.set(0.08, 'Preparando el mapa…')
     import('./app/App.js').then(({ App }) => (window.nexos = new App()), failed)
 }

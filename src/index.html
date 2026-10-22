@@ -12,22 +12,12 @@
     <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-    <!-- Loading screen and opening act: in the page itself, so it shows before any script
-         arrives (see boot.js; the films are made with tools/apertura) -->
+    <!-- Loading screen: in the page itself, so it shows before any script arrives (see boot.js) -->
     <div class="boot" role="status">
-        <video class="boot-act" src="assets/ui/apertura-intro.mp4" muted playsinline preload="auto" disablepictureinpicture aria-hidden="true"></video>
-        <video class="boot-loop" src="assets/ui/apertura-loop.mp4" muted playsinline loop preload="none" disablepictureinpicture aria-hidden="true"></video>
-        <div class="boot-figure" aria-hidden="true">
-            <span class="boot-shadow"></span>
-            <img class="boot-guide" src="assets/ui/guia.webp" width="150" height="200" alt="">
-        </div>
-        <div class="boot-foot">
-            <p class="boot-logo" aria-label="NEXOS">NE<span class="brand-x">X</span>OS</p>
-            <div class="boot-bar" role="progressbar" aria-label="Cargando" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="boot-fill"></span></div>
-            <p class="boot-text">Preparando el mapa…</p>
-            <p class="boot-slow" hidden><span>¿Va lento?</span><button class="boot-link" type="button">Abrir la versión ligera</button></p>
-        </div>
-        <button class="boot-skip" type="button">Saltar</button>
+        <p class="boot-logo" aria-label="NEXOS">NE<span class="brand-x">X</span>OS</p>
+        <div class="boot-bar" role="progressbar" aria-label="Cargando" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="boot-fill"></span></div>
+        <p class="boot-text">Preparando el mapa…</p>
+        <p class="boot-slow" hidden><span>¿Va lento?</span><button class="boot-link" type="button">Abrir la versión ligera</button></p>
     </div>
 
     <!-- 3D world -->
