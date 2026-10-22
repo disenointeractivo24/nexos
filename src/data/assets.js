@@ -174,6 +174,14 @@ export const ASSETS = {
     ermita: { id: 'ermita', category: 'landmarks', label: 'La Ermita', model: '/assets/buildings/ermita.glb', procedural: null, front: '+x', fit: { height: 15.5 }, stylize: { ao: 0.15, aoHeight: 2, rim: 0.1 } },
     'torre-de-cali': { id: 'torre-de-cali', category: 'landmarks', label: 'Torre de Cali', model: '/assets/buildings/torre-de-cali.glb', procedural: null, fit: { height: 42 }, stylize: { ao: 0.15, aoHeight: 4, rim: 0.1 } },
     estadio: { id: 'estadio', category: 'landmarks', label: 'Estadio Pascual Guerrero', model: '/assets/buildings/estadio.glb', procedural: null, fit: { size: 36 }, stylize: { ao: 0.2, aoHeight: 1, rim: 0.1 } },
+    // the city's apartment buildings (fuentes_3d/edificios/ciudad), placed where the map puts its towers
+    'edificio-1': { id: 'edificio-1', category: 'buildings', label: 'Edificio', model: '/assets/buildings/edificio-1.glb', procedural: null, stylize: { ao: 0.2, aoHeight: 3, rim: 0.1 } },
+    'edificio-2': { id: 'edificio-2', category: 'buildings', label: 'Edificio', model: '/assets/buildings/edificio-2.glb', procedural: null, stylize: { ao: 0.2, aoHeight: 3, rim: 0.1 } },
+    'edificio-3': { id: 'edificio-3', category: 'buildings', label: 'Edificio', model: '/assets/buildings/edificio-3.glb', procedural: null, stylize: { ao: 0.2, aoHeight: 3, rim: 0.1 } },
+    // San Antonio's church on the crest of its barrio (fuentes_3d/iglesia-san-antonio)
+    // its entrance and stairs are on the model's +X side; its own grass hill stays out (the barrio
+    // has its own crest)
+    'iglesia-san-antonio': { id: 'iglesia-san-antonio', category: 'buildings', label: 'Iglesia de San Antonio', model: '/assets/buildings/iglesia-san-antonio.glb', procedural: null, front: '+x', drop: /^cesped/, stylize: { ao: 0.2, aoHeight: 2, rim: 0.1 } },
     'collection-point': { id: 'collection-point', category: 'buildings', label: 'Punto de acopio', model: '/assets/buildings/punto-de-acopio.glb', procedural: null, front: '+x', stylize: { ao: 0.25, aoHeight: 1.6, rim: 0.1 } },
 
     /* ---------------- supplies (procedural until GLBs arrive) ---------------- */

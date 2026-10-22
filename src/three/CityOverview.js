@@ -37,6 +37,13 @@ const MAP_HOUSES = {
     norte: ['house-estrato4', 'house-estrato5', 'house-two-story', 'house-estrato3'],
     oeste: ['house-estrato5', 'house-estrato4', 'house-estrato3', 'house-two-story'],
 }
+/**
+ * The city's apartment buildings and the scale each takes on the map for a 4.8 m corner (see
+ * useTowerModels): the slim tower (2 × 2 × 7.6 in its file) rises to some 15 m, the square block
+ * (3.7 wide, 5.8 high) to about 7.5, the long connected row (3.1 × 8.2, 7 high) to about 5.6.
+ */
+const TOWER_MODELS = { 'edificio-1': 2.0, 'edificio-2': 1.3, 'edificio-3': 0.78 }
+
 /** How wide a house is on the map (its lot is LOT wide). */
 const MAP_LOT = 2.6
 
@@ -753,6 +760,65 @@ export class CityOverview {
         this.drawnHouses = []
     }
 
+    /**
+     * Swap the drawn towers for the city's apartment buildings (edificio-1, -2 and -3), one
+     * instanced mesh per piece of each. Each building has its own size on the map, so it fills
+     * the corner of a block a tower took: the slim tower stands tall, the square block is
+     * middling, and the long row of connected buildings lies low along one side. The tall
+     * one is likelier in the centre. If none loads, the drawn towers stay.
+     */
+    async useTowerModels(loader) {
+        const spots = this.towerSpots
+        if (!spots?.length) return
+        const templates = new Map()
+        await Promise.all(
+            Object.keys(TOWER_MODELS).map(async (id) => {
+                const t = await loader.load(id).catch(() => null)
+                if (t?.source === 'glb') templates.set(id, t)
+            })
+        )
+        if (!templates.size) return
+        const ids = [...templates.keys()]
+        const byModel = new Map()
+        for (const s of spots) {
+            const roll = lotHash(Math.round(s.x * 3), Math.round(s.z * 3), s.zone)
+            // the centre leans to the tall tower
+            const pool = s.zone === 'centro' && templates.has('edificio-1') ? [...ids, 'edificio-1'] : ids
+            const id = pool[Math.floor(roll * pool.length) % pool.length]
+            byModel.set(id, [...(byModel.get(id) ?? []), { ...s, roll }])
+        }
+        const place = new THREE.Matrix4(), m = new THREE.Matrix4()
+        const q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0)
+        for (const [id, list] of byModel) {
+            const t = templates.get(id)
+            const base = TOWER_MODELS[id]
+            const placements = list.map((s) => {
+                // a quarter turn now and then, so the same building does not always face the same way
+                const turn = (Math.floor(s.roll * 97) % 4) * (Math.PI / 2)
+                q.setFromAxisAngle(up, -s.a + turn)
+                const k = base * (s.w / 4.8) * (0.92 + ((s.roll * 13.7) % 1) * 0.18) * (s.zone === 'centro' ? 1.1 : 1)
+                return place.compose(p.set(s.x, 0, s.z), q, sc.set(k, k, k)).clone()
+            })
+            t.object.updateMatrixWorld(true)
+            t.object.traverse((o) => {
+                if (!o.isMesh) return
+                const im = new THREE.InstancedMesh(o.geometry, o.material, placements.length)
+                placements.forEach((pl, i) => im.setMatrixAt(i, m.multiplyMatrices(pl, o.matrixWorld)))
+                im.castShadow = !PHONE
+                im.receiveShadow = true
+                im.instanceMatrix.needsUpdate = true
+                im.computeBoundingSphere()
+                im.name = `edificio-mapa:${id}`
+                this.group.add(im)
+            })
+        }
+        for (const im of this.drawnTowers ?? []) {
+            this.group.remove(im)
+            im.dispose()
+        }
+        this.drawnTowers = []
+    }
+
     /** Yaw that lays a model's length (its local Z) along the avenue closest to (x, z). */
     #alongNearestRoad(x, z) {
         let best = Infinity, dir = [1, 0]
@@ -1433,6 +1499,9 @@ export class CityOverview {
         towerMesh.receiveShadow = true
         towerMesh.computeBoundingSphere()
         this.group.add(towerMesh)
+        // drawn towers until the buildings arrive (see useTowerModels)
+        this.towerSpots = towers
+        this.drawnTowers = [towerMesh]
 
         this.stats = { houses: houses.length, towers: towers.length }
     }

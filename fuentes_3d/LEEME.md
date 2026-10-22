@@ -173,6 +173,24 @@ y Guadalupe, oeste = Cañaveralejo). El mapa de la aplicación los dibuja en una
 los bordes, así que la ciudad tiene la forma de Cali sin copiarla al detalle. Si cambia el SVG, hay
 que volver a copiar los contornos de cada `<path>` en ese archivo.
 
+### Edificios de la ciudad e iglesia de San Antonio
+
+- `edificios/ciudad/Edificio 1|2|3/` (GLB + Texturas) dan `static/assets/buildings/edificio-1|2|3.glb`:
+  los edificios del mapa de Cali, en las esquinas de manzana donde antes había torres dibujadas
+  (`useTowerModels` y `TOWER_MODELS` en `src/three/CityOverview.js`, que dan la escala de cada uno).
+- `iglesia-san-antonio/IGLESIA/` (GLB + TEXTURAS) da `static/assets/buildings/iglesia-san-antonio.glb`:
+  la iglesia en la cima del barrio San Antonio, con la entrada y la escalera hacia la calle. Su
+  colina de césped no se usa (el barrio tiene su propia loma).
+
+Se generan con `tools/fbx_to_glb.py`, como las casas. Ojo con las rutas largas: Windows no
+abre archivos de más de 260 caracteres, y entonces la textura no se encuentra (por eso la
+carpeta se llama solo `ciudad`). Desde `starter/`:
+
+```
+"C:Program FilesBlender FoundationBlender 5.0lender.exe" -b --factory-startup --python tools/fbx_to_glb.py -- "fuentes_3d/edificios/ciudad/Edificio 1/GLB/Edificio 1.glb" "fuentes_3d/edificios/ciudad/Edificio 1/Texturas" static/assets/buildings/edificio-1.glb "Edificio 1"
+"C:Program FilesBlender FoundationBlender 5.0lender.exe" -b --factory-startup --python tools/fbx_to_glb.py -- fuentes_3d/iglesia-san-antonio/IGLESIA/GLB/iglesia.glb fuentes_3d/iglesia-san-antonio/IGLESIA/TEXTURAS static/assets/buildings/iglesia-san-antonio.glb IGLESIA2
+```
+
 ### Vías de la ciudad
 
 `mapa_cali/Map_of_Cali.svg` es un mapa de OpenStreetMap con las vías de Cali y Yumbo.

@@ -211,6 +211,9 @@ export class NeighborhoodScene {
         this.lampTemplate = await this.loader.load('lamp-post')
         const stand = await this.loader.load('collection-point')
         this.standTemplate = stand.source === 'glb' ? stand : null
+        // San Antonio's church; until (or unless) it loads, the drawn chapel stands on the crest
+        const church = await this.loader.load('iglesia-san-antonio').catch(() => null)
+        this.churchTemplate = church?.source === 'glb' ? church : null
         this.street = {}
         await Promise.all(
             STREET_PROPS.map((id) =>
@@ -1804,17 +1807,35 @@ export class NeighborhoodScene {
                 mound.scale.set(9.5, 2.2, 9.5)
                 mound.position.set(f.x, -0.05, f.z)
             }
-            const ch = props.chapel()
-            ch.position.set(f.x, L.terrain ? 0 : 1.55, f.z - 1)
-            group.add(ch)
-            // steps up the hill
-            for (let i = 0; i < 7; i++) {
-                const st = props.chapelStep()
-                st.position.set(f.x, L.terrain ? 0.06 : 0.12 + i * 0.26, f.z + 9.3 - i * 0.65)
-                group.add(st)
+            const base = L.terrain ? 0 : 1.55
+            if (this.churchTemplate) {
+                // the church of San Antonio: its entrance and its brick stairs face down the lane, the
+                // church itself a little behind. Its brick floor is laid on the crest; the stairs run
+                // on down into the slope
+                const ch = this.loader.instanceSync(this.churchTemplate)
+                ch.scale.setScalar(0.5)
+                ch.updateMatrixWorld(true)
+                let floor = 0
+                ch.traverse((o) => {
+                    if (o.isMesh && /^ladrillos piso/i.test([o.material].flat()[0]?.name ?? '')) floor = new THREE.Box3().setFromObject(o).max.y
+                })
+                ch.position.set(f.x, base - floor + 0.15, f.z - 1)
+                group.add(ch)
+                // its long body lies across the crest, some 3.5 m behind the centre
+                for (const dx of [-5, 0, 5]) solids.circles.push({ x: f.x + dx, z: f.z - 4.5, r: 2.8 })
+            } else {
+                const ch = props.chapel()
+                ch.position.set(f.x, base, f.z - 1)
+                group.add(ch)
+                // steps up the hill
+                for (let i = 0; i < 7; i++) {
+                    const st = props.chapelStep()
+                    st.position.set(f.x, L.terrain ? 0.06 : 0.12 + i * 0.26, f.z + 9.3 - i * 0.65)
+                    group.add(st)
+                }
+                solids.circles.push({ x: f.x, z: f.z - 1, r: 3.6 })
             }
             blocked.push({ x: f.x, z: f.z, r: 10 })
-            solids.circles.push({ x: f.x, z: f.z - 1, r: 3.6 })
         }
 
         if (f.type === 'canal') {
