@@ -3,9 +3,9 @@ import { setLite } from './lite/detect.js'
 /**
  * The loading screen and the opening act. index.html draws it, so it shows before any script.
  *
- * The 3D version plays the act (play): a film of the guide, made with tools/apertura — a
- * close-up of the face, a glance that turns to camera, the camera pulling out on an arc, a
- * wave as the logo comes in. A film rather than live 3D: it plays smoothly on any computer,
+ * The 3D version plays the act (play): a film of the guide at a collection point, made with
+ * tools/apertura — a close-up of its face over the box in its arms, the camera pulling out on
+ * an arc as it carries the box to the shelves and lifts it in, then a wave as the logo comes in. A film rather than live 3D: it plays smoothly on any computer,
  * with or without a graphics card, while the page loads behind it. If loading takes longer than
  * the act, the guide stays, breathing, in a second film that starts on the act's last frame
  * and loops. The app reports how far loading has gone (set) and asks to close (done): the
@@ -29,7 +29,7 @@ const skip = $('.boot-skip')
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 
 // when, in the act, the guide waves and the logo comes in (seconds)
-const LOGO_AT = 3.1
+const LOGO_AT = 6.5
 
 let target = 0.06
 let shown = 0

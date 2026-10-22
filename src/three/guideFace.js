@@ -8,7 +8,9 @@ import { canvasTexture, drawCross } from './procedural/textures.js'
  * Everything is laid on the head's own surface, found by casting rays at it, so
  * it follows the model whatever its size; and it hangs from the head joint, so
  * it turns with it. The face blinks by itself; `look` moves the eyes and `mood`
- * changes the expression:
+ * changes the expression. Expressions are separate faces, swapped outright (like changing a
+ * drawing), never blended: two mouths or two kinds of eyes are never seen at once. The new one
+ * pops in with a short squash so the swap reads as a change, not a glitch.
  *   calm  · a smile
  *   happy · a wide open grin
  *   joy   · eyes closed in two arcs and the grin (stretching, celebrating)
@@ -137,8 +139,8 @@ export class GuideFace {
         this.look = new THREE.Vector2()
         this.lookTarget = new THREE.Vector2()
         this.mood = 'calm'
-        this.moodK = { calm: 1, happy: 0, joy: 0, wow: 0 }
-        this.setMood('calm')
+        this.shown = null
+        this.pop = 1
     }
 
     /** Where a ray from the front meets the head: the point and its outward normal, in head space. */
@@ -200,29 +202,33 @@ export class GuideFace {
         }
         lid = Math.max(0.08, lid)
 
-        // the eyes lead, quickly; a mood eases in
+        // the eyes lead, quickly
         this.look.lerp(this.lookTarget, 1 - Math.exp(-dt * 14))
-        const k = 1 - Math.exp(-dt * 10)
-        for (const m of Object.keys(this.moodK)) this.moodK[m] += ((m === this.mood ? 1 : 0) - this.moodK[m]) * k
-        const { happy, joy, wow } = this.moodK
+
+        // a new mood swaps the face at once, and the new one pops in (0.85 → 1, easing out)
+        if (this.mood !== this.shown) {
+            this.shown = this.mood
+            this.pop = 0
+        }
+        this.pop = Math.min(1, this.pop + dt / 0.14)
+        const pop = 1 - 0.15 * (1 - this.pop) ** 2
+        const mood = this.shown
 
         const H = this.H
-        const closed = joy
+        const closed = mood === 'joy'
+        const wide = mood === 'wow' ? 1.12 : 1
         for (const e of this.eyes) {
             e.lid.position.set(this.look.x * H * 0.035, this.look.y * H * 0.025, 0)
-            const open = lid * (1 - closed) * (1 + wow * 0.15)
-            e.lid.scale.set(1 + wow * 0.12, Math.max(0.001, open), 1)
-            e.lid.visible = open > 0.02
-            e.arc.visible = closed > 0.35
-            e.arc.scale.setScalar(Math.max(0.001, closed))
+            e.lid.visible = !closed
+            e.lid.scale.set(wide, Math.max(0.001, lid * wide), 1)
+            e.arc.visible = closed
+            e.arc.scale.setScalar(pop)
         }
-        const smile = Math.max(0, 1 - happy - joy - wow)
-        this.smile.visible = smile > 0.05
-        this.smile.scale.setScalar(Math.max(0.001, smile))
-        const grin = Math.min(1, happy + joy)
-        this.grin.visible = grin > 0.05
-        this.grin.scale.set(Math.max(0.001, grin), Math.max(0.001, grin), 1)
-        this.wow.visible = wow > 0.05
-        this.wow.scale.set(Math.max(0.001, wow), Math.max(0.001, wow) * 1.25, 1)
+        this.smile.visible = mood === 'calm'
+        this.grin.visible = mood === 'happy' || mood === 'joy'
+        this.wow.visible = mood === 'wow'
+        this.smile.scale.setScalar(pop)
+        this.grin.scale.set(pop, pop, 1)
+        this.wow.scale.set(pop, pop * 1.25, 1)
     }
 }

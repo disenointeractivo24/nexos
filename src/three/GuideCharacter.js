@@ -153,7 +153,8 @@ export class GuideCharacter {
         /**
          * A pose set from outside each frame (the opening act, see tools/apertura): the same
          * offsets as an IDLE action, plus `breath`, `shift` and `drift` (−1 to 1) in place of
-         * the guide's own breathing, weight shift and wandering look. Null: the guide idles.
+         * the guide's own breathing, weight shift and wandering look, and `carry` (0–1: arms held
+         * still as it walks, carrying something). Null: the guide idles.
          */
         this.script = null
         this.hopY = 0
@@ -381,7 +382,8 @@ export class GuideCharacter {
         P.legL.rotation.z = shift * 0.035 * amb
         P.legR.rotation.z = shift * 0.035 * amb
         if (P.armL && P.armR) {
-            const swing = 0.62 * w
+            // carrying something in both arms, they do not swing as the guide walks
+            const swing = 0.62 * w * (1 - (o.carry ?? 0))
             const idleArms = (S ? breath : Math.sin(ti * 1.9 + 0.5)) * 0.05 * amb
             const back = o.arms ?? 0
             const sway = o.armSwing ?? 0

@@ -1,6 +1,8 @@
 # Turns the opening act's frames (see apertura.js) into an MP4 (H.264, which every browser plays),
 # with the FFmpeg inside Blender: no separate install.
-#   blender -b --factory-startup --python tools/apertura/codificar.py -- <frames folder> <prefix> <out.mp4> [fps]
+#   blender -b --factory-startup --python tools/apertura/codificar.py -- <frames folder> <prefix> <out.mp4> [fps] [quality]
+# quality: an FFmpeg constant rate factor of Blender's (HIGH, MEDIUM, LOW…); MEDIUM by default: the drawn
+# look stays clean, and the file is about a quarter smaller than with HIGH
 import os
 import sys
 
@@ -9,6 +11,7 @@ import bpy
 frames_dir, prefix, out = sys.argv[sys.argv.index("--") + 1:][:3]
 rest = sys.argv[sys.argv.index("--") + 4:]
 fps = int(rest[0]) if rest else 60
+quality = rest[1] if len(rest) > 1 else "MEDIUM"
 
 files = sorted(f for f in os.listdir(frames_dir) if f.startswith(prefix) and f.endswith(".png"))
 if not files:
@@ -44,7 +47,7 @@ if hasattr(r.image_settings, "media_type"):
 r.image_settings.file_format = "FFMPEG"
 r.ffmpeg.format = "MPEG4"
 r.ffmpeg.codec = "H264"
-r.ffmpeg.constant_rate_factor = "HIGH"
+r.ffmpeg.constant_rate_factor = quality
 r.ffmpeg.ffmpeg_preset = "BEST"
 # a keyframe every half second: the browser can start and loop it cleanly
 r.ffmpeg.gopsize = fps // 2

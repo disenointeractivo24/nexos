@@ -242,8 +242,9 @@ juego de ropa; luego hay que sumarlo en `src/data/assets.js` y en `src/three/nei
 La apertura es un video del guía, no 3D en vivo. Así corre fluido en cualquier equipo, con o
 sin tarjeta gráfica, mientras la página carga por detrás. Son dos clips en `static/assets/ui/`:
 
-- `apertura-intro.mp4`: primer plano de la cara, gira la cabeza, la cámara se aleja en arco,
-  saluda y se acomoda.
+- `apertura-intro.mp4`: en el punto de acopio, primer plano de la cara del guía mirando la caja
+  que carga; levanta la vista y sonríe, la cámara se aleja en arco mientras lleva la caja al
+  estante y la sube, y luego se da vuelta y saluda (ahí entra el logo, `LOGO_AT` en `boot.js`).
 - `apertura-loop.mp4`: el guía respirando, mientras siga cargando.
 
 `src/boot.js` los reproduce y abre la app cuando termina la apertura y todo está cargado.
@@ -252,7 +253,8 @@ Se filman con el código del propio guía (`GuideCharacter`, su cara y sus gesto
 coreografía, la cámara y las curvas están en `tools/apertura/apertura.js`. Para regenerarlos,
 desde `starter/`:
 
-1. `npm run dev` y abrir `http://localhost:5173/?ligero=0` hasta que salga la portada.
+1. `npm run dev` y abrir `http://localhost:5173/?ligero=0` en una ventana de 1600 × 900 (los
+   cuadros salen del propio lienzo de la página), hasta que salga la portada.
 2. `node tools/apertura/recibir.mjs cuadros_apertura`
 3. En la consola del navegador:
    `eval(await fetch('http://127.0.0.1:5199/apertura.js').then(r => r.text()))`
