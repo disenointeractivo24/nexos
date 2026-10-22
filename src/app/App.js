@@ -241,12 +241,15 @@ export class App {
 
     /** Everything is in: the loading screen gives way to the opening screen. */
     async #open() {
+        // a few frames drawn under the loading screen, so the first look at the world does not
+        // stall on sending it to the graphics card; then held again while the act plays on
         this.stage.hold = false
-        // a few frames drawn under the loading screen first, so what it uncovers is already moving
-        await new Promise((r) => setTimeout(r, 150))
-        const gone = boot.done()
-        this.setState('role')
-        await gone
+        await new Promise((r) => setTimeout(r, 200))
+        this.stage.hold = true
+        await boot.done(() => {
+            this.stage.hold = false
+            this.setState('role')
+        })
         this.$('.role-donor').focus({ preventScroll: true })
         // opened from a donation's QR or link: show where that donation is
         const code = new URLSearchParams(location.search).get('aporte')

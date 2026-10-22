@@ -150,6 +150,12 @@ export class GuideCharacter {
         this.speed = 0
         this.gesture = { arm: 0, nod: 0, cheer: 0 }
         this.idle = { name: null, t: 0, wait: 1.5 + Math.random() * 2.5, side: 1 }
+        /**
+         * A pose set from outside each frame (the opening act, see tools/apertura): the same
+         * offsets as an IDLE action, plus `breath`, `shift` and `drift` (−1 to 1) in place of
+         * the guide's own breathing, weight shift and wandering look. Null: the guide idles.
+         */
+        this.script = null
         this.hopY = 0
         // each character idles slightly out of step with the others
         this.idleSeed = Math.random() * 100
@@ -361,10 +367,11 @@ export class GuideCharacter {
         // idle: breathing, a slow weight shift, and now and then one of the little things in IDLE
         const amb = this.reducedMotion ? 0 : 1 - w
         const ti = t + this.idleSeed
-        const breath = Math.sin(ti * 1.9)
-        const shift = Math.sin(ti * 0.55)
-        const drift = Math.sin(ti * 0.37) * 0.12 + Math.sin(ti * 0.91 + 1.3) * 0.05
-        const o = this.#idleStep(dt, amb)
+        const S = this.script
+        const breath = S ? S.breath : Math.sin(ti * 1.9)
+        const shift = S ? S.shift : Math.sin(ti * 0.55)
+        const drift = S ? S.drift : Math.sin(ti * 0.37) * 0.12 + Math.sin(ti * 0.91 + 1.3) * 0.05
+        const o = S ?? this.#idleStep(dt, amb)
         const cheer = this.gesture.cheer
         const jump = Math.abs(Math.sin(t * 9)) * cheer
 
@@ -375,7 +382,7 @@ export class GuideCharacter {
         P.legR.rotation.z = shift * 0.035 * amb
         if (P.armL && P.armR) {
             const swing = 0.62 * w
-            const idleArms = Math.sin(ti * 1.9 + 0.5) * 0.05 * amb
+            const idleArms = (S ? breath : Math.sin(ti * 1.9 + 0.5)) * 0.05 * amb
             const back = o.arms ?? 0
             const sway = o.armSwing ?? 0
             P.armL.rotation.x = -sw * swing + idleArms + back - sway - 0.3 * cheer
@@ -393,7 +400,7 @@ export class GuideCharacter {
         P.body.rotation.x = (0.06 + Math.min(this.speed, 7) * 0.014) * w + (o.bodyX ?? 0) + this.stoop
         P.body.rotation.y = sw * 0.09 * w + (o.bodyY ?? 0)
         P.head.rotation.y = drift * amb + (o.headY ?? 0) - sw * 0.06 * w
-        P.head.rotation.x = this.gesture.nod * 0.2 + Math.sin(ti * 0.7) * 0.035 * amb - bob * 0.04 * w + (o.headX ?? 0) - 0.15 * cheer - this.stoop * 0.7
+        P.head.rotation.x = this.gesture.nod * 0.2 + (S ? shift : Math.sin(ti * 0.7)) * 0.035 * amb - bob * 0.04 * w + (o.headX ?? 0) - 0.15 * cheer - this.stoop * 0.7
         P.head.rotation.z = -shift * 0.04 * amb + (o.headZ ?? 0) + Math.sin(t * 6) * 0.06 * cheer
         // hops lift the whole figure; the root stays on the ground for the app
         this.model.position.y = (o.hop ?? 0) * amb + 0.22 * jump
