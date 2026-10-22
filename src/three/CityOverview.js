@@ -41,13 +41,28 @@ const MAP_HOUSES = {
  * The city's apartment buildings, at the scale of the houses around them (a house on the map is
  * some 2.6 m wide and 3 m high): `k` is the scale, `size` the footprint in the file (x, z),
  * `h` the height in the file, `gap` the space left between two buildings of one complex.
- * The slim tower stands about 9 m, the square block 5.5, the long connected row 5.3.
+ * The slim tower stands about 9 m, the square block 5.5, the long connected row 5 (two of them
+ * fit end to end along a block).
  */
 const TOWER_MODELS = {
     'edificio-1': { k: 1.2, size: [2, 2.06], h: 7.62, gap: 1.8 },
     'edificio-2': { k: 0.95, size: [3.69, 3.69], h: 5.78, gap: 1.5 },
-    'edificio-3': { k: 0.75, size: [3.08, 8.22], h: 7.02, gap: 1.4 },
+    'edificio-3': { k: 0.72, size: [3.08, 8.22], h: 7.02, gap: 1 },
 }
+
+/**
+ * Which building each zone's complexes are built of: the brick tower in the north, east and
+ * centre; the white square block and connected row in the west and south. Every zone has the
+ * same number of complexes.
+ */
+const COMPLEX_MODELS = {
+    norte: ['edificio-1'],
+    oriente: ['edificio-1'],
+    centro: ['edificio-1'],
+    oeste: ['edificio-2', 'edificio-3'],
+    sur: ['edificio-3', 'edificio-2'],
+}
+const COMPLEXES_PER_ZONE = 4
 
 /**
  * A residential complex: the same building repeated in rows over a whole block, the way a
@@ -1399,49 +1414,70 @@ export class CityOverview {
     }
 
     #blocks() {
-        // how many lots are built on, and how often a whole block is a residential complex (more
-        // often on an avenue). Complexes stand all over the city, but not in the east.
+        // how many lots are built on
         const fill = { centro: 0.97, norte: 0.96, sur: 0.93, oriente: 0.98, oeste: 0.95 }
-        const complexChance = { centro: 0.2, norte: 0.14, sur: 0.12, oriente: 0, oeste: 0.12 }
-        // the three buildings take turns, so the city has some of each; the centre leans to the tall one
-        const complexIds = Object.keys(TOWER_MODELS)
-        let complexes = 0
         const houses = []
         const towers = []
         const edge = STREET_W / 2 + SIDEWALK
 
         for (const zone of ZONES) {
             const g = zoneGrid(zone.id)
+            const blocks = []
             for (let i = -BLOCK.reach; i < BLOCK.reach; i++) {
                 for (let j = -BLOCK.reach; j < BLOCK.reach; j++) {
                     const u0 = i * BLOCK.bu + edge, u1 = (i + 1) * BLOCK.bu - edge
                     const v0 = j * BLOCK.bv + edge, v1 = (j + 1) * BLOCK.bv - edge
-                    const nu = Math.floor((u1 - u0) / LOT), nv = Math.floor((v1 - v0) / LOT)
-                    const su = (u1 - u0) / nu, sv = (v1 - v0) / nv
                     const centre = g.from((u0 + u1) / 2, (v0 + v1) / 2)
-                    if (zoneIdAt(...centre) !== zone.id) continue
-                    const onAvenue = roadDistanceAt(this.avenueDist, ...centre) < Math.max(u1 - u0, v1 - v0) / 2 + 2
-                    if (rnd() < complexChance[zone.id] * (onAvenue ? 1.6 : 0.6)) {
-                        // a whole block of one building
-                        const pool = zone.id === 'centro' ? ['edificio-1', ...complexIds] : complexIds
-                        const id = pool[complexes % pool.length]
-                        const units = complexLayout(id, u1 - u0, v1 - v0)
-                            .map((p) => ({ ...p, at: g.from(u0 + p.u, v0 + p.v) }))
-                            .filter((p) => urbanMask(...p.at) >= 0.85 && zoneIdAt(...p.at) === zone.id && this.#isFree(...p.at, 0.4))
-                        // only a block that holds (nearly) the whole complex becomes one
-                        if (units.length >= 2 && units.length >= complexLayout(id, u1 - u0, v1 - v0).length * 0.6) {
-                            for (const p of units) towers.push({ x: p.at[0], z: p.at[1], a: g.angle, turn: p.turn, zone: zone.id, model: id })
-                            complexes++
-                            continue
-                        }
-                    }
-                    for (let a = 0; a < nu; a++) {
-                        for (let b = 0; b < nv; b++) {
-                            const [x, z] = g.from(u0 + (a + 0.5) * su + (rnd() - 0.5) * 0.2, v0 + (b + 0.5) * sv + (rnd() - 0.5) * 0.2)
-                            if (urbanMask(x, z) < 0.85 || zoneIdAt(x, z) !== zone.id || !this.#isFree(x, z)) continue
-                            if (rnd() > fill[zone.id]) continue
-                            houses.push({ x, z, a: g.angle + (rnd() - 0.5) * 0.04, zone: zone.id, face: facingStreet(a, b, nu, nv), mix: lotHash(i * 8 + a, j * 8 + b, zone.id) })
-                        }
+                    if (zoneIdAt(...centre) === zone.id) blocks.push({ i, j, u0, u1, v0, v1, centre })
+                }
+            }
+
+            // The same number of residential complexes in every zone, spread over it: the first near
+            // the zone's heart, each next one on the free block farthest from those already chosen
+            // (a block on an avenue counts a little farther). See COMPLEX_MODELS for which building.
+            const models = COMPLEX_MODELS[zone.id]
+            const unitsFor = (id, bl) => {
+                const layout = complexLayout(id, bl.u1 - bl.u0, bl.v1 - bl.v0)
+                const units = layout
+                    .map((p) => ({ ...p, at: g.from(bl.u0 + p.u, bl.v0 + p.v) }))
+                    .filter((p) => urbanMask(...p.at) >= 0.85 && zoneIdAt(...p.at) === zone.id && this.#isFree(...p.at, 0.4))
+                // only a block that holds at least half the complex can become one (a street may cross it)
+                return units.length >= 2 && units.length >= layout.length * 0.5 ? units : null
+            }
+            const candidates = blocks
+                .filter((bl) => models.some((id) => unitsFor(id, bl)))
+                .map((bl) => ({ bl, weight: roadDistanceAt(this.avenueDist, ...bl.centre) < Math.max(bl.u1 - bl.u0, bl.v1 - bl.v0) / 2 + 2 ? 1.25 : 1 }))
+            const chosen = []
+            const [cx, cz] = zone.label
+            while (chosen.length < Math.min(COMPLEXES_PER_ZONE, candidates.length)) {
+                let best = null, bestScore = -Infinity
+                for (const c of candidates) {
+                    if (chosen.includes(c)) continue
+                    const [x, z] = c.bl.centre
+                    const score = chosen.length
+                        ? Math.min(...chosen.map((o) => Math.hypot(o.bl.centre[0] - x, o.bl.centre[1] - z))) * c.weight
+                        : -Math.hypot(cx - x, cz - z) / c.weight
+                    if (score > bestScore) [best, bestScore] = [c, score]
+                }
+                chosen.push(best)
+            }
+            // where a zone has two buildings, they take turns
+            chosen.forEach((c, n) => {
+                const id = [...models.slice(n % models.length), ...models].find((m) => unitsFor(m, c.bl))
+                for (const p of unitsFor(id, c.bl)) towers.push({ x: p.at[0], z: p.at[1], a: g.angle, turn: p.turn, zone: zone.id, model: id })
+                c.bl.complex = true
+            })
+
+            for (const { i, j, u0, u1, v0, v1, complex } of blocks) {
+                if (complex) continue
+                const nu = Math.floor((u1 - u0) / LOT), nv = Math.floor((v1 - v0) / LOT)
+                const su = (u1 - u0) / nu, sv = (v1 - v0) / nv
+                for (let a = 0; a < nu; a++) {
+                    for (let b = 0; b < nv; b++) {
+                        const [x, z] = g.from(u0 + (a + 0.5) * su + (rnd() - 0.5) * 0.2, v0 + (b + 0.5) * sv + (rnd() - 0.5) * 0.2)
+                        if (urbanMask(x, z) < 0.85 || zoneIdAt(x, z) !== zone.id || !this.#isFree(x, z)) continue
+                        if (rnd() > fill[zone.id]) continue
+                        houses.push({ x, z, a: g.angle + (rnd() - 0.5) * 0.04, zone: zone.id, face: facingStreet(a, b, nu, nv), mix: lotHash(i * 8 + a, j * 8 + b, zone.id) })
                     }
                 }
             }
