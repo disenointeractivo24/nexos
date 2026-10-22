@@ -29,7 +29,7 @@ const skip = $('.boot-skip')
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
 
 // when, in the act, the guide waves and the logo comes in (seconds)
-const LOGO_AT = 6.5
+const LOGO_AT = 6.8
 
 let target = 0.06
 let shown = 0

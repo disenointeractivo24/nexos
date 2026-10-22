@@ -244,7 +244,9 @@ sin tarjeta gráfica, mientras la página carga por detrás. Son dos clips en `s
 
 - `apertura-intro.mp4`: en el punto de acopio, primer plano de la cara del guía mirando la caja
   que carga; levanta la vista y sonríe, la cámara se aleja en arco mientras lleva la caja al
-  estante y la sube, y luego se da vuelta y saluda (ahí entra el logo, `LOGO_AT` en `boot.js`).
+  estante más cercano y la desliza en el de abajo (sin soltarla en el aire), y luego se da
+  vuelta y saluda (ahí entra el logo, `LOGO_AT` en `boot.js`). Nada salta: todo entra y sale
+  con curvas suaves y los movimientos de cámara se encadenan sin detenerse.
 - `apertura-loop.mp4`: el guía respirando, mientras siga cargando.
 
 `src/boot.js` los reproduce y abre la app cuando termina la apertura y todo está cargado.

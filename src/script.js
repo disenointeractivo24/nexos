@@ -20,3 +20,6 @@ if (liteWanted()) {
     boot.set(0.08, 'Preparando el mapa…')
     import('./app/App.js').then(({ App }) => (window.nexos = new App()), failed)
 }
+
+// the design panel: debug only (the dev server, or ?debug in the address), in either version
+if (import.meta.env.DEV || new URLSearchParams(location.search).has('debug')) import('./ui/DesignDebug.js').then((m) => m.start())

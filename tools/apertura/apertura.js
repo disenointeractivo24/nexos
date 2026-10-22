@@ -2,17 +2,20 @@
 // It films the guide at the collection point with the app's own pieces — the guide (its face,
 // its gestures), the point's stand and shelves, the stage's light and ink — and sends every
 // frame to tools/apertura/recibir.mjs. Two clips:
-//   intro (8.6 s): a close-up of the face as the guide looks up from the box in its arms and
-//     smiles; the camera pulls out on an arc while it carries the box to the shelves, lifts it
-//     onto the top shelf, turns round and waves (the logo comes in), nods and settles;
+//   intro (8.8 s): a close-up of the face as the guide looks up from the box in its arms and
+//     smiles; the camera pulls out on an arc while it carries the box to the nearest shelf,
+//     leans in and slides it onto the bottom board, turns round and waves (the logo comes in),
+//     nods and settles;
 //   loop (4 s): the settled guide breathing, for as long as loading takes; it starts exactly
 //     where the intro ends and ends where it starts.
+// Nothing jumps: every move eases in and out, the camera's moves overlap instead of stopping
+// between them, and the box never leaves the guide's hands until it rests on the shelf.
 // The page must be 1600 × 900 (the frames are the page's own canvas).
 ;(async () => {
     const n = window.nexos
     const SERVER = 'http://127.0.0.1:5199'
     const FPS = 60
-    const INTRO = 8.6, LOOP = 4
+    const INTRO = 8.8, LOOP = 4
 
     /* ---------------- curves ---------------- */
     const clamp01 = (x) => Math.min(1, Math.max(0, x))
@@ -21,9 +24,11 @@
     const lerp3 = (a, b, u) => a.map((v, i) => lerp(v, b[i], u))
     const sm = (u) => u * u * (3 - 2 * u)
     const inOutCubic = (u) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2)
+    const inOutSine = (u) => -(Math.cos(Math.PI * u) - 1) / 2
     const outCubic = (u) => 1 - Math.pow(1 - u, 3)
     const outBack = (u, s = 1.4) => (u >= 1 ? 1 : 1 + (s + 1) * Math.pow(u - 1, 3) + s * Math.pow(u - 1, 2))
     const bump = (T, a, b) => (T <= a || T >= b ? 0 : Math.sin(((T - a) / (b - a)) * Math.PI))
+    const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a))
     /** CSS-style cubic-bezier easing. */
     const bezier = (x1, y1, x2, y2) => {
         const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx
@@ -42,32 +47,39 @@
 
     /* ---------------- the set ---------------- */
     const SCALE = 0.85 // the guide among the shelves: some 1.6 m
-    const START = [-2.5, 0, 1.1] // where it stands with the box
-    const SPOT = [0.62, 0, 0.5] // beside the top shelf it fills, leaving it in view
-    const BAY = 'milk' // that shelf; the box goes in its middle slot, between two others
+    const START = [-2.6, 0, 1.25] // where it stands with the box
+    const BAY = 'soap' // the nearest bottom shelf; the box goes in its middle slot, between two others
     const HEAD = 1.12 * SCALE
 
+    /* ---------------- timing ---------------- */
+    const WALK = 2.0 // sets off
+    const FACE = [3.75, 4.35] // turns to face the shelf
+    const PLACE = [4.35, 5.45] // leans in, slides the box onto the board
+    const BACK = [5.45, 6.05] // lets go, straightens up
+    const TURN = [5.95, 6.75] // turns round to the camera
+    const WAVE = 6.75 // and waves; the logo comes in (LOGO_AT in src/boot.js)
+
     /* ---------------- the camera ---------------- */
-    // around a point it looks at: azimuth (0 = straight in front), elevation, distance
+    // around a point it looks at: azimuth (0 = straight in front), elevation, distance. Three
+    // shots, each move starting before the last has quite settled, so the camera never stops
     function shot(T, gp) {
         const push = outCubic(seg(T, 0, 1.8))
-        const out = crane(seg(T, 1.5, 4.8))
-        const settle = inOutCubic(seg(T, 4.8, 8.4))
-        // close, the camera keeps to the guide as it sets off
         const close = { t: [gp.x, HEAD, gp.z], az: lerp(0.3, 0.24, push), el: 0.03, d: lerp(2.3, 2.0, push) }
-        // to one side while the box goes in, so guide, box and shelf all show (inside the stand's poles,
-        // which would stand in the way from further out); then round to the front
-        const wide = { t: [0.45, 1.25, 0.1], az: 0.8, el: 0.12, d: 5.0 }
-        const end = { t: [0.85, 1.05, 0.45], az: 0.2, el: 0.08, d: 6.6 }
-        const a = out < 1 ? close : wide
-        const b = out < 1 ? wide : end
-        const u = out < 1 ? out : settle
-        const t = lerp3(a.t, b.t, u)
-        const az = lerp(a.az, b.az, u)
-        // an arc: rising while it pulls out, settling a little lower at the end
-        const el = lerp(a.el, b.el, u) + (out < 1 ? 0.06 * Math.sin(Math.PI * u) : 0)
+        // nearly side on while the box goes in: the slot is between the camera and the guide, so the
+        // box shows all the way onto the board (and the camera stays inside the stand's
+        // poles, which would stand in the way from further out)
+        const side = { t: [-1.1, 0.62, 0.0], az: 1.2, el: 0.16, d: 3.8 }
+        // round to the front for the wave
+        const end = { t: [-1.2, 0.98, 0.4], az: 0.2, el: 0.08, d: 6.0 }
+        const u1 = crane(seg(T, 1.5, 5.2))
+        const u2 = inOutCubic(seg(T, 4.5, 8.6))
+        const mix = (k) => lerp(lerp(close[k], side[k], u1), end[k], u2)
+        const t = lerp3(lerp3(close.t, side.t, u1), end.t, u2)
+        // an arc: rising while it pulls out
+        const el = mix('el') + 0.05 * Math.sin(Math.PI * u1) * (1 - u2)
         // distance in steps of ratio, so the pull-out feels even all the way
-        const d = a.d * Math.pow(b.d / a.d, u)
+        const d = Math.exp(lerp(lerp(Math.log(close.d), Math.log(side.d), u1), Math.log(end.d), u2))
+        const az = mix('az')
         return { pos: [t[0] + Math.sin(az) * Math.cos(el) * d, t[1] + Math.sin(el) * d, t[2] + Math.cos(az) * Math.cos(el) * d], target: t }
     }
 
@@ -76,43 +88,47 @@
         const p = ((T - INTRO) / LOOP) * Math.PI * 2
         return { breath: Math.sin(p * 2), shift: Math.sin(p), drift: 0.05 * Math.sin(p + 1.2) }
     }
-    // the box: held against the belly, lifted up and out to the shelf, let go of
-    const lift = (T) => inOutCubic(seg(T, 4.75, 5.45))
-    const LET_GO = 5.5
+    const place = (T) => inOutSine(seg(T, ...PLACE))
+    const back = (T) => inOutCubic(seg(T, ...BACK))
     function introPose(T) {
         // looking up from the box: eyes first, then the head on a little arc, then a smile
         const up = outBack(seg(T, 0.7, 1.35), 1.3)
         const eyesUp = inOutCubic(seg(T, 0.6, 0.9))
-        const L = lift(T)
-        const down = inOutCubic(seg(T, 5.55, 6.0)) // arms coming down once the box is in
-        const carry = T < LET_GO ? 1 : 1 - down
+        const P = place(T)
+        const B = back(T)
+        const carry = 1 - B
+        // the lean in and out: in as the box goes forward, up again as the arms let go
+        const lean = sm(seg(T, PLACE[0], PLACE[0] + 0.7)) * (1 - B)
         // the wave: a lift that overshoots, the hand waving, the arm coming down softly
-        const wave = outBack(seg(T, 6.45, 6.9), 1.3) * (1 - inOutCubic(seg(T, 7.8, 8.25)))
-        const env = sm(seg(T, 6.75, 6.95)) * (1 - sm(seg(T, 7.6, 7.85)))
+        const wave = outBack(seg(T, WAVE, WAVE + 0.45), 1.3) * (1 - inOutCubic(seg(T, WAVE + 1.35, WAVE + 1.8)))
+        const env = sm(seg(T, WAVE + 0.3, WAVE + 0.5)) * (1 - sm(seg(T, WAVE + 1.15, WAVE + 1.4)))
+        // looking at the box going in, then up again
+        const watch = sm(seg(T, PLACE[0] - 0.2, PLACE[0] + 0.3)) * (1 - sm(seg(T, BACK[0], BACK[1])))
         return {
             ...ambient(T),
             carry,
-            // both arms forward round the box, up with it to the shelf
-            arms: -(0.95 + 0.85 * L) * carry,
+            // both arms round the box, reaching forward with it as it goes onto the board
+            arms: -(0.95 + 0.3 * P) * carry,
             armsOut: -0.12 * carry,
-            headX: lerp(0.28, 0, up) - 0.12 * L * carry + 0.12 * bump(T, 8.0, 8.4),
+            bodyX: 0.24 * lean,
+            headX: lerp(0.28, 0, up) + 0.18 * watch + 0.12 * bump(T, 8.15, 8.55),
             headY: 0.1 * bump(T, 0.7, 1.35) + 0.15 * wave,
             headZ: 0.04 * sm(seg(T, 0.9, 1.5)) * (1 - wave) + 0.12 * wave,
             eyeX: 0,
-            eyeY: lerp(-0.8, 0, eyesUp) + 0.5 * L * carry,
+            eyeY: lerp(-0.8, 0, eyesUp) - 0.6 * watch,
             armRUp: 1.55 * wave,
-            armRWave: 0.28 * Math.sin(Math.PI * 2 * 2 * (T - 6.75)) * env,
+            armRWave: 0.28 * Math.sin(Math.PI * 2 * 2 * (T - WAVE - 0.3)) * env,
             bodyZ: -0.05 * wave,
-            // up on tiptoe to reach the shelf; a little dip before the wave, and a hop into it
-            hop: 0.05 * L * carry - 0.02 * bump(T, 6.15, 6.47) + 0.05 * bump(T, 6.45, 6.83),
-            mood: T < 1.2 ? 'calm' : T > 6.7 && T < 7.8 ? 'joy' : 'happy',
+            // a little dip before the wave, and a hop into it
+            hop: -0.02 * bump(T, WAVE - 0.3, WAVE + 0.02) + 0.05 * bump(T, WAVE, WAVE + 0.38),
+            mood: T < 1.2 ? 'calm' : T > WAVE + 0.25 && T < WAVE + 1.35 ? 'joy' : 'happy',
         }
     }
     function loopPose(T) {
         return { ...ambient(T), headZ: 0.04, eyeX: 0, eyeY: 0, mood: 'happy' }
     }
     // blinks: once while still looking down at the box, once on the way, once in the loop
-    const BLINKS = { intro: [0.45, 3.2, 7.0], loop: [1.9] }
+    const BLINKS = { intro: [0.45, 3.0, 7.3], loop: [1.9] }
 
     /* ---------------- dressing the set ---------------- */
     const st = n.stage
@@ -151,6 +167,9 @@
     st.scene.add(box)
     slot.parent.updateMatrixWorld(true)
     const slotAt = slot.getWorldPosition(new V())
+    // where it stands to reach it: in front of the board, a little to the left so the box shows
+    const SPOT = [slotAt.x - 0.32, 0, 0.36]
+    const slotYaw = Math.atan2(slotAt.x - SPOT[0], slotAt.z - SPOT[2])
 
     const tpl = await n.loader.load('guide')
     const g = new n.guide.constructor(n.loader.instanceSync(tpl), tpl.animations, { face: true, lively: true })
@@ -159,17 +178,14 @@
     g.root.visible = true
     g.root.traverse((o) => o.isMesh && o !== g.blob && (o.castShadow = o.receiveShadow = true))
     st.scene.add(g.root)
-    // the walk to the shelf, and turning to face it, then the camera
-    const walkAt = 2.0
     let walking = null
-    const local = new V()
-    const boxIn = (T) => {
-        // in the arms: against the belly, then up and out with the lift (in the guide's own space)
-        const L = lift(T)
-        local.set(0, lerp(0.42, 1.32, L), lerp(0.52, 0.9, L))
-        return g.root.localToWorld(local.clone())
+    let walkYaw = null
+    const carried = new V()
+    const boxInArms = () => {
+        // against the belly, rising and falling with the body as the guide walks (its own space)
+        const lift = (g.parts.body.position.y - g.bodyBase.y + g.model.position.y)
+        return g.root.localToWorld(carried.set(0, 0.42 + lift, 0.52))
     }
-    let letGoFrom = null
 
     const cam = st.camera
     const frame = (T, pose, blinkAt) => {
@@ -177,21 +193,26 @@
         g.face.nextBlink = 99
         o.blink = blinkAt.some((b) => Math.abs(T - b) < 0.5 / FPS)
         g.script = o
-        if (T >= walkAt && !walking && T < INTRO) walking = g.walk([g.position.clone(), new V(-0.9, 0, 0.95), new V(...SPOT)], { speed: 1.5 })
-        // facing the slot: back to the camera, a little to its right
-        if (T >= 4.45 && T < 5.8) g.targetYaw = Math.atan2(slotAt.x - SPOT[0], slotAt.z - SPOT[2])
-        if (T >= 5.85) g.targetYaw = 0.2
+        if (T >= WALK && !walking && T < INTRO) walking = g.walk([g.position.clone(), new V(-2.1, 0, 0.75), new V(...SPOT)], { speed: 1.4 })
+        // the turns: eased, never snapped
+        if (T >= FACE[0] && T < TURN[0]) {
+            walkYaw ??= g.yaw
+            g.targetYaw = walkYaw + wrap(slotYaw - walkYaw) * inOutCubic(seg(T, ...FACE))
+        } else if (T >= TURN[0]) {
+            g.targetYaw = slotYaw + wrap(0.2 - slotYaw) * inOutCubic(seg(T, ...TURN))
+        }
         g.update(1 / FPS, T)
         g.root.updateMatrixWorld(true)
-        // the box: carried, then let go of on an arc into its slot
-        if (T < LET_GO) box.position.copy(boxIn(T))
-        else {
-            letGoFrom ??= box.position.clone()
-            const u = outCubic(seg(T, LET_GO, LET_GO + 0.35))
-            box.position.lerpVectors(letGoFrom, slotAt, u)
-            box.position.y += 0.06 * Math.sin(Math.PI * u)
+        // the box: in the arms, then slid forward and down onto the board, where it stays
+        const P = place(T)
+        const held = boxInArms()
+        box.position.lerpVectors(held, slotAt, T < PLACE[0] ? 0 : P)
+        const squareYaw = Math.round(g.root.rotation.y / Math.PI) * Math.PI
+        box.rotation.y = lerp(g.root.rotation.y, squareYaw, T < PLACE[0] ? 0 : P)
+        if (T >= PLACE[1]) {
+            box.position.copy(slotAt)
+            box.rotation.y = 0
         }
-        box.rotation.y = T < LET_GO ? g.root.rotation.y : lerp(g.root.rotation.y, 0, outCubic(seg(T, LET_GO, LET_GO + 0.35)))
         const s = shot(T, g.position)
         cam.position.set(...s.pos)
         cam.lookAt(...s.target)
