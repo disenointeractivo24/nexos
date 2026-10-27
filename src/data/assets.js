@@ -35,7 +35,8 @@ const DOOR = 2.1
 const stylized = { ao: 0.28, aoHeight: 3.2, rim: 0.1 } // keeps the textures; adds the world's shading
 
 /** How the trees are shaded: the stylized look, and a little wind in the crowns. */
-const TREE_LOOK = { ao: 0.35, aoHeight: 2.6, rim: 0.16, sway: 0.04 }
+// the trees come out of Substance glossy (roughness 0.3): leaves are matte
+const TREE_LOOK = { ao: 0.35, aoHeight: 2.6, rim: 0.16, sway: 0.04, roughness: 1 }
 
 export const ASSETS = {
     /* ---------------- characters ---------------- */

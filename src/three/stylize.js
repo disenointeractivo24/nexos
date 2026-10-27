@@ -79,10 +79,12 @@ function patchVertex(src) {
 
 /**
  * @param {THREE.MeshStandardMaterial} material
- * @param {{ao?:number, aoHeight?:number, rim?:number, rimColor?:string, sway?:number}} o
+ * @param {{ao?:number, aoHeight?:number, rim?:number, rimColor?:string, sway?:number, roughness?:number}} o
  */
-export function stylize(material, { ao = 0.32, aoHeight = 2.4, rim = 0.14, rimColor = '#FFEBD2', sway = 0 } = {}) {
+export function stylize(material, { ao = 0.32, aoHeight = 2.4, rim = 0.14, rimColor = '#FFEBD2', sway = 0, roughness } = {}) {
     if (material.userData.nx) return material
+    // some exported models arrive glossy; a matte override keeps the sun from glinting off them
+    if (roughness !== undefined) material.roughness = roughness
     const u = {
         uTime: shaderTime,
         uAo: { value: ao },
