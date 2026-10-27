@@ -12,6 +12,7 @@ import { stylize, stylizeWater, stylizeRiver } from './stylize.js'
 import { buildCityCues } from './ThemeCues.js'
 import * as props from './props.js'
 import { PHONE } from './Stage.js'
+import { TREE_MODELS } from '../data/assets.js'
 
 /** Live map colours: a donation on its way, in the point, handed out; a transfer. */
 const LIVE_COLOURS = { aporte: '#F5333F', recibido: '#1F8A4C', entregado: '#E39B1B', traslado: '#1E6FD9', 'traslado-recibido': '#1E6FD9' }
@@ -812,6 +813,63 @@ export class CityOverview {
      * instanced mesh per piece of each: every complex its own building, repeated over its block
      * (see complexLayout), at the scale of the houses. If none loads, the stand-ins stay.
      */
+    /**
+     * Swap the drawn trees for the painted ones (TREE_MODELS): the streets get the full models,
+     * the hillside forest their light copies (`-lejos`), and each tree keeps its place, turn
+     * and size (a drawn tree stood some 3 m high for each unit of its size; on the streets the
+     * painted ones, wider in the crown, a little less, so they sit among the houses). One instanced mesh
+     * per piece of each model; the forest a little darker, as before, and out of the shadow pass.
+     * Where none of a set loads, those drawn trees stay.
+     */
+    async useTreeModels(loader) {
+        const spots = this.treeSpots
+        if (!spots) return
+        const load = (ids) => Promise.all(ids.map((id) => loader.load(id).then((t) => (t?.source === 'glb' ? t : null), () => null)))
+        const [near, far] = await Promise.all([load(TREE_MODELS), load(TREE_MODELS.map((id) => `${id}-lejos`))])
+        const place = new THREE.Matrix4(), m = new THREE.Matrix4()
+        const q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0)
+        const tint = new THREE.Color()
+        for (const [kind, templates, shadows] of [['street', near.filter(Boolean), true], ['forest', far.filter(Boolean), false]]) {
+            if (!templates.length) continue
+            const byModel = templates.map(() => [])
+            spots[kind].forEach((s, i) => byModel[Math.floor(lotHash(i, Math.round(s.x), kind) * templates.length) % templates.length].push(s))
+            templates.forEach((t, k) => {
+                const list = byModel[k]
+                if (!list.length) return
+                const placements = list.map((s) => {
+                    q.setFromAxisAngle(up, s.yaw)
+                    const h = (kind === 'street' ? 2.6 : 3.05) * s.s * s.k
+                    return place.compose(p.set(s.x, s.y - 0.1, s.z), q, sc.set(h, h, h)).clone()
+                })
+                t.object.updateMatrixWorld(true)
+                t.object.traverse((o) => {
+                    if (!o.isMesh) return
+                    const im = new THREE.InstancedMesh(o.geometry, o.material, placements.length)
+                    placements.forEach((pl, i) => {
+                        im.setMatrixAt(i, m.multiplyMatrices(pl, o.matrixWorld))
+                        // no two quite the same green; the far hills a deeper, cooler green, so they
+                        // stay behind the city as the drawn forest did
+                        const v = lotHash(i, k, kind) * 0.08
+                        if (kind === 'forest') im.setColorAt(i, tint.setRGB(0.36 + v, 0.46 + v, 0.34 + v))
+                        else im.setColorAt(i, tint.setRGB(0.82 + v, 0.88 + v, 0.8 + v))
+                    })
+                    im.castShadow = shadows
+                    im.receiveShadow = shadows
+                    im.instanceMatrix.needsUpdate = true
+                    im.computeBoundingSphere()
+                    im.name = `arbol-mapa:${kind}:${k}`
+                    this.group.add(im)
+                })
+            })
+            for (const im of this.drawnTrees?.[kind] ?? []) {
+                this.group.remove(im)
+                im.geometry.dispose()
+                im.dispose()
+            }
+            if (this.drawnTrees) this.drawnTrees[kind] = []
+        }
+    }
+
     async useTowerModels(loader) {
         const spots = this.towerSpots
         if (!spots?.length) return
@@ -1723,8 +1781,11 @@ export class CityOverview {
             const canopy = new THREE.InstancedMesh(canopyGeometry(0), leafMat(), list.length)
             const trunk = new THREE.InstancedMesh(trunkGeometry(), trunkMat(), list.length)
             list.forEach((t, i) => {
-                q.setFromEuler(e.set(0, rnd() * Math.PI * 2, 0))
-                m.compose(p.set(t.x, t.y + t.s * 0.9, t.z), q, sc.set(t.s, t.s * (0.9 + rnd() * 0.25), t.s))
+                // kept, for the painted trees that take their place (see useTreeModels)
+                t.yaw = rnd() * Math.PI * 2
+                t.k = 0.9 + rnd() * 0.25
+                q.setFromEuler(e.set(0, t.yaw, 0))
+                m.compose(p.set(t.x, t.y + t.s * 0.9, t.z), q, sc.set(t.s, t.s * t.k, t.s))
                 canopy.setMatrixAt(i, m)
                 canopy.setColorAt(i, pick(t.dark ? darkLeaf : leafColors))
                 m.compose(p.set(t.x, t.y - 0.2, t.z), q, sc.set(t.s, t.s * 0.95, t.s))
@@ -1736,7 +1797,12 @@ export class CityOverview {
             return [canopy, trunk]
         }
 
-        const meshes = [...batch(trees.slice(0, forestCount), false), ...batch(trees.slice(forestCount), true)]
+        const forest = batch(trees.slice(0, forestCount), false)
+        const street = batch(trees.slice(forestCount), true)
+        const meshes = [...forest, ...street]
+        // drawn trees until the painted ones arrive (see useTreeModels)
+        this.treeSpots = { forest: trees.slice(0, forestCount), street: trees.slice(forestCount) }
+        this.drawnTrees = { forest, street }
 
         const palmMesh = new THREE.InstancedMesh(palmGeometry(), stylize(sharedMaterial('city:palm', { vertexColors: true, roughness: 0.95 }), { sway: 0.06 }), palms.length)
         palms.forEach((t, i) => {

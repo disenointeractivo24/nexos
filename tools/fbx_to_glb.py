@@ -18,6 +18,7 @@ a plain glass material.
 """
 
 import os
+import re
 import sys
 
 import bpy
@@ -28,11 +29,15 @@ STEM = args[3] if len(args) > 3 else os.path.splitext(os.path.basename(FBX))[0]
 
 
 def texture(material, kind):
-    # Substance exports PNG or JPEG, depending on the preset
-    for ext in ("png", "jpg", "jpeg"):
-        path = os.path.join(TEX_DIR, f"{STEM}_{material}_{kind}.{ext}")
-        if os.path.exists(path):
-            return path
+    # Substance exports PNG or JPEG, depending on the preset. A material copied from another
+    # model keeps its number (Arbol3, Hojas.001) while its textures were exported without it:
+    # the name without the number is tried too
+    names = [material, re.sub(r"(\.\d+|\d+)$", "", material)]
+    for name in dict.fromkeys(names):
+        for ext in ("png", "jpg", "jpeg"):
+            path = os.path.join(TEX_DIR, f"{STEM}_{name}_{kind}.{ext}")
+            if os.path.exists(path):
+                return path
     return None
 
 
@@ -112,6 +117,12 @@ def main():
         if not o.data.materials:
             o.data.materials.append(glass)
             print(f"[glb] {o.name}: sin material -> Vidrio")
+        # an empty slot (left over in the source) takes the piece's own material, or glass
+        real = next((m for m in o.data.materials if m), glass)
+        for i, m in enumerate(o.data.materials):
+            if m is None:
+                o.data.materials[i] = real
+                print(f"[glb] {o.name}: ranura vacía -> {real.name}")
 
     for mat in bpy.data.materials:
         if mat is glass:

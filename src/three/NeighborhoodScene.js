@@ -9,6 +9,7 @@ import { buildBarrioCues } from './ThemeCues.js'
 import { buildCollectionPoint, collectionPointProxy, DISPLAY_SLOTS } from './CollectionPoint.js'
 import { SUPPLIES, CATEGORIES, perBox } from '../data/catalog.js'
 import * as props from './props.js'
+import { TREE_MODELS } from '../data/assets.js'
 
 /**
  * Neighborhoods. Each barrio is built from a layout (data/layouts.js) into its own
@@ -214,6 +215,8 @@ export class NeighborhoodScene {
         // San Antonio's church; until (or unless) it loads, the drawn chapel stands on the crest
         const church = await this.loader.load('iglesia-san-antonio').catch(() => null)
         this.churchTemplate = church?.source === 'glb' ? church : null
+        // the painted trees; until (or unless) they load, the drawn ones stand in
+        this.treeTemplates = (await Promise.all(TREE_MODELS.map((id) => this.loader.load(id).catch(() => null)))).filter((t) => t?.source === 'glb')
         this.street = {}
         await Promise.all(
             STREET_PROPS.map((id) =>
@@ -1974,26 +1977,65 @@ export class NeighborhoodScene {
             }
         }
 
-        const leaf = stylize(sharedMaterial('nb:leaf', { color: '#FFFFFF', roughness: 0.92 }), { ao: 0.42, aoHeight: 2.6, rim: 0.2, sway: 0 })
-        const canopy = new THREE.InstancedMesh(canopyGeometry(2), leaf, trees.length)
-        const trunk = new THREE.InstancedMesh(trunkGeometry(), stylize(sharedMaterial('nb:trunk', { color: WORLD.trunk, roughness: 1 })), trees.length)
-        disposables.push(canopy, trunk)
-        const leafColors = (this.theme.skin?.leaf ?? WORLD.leaf).map((c) => new THREE.Color(c))
         const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0)
-        trees.forEach(([x, z, s], i) => {
-            solids.circles.push({ x, z, r: 0.35 * s })
-            const y = gy(x, z)
-            q.setFromAxisAngle(up, rand() * Math.PI * 2)
-            m.compose(p.set(x, y + s * 1.5, z), q, sc.set(s * 1.35, s * 1.25, s * 1.35))
-            canopy.setMatrixAt(i, m)
-            canopy.setColorAt(i, leafColors[Math.floor(rand() * leafColors.length)])
-            m.compose(p.set(x, y, z), q, sc.set(s * 1.3, s * 1.35, s * 1.3))
-            trunk.setMatrixAt(i, m)
-            blocked.push({ x, z, r: 1.2 })
-        })
-        for (const im of [canopy, trunk]) {
+        const treeMeshes = []
+        // the crowns: what stands between the camera and what it looks at (see occluders)
+        const crowns = []
+        if (this.treeTemplates?.length) {
+            // the painted trees: one of the three for each spot, turned and sized as the drawn
+            // ones were (some 4 m high for each unit of size). The same two draws from `rand`
+            // per tree as the drawn ones, so what is placed after them stays where it was
+            const T = this.treeTemplates
+            const byModel = T.map(() => [])
+            const tint = new THREE.Color()
+            trees.forEach(([x, z, s]) => {
+                solids.circles.push({ x, z, r: 0.35 * s })
+                q.setFromAxisAngle(up, rand() * Math.PI * 2)
+                const h = 4.0 * s
+                byModel[Math.floor(rand() * T.length) % T.length].push(m.compose(p.set(x, gy(x, z) - 0.05, z), q, sc.set(h, h, h)).clone())
+                blocked.push({ x, z, r: 1.2 })
+            })
+            T.forEach((t, k) => {
+                const placements = byModel[k]
+                if (!placements.length) return
+                t.object.updateMatrixWorld(true)
+                t.object.traverse((o) => {
+                    if (!o.isMesh) return
+                    const im = new THREE.InstancedMesh(o.geometry, o.material, placements.length)
+                    placements.forEach((pl, i) => {
+                        im.setMatrixAt(i, m.multiplyMatrices(pl, o.matrixWorld))
+                        // no two quite the same green
+                        const v = 0.9 + (((i * 37 + k * 11) % 10) / 10) * 0.1
+                        im.setColorAt(i, tint.setRGB(v, v * 1.02, v))
+                    })
+                    treeMeshes.push(im)
+                    if (/hoja/i.test([o.material].flat()[0]?.name ?? '')) crowns.push(im)
+                })
+            })
+        } else {
+            const leaf = stylize(sharedMaterial('nb:leaf', { color: '#FFFFFF', roughness: 0.92 }), { ao: 0.42, aoHeight: 2.6, rim: 0.2, sway: 0 })
+            const canopy = new THREE.InstancedMesh(canopyGeometry(2), leaf, trees.length)
+            const trunk = new THREE.InstancedMesh(trunkGeometry(), stylize(sharedMaterial('nb:trunk', { color: WORLD.trunk, roughness: 1 })), trees.length)
+            const leafColors = (this.theme.skin?.leaf ?? WORLD.leaf).map((c) => new THREE.Color(c))
+            trees.forEach(([x, z, s], i) => {
+                solids.circles.push({ x, z, r: 0.35 * s })
+                const y = gy(x, z)
+                q.setFromAxisAngle(up, rand() * Math.PI * 2)
+                m.compose(p.set(x, y + s * 1.5, z), q, sc.set(s * 1.35, s * 1.25, s * 1.35))
+                canopy.setMatrixAt(i, m)
+                canopy.setColorAt(i, leafColors[Math.floor(rand() * leafColors.length)])
+                m.compose(p.set(x, y, z), q, sc.set(s * 1.3, s * 1.35, s * 1.3))
+                trunk.setMatrixAt(i, m)
+                blocked.push({ x, z, r: 1.2 })
+            })
+            treeMeshes.push(canopy, trunk)
+            crowns.push(canopy)
+        }
+        disposables.push(...treeMeshes)
+        for (const im of treeMeshes) {
             im.castShadow = true
             im.receiveShadow = true
+            im.instanceMatrix.needsUpdate = true
             im.computeBoundingSphere()
             group.add(im)
         }
@@ -2076,7 +2118,7 @@ export class NeighborhoodScene {
             flowerMesh.setColorAt(i, fc[(b + Math.floor(rand() * 1.4)) % fc.length])
         })
         group.add(flowerMesh)
-        return [canopy]
+        return crowns
     }
 
     /**

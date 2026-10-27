@@ -34,6 +34,9 @@ const DOOR = 2.1
  */
 const stylized = { ao: 0.28, aoHeight: 3.2, rim: 0.1 } // keeps the textures; adds the world's shading
 
+/** How the trees are shaded: the stylized look, and a little wind in the crowns. */
+const TREE_LOOK = { ao: 0.35, aoHeight: 2.6, rim: 0.16, sway: 0.04 }
+
 export const ASSETS = {
     /* ---------------- characters ---------------- */
     /*
@@ -167,6 +170,19 @@ export const ASSETS = {
     'utility-pole': { id: 'utility-pole', category: 'props', label: 'Poste de energía', model: '/assets/props/poste.glb', procedural: null, stylize: { ao: 0.15, aoHeight: 1.5, rim: 0.1 } },
 
     /*
+     * Trees painted in Substance Painter (fuentes_3d/arboles/, exported with
+     * tools/fbx_to_glb.py), made 1 m high: each place scales them to the tree it wants. The
+     * `-lejos` copies (tools/decimar_glb.py) have half the triangles and small textures,
+     * for the city's hillside forest, thousands of trees seen from far away.
+     */
+    'tree-1': { id: 'tree-1', category: 'trees', label: 'Árbol', model: '/assets/props/arbol-1.glb', procedural: null, fit: { height: 1 }, stylize: TREE_LOOK },
+    'tree-1-lejos': { id: 'tree-1-lejos', category: 'trees', label: 'Árbol (lejos)', model: '/assets/props/arbol-1-lejos.glb', procedural: null, fit: { height: 1 }, stylize: TREE_LOOK },
+    'tree-2': { id: 'tree-2', category: 'trees', label: 'Árbol', model: '/assets/props/arbol-2.glb', procedural: null, fit: { height: 1 }, stylize: TREE_LOOK },
+    'tree-2-lejos': { id: 'tree-2-lejos', category: 'trees', label: 'Árbol (lejos)', model: '/assets/props/arbol-2-lejos.glb', procedural: null, fit: { height: 1 }, stylize: TREE_LOOK },
+    'tree-3': { id: 'tree-3', category: 'trees', label: 'Árbol', model: '/assets/props/arbol-3.glb', procedural: null, fit: { height: 1 }, stylize: TREE_LOOK },
+    'tree-3-lejos': { id: 'tree-3-lejos', category: 'trees', label: 'Árbol (lejos)', model: '/assets/props/arbol-3-lejos.glb', procedural: null, fit: { height: 1 }, stylize: TREE_LOOK },
+
+    /*
      * Buildings painted in Substance Painter (fuentes_3d/edificios/, exported with
      * tools/exportar_props.py). The landmarks are sized to the city map; the collection
      * point is the stand donors walk to and the one a point works from.
@@ -194,6 +210,9 @@ export const ASSETS = {
     blanket: { id: 'blanket', category: 'supplies', label: 'Cobija', model: null, procedural: 'blanket', fit: { size: 1.7 } },
     'hygiene-kit': { id: 'hygiene-kit', category: 'supplies', label: 'Kit de higiene', model: null, procedural: 'hygieneKit', fit: { size: 1.7 } },
 }
+
+/** The trees, in the barrio and on the city's streets (and their `-lejos` copies on the hills). */
+export const TREE_MODELS = ['tree-1', 'tree-2', 'tree-3']
 
 export const HOUSE_MODELS = ['house-tile', 'house-two-story', 'house-zinc', 'house-estrato2', 'house-estrato3', 'house-estrato4', 'house-estrato5']
 

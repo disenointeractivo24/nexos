@@ -236,3 +236,21 @@ Para regenerarlos, desde `starter/`:
 
 Basta con añadir otra carpeta `NPC3` (con los mismos nombres de material) para tener otro
 juego de ropa; luego hay que sumarlo en `src/data/assets.js` y en `src/three/neighbour.js`.
+
+### Árboles
+
+`arboles/Arbol 1|2|3/` (GLB + Texturas) dan `static/assets/props/arbol-1|2|3.glb`: los árboles
+del barrio y de las calles de la ciudad (`TREE_MODELS` en `src/data/assets.js`). El bosque de los
+cerros usa copias más livianas, `arbol-N-lejos.glb`, con la mitad de los triángulos y texturas de
+256 px, porque son miles de árboles vistos desde lejos.
+
+Desde `starter/`:
+
+```
+"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python tools/fbx_to_glb.py -- "fuentes_3d/arboles/Arbol 1/GLB/Arbol 1.glb" "fuentes_3d/arboles/Arbol 1/Texturas" static/assets/props/arbol-1.glb "arbol 1"
+"C:\Program Files\Blender Foundation\Blender 5.0\blender.exe" -b --factory-startup --python tools/decimar_glb.py -- static/assets/props/arbol-1.glb static/assets/props/arbol-1-lejos.glb 0.5 256
+```
+
+(Igual para el 2 y el 3, con su prefijo `Arbol 2` y `Arbol 3`.) Si un material se copió de otro
+modelo y conserva su número (el tronco del Árbol 1 se llama `Arbol3`), el exportador busca también
+la textura sin el número (`arbol 1_Arbol_…`).

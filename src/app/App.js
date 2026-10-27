@@ -301,6 +301,8 @@ export class App {
         const cityHouses = this.city.useHouseModels(this.loader)
         // and its apartment buildings, in place of the drawn towers
         const cityTowers = this.city.useTowerModels(this.loader)
+        // and its trees, in place of the drawn ones
+        const cityTrees = this.city.useTreeModels(this.loader)
 
         // the barrio starts as soon as its own models are in, without waiting for the map's
         await assets
@@ -339,6 +341,7 @@ export class App {
         await landmarks
         await cityHouses
         await cityTowers
+        await cityTrees
         boot.set(0.92, 'Casi listo…')
         // the textured landmarks and houses cast their own shadows
         this.stage.invalidateShadows()
