@@ -22,7 +22,7 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 syste
 .part h2 { margin: 0; color: var(--navy); font-size: 26px; }
 .part header p { margin: 0; flex: 1 1 320px; color: var(--muted); }
 .count { font-size: 13px; font-weight: 700; color: var(--red); }
-.strip { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(280px, 340px); gap: 18px; overflow-x: auto; padding: 22px 4px 16px; scroll-snap-type: x proximity; }
+.strip { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(340px, 420px); align-items: start; gap: 18px; overflow-x: auto; padding: 22px 4px 16px; scroll-snap-type: x proximity; }
 .strip::before { content: ""; position: absolute; left: 0; right: 0; top: 9px; height: 3px; background: linear-gradient(90deg, var(--line), var(--red)); border-radius: 3px; min-width: 100%; }
 .step { position: relative; margin: 0; background: var(--card); border-radius: 18px; box-shadow: 0 2px 10px rgba(1,30,65,.08); overflow: hidden; scroll-snap-align: start; display: flex; flex-direction: column; }
 .step::before { content: ""; position: absolute; top: -19px; left: 22px; width: 13px; height: 13px; border-radius: 50%; background: var(--navy); border: 3px solid var(--bg); }
