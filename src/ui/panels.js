@@ -312,11 +312,12 @@ export class DonorPanel extends Panel {
         }
     }
 
-    #head(title, sub) {
+    #head(title, sub, step = 0) {
         return `
             <div class="supply-head">
-                <span class="wlabel-icon" style="background:#011E41">${icon('box')}</span>
-                <div>
+                <span class="wlabel-icon" style="background:#011E41">${icon(step ? 'basket' : 'check')}</span>
+                <div class="dn-title">
+                    ${step ? `<span class="dn-step">Paso ${step} de 4</span>` : ''}
                     <h2 id="supply-title">${title}</h2>
                     <p class="sub">${sub}</p>
                 </div>
@@ -333,7 +334,7 @@ export class DonorPanel extends Panel {
             title: 'Cómo donar',
             body: helpList([
                 'Arriba eliges el <b>tipo de ayuda</b>; abajo aparece lo que el barrio necesita de ese tipo.',
-                'Suma con <b>+</b> lo que quieras dejar, o <b>toca el número y escribe la cantidad</b>. Con <b>Caja</b> (en el celular) o <b>+ caja</b>, sumas una caja completa.',
+                'Suma con <b>+</b> lo que quieras dejar, o <b>toca el número y escribe la cantidad</b>. Con <b>+1 caja</b> (o <b>Caja</b> arriba, en el celular) sumas una caja completa.',
                 'Lo marcado como <b>Urgente</b> es lo que más falta en este barrio.',
                 'Toca <b>Continuar</b>: entregas los productos en el punto o aportas su valor. Puedes volver atrás en cualquier paso.',
             ]),
@@ -393,25 +394,26 @@ export class DonorPanel extends Panel {
                 const s = SUPPLIES[n.item]
                 const q = this.basket.get(n.item) ?? 0
                 const urgent = session.isUrgent(key, n.item)
+                // what it is (a tap on it adds one), how much the barrio needs, then the count
                 return `
-                <div class="tile ${q ? 'is-selected' : ''} ${urgent ? 'is-urgent' : ''}" data-item="${n.item}">
-                    <button class="tile-toggle" type="button"
+                <div class="dn-card ${q ? 'is-selected' : ''} ${urgent ? 'is-urgent' : ''}" data-item="${n.item}">
+                    <button class="dn-add" type="button"
                         aria-label="${s.label}. Se necesitan ${n.qty}. Valor de referencia ${money(s.value)} cada uno. Agregar uno">
-                        <span class="tile-stage" aria-hidden="true"></span>
-                        <span class="tile-name">${s.label}</span>
+                        <span class="tile-stage dn-pic" aria-hidden="true"></span>
+                        <span class="dn-name"><b>${s.label}</b><small>${money(s.value)} c/u · ${perBox(n.item)} por caja</small></span>
                     </button>
-                    <p class="tile-meta">${urgent ? `<span class="tile-flag">${icon('urgent')} Urgente</span>` : ''}<span>${n.qty === 1 ? 'Se necesita' : 'Se necesitan'} <b>${n.qty}</b></span><span class="tile-value">${money(s.value)} c/u</span><span class="tile-pack">${icon('box')} ${perBox(n.item)} por caja</span></p>
+                    <p class="dn-need">${urgent ? `<span class="dn-urgent">${icon('urgent')} Urgente</span>` : ''}<span>${n.qty === 1 ? 'Se necesita' : 'Se necesitan'} <b>${n.qty}</b></span></p>
                     ${this.#stepper(n.item, q, n.qty)}
-                    <div class="box-step">
-                        <button type="button" class="js-box-minus" aria-label="Quitar una caja de ${s.label}" ${q <= 0 ? 'disabled' : ''}>${icon('minus')} caja</button>
-                        <button type="button" class="js-box-plus" aria-label="Agregar una caja de ${s.label} (${perBox(n.item)} unidades)" ${q >= n.qty ? 'disabled' : ''}>${icon('plus')} caja</button>
+                    <div class="inv-boxbtns">
+                        <button type="button" class="js-box-minus" aria-label="Quitar una caja de ${s.label}" ${q <= 0 ? 'disabled' : ''}>${icon('minus')} 1 caja</button>
+                        <button type="button" class="js-box-plus" aria-label="Agregar una caja de ${s.label} (${perBox(n.item)} unidades)" ${q >= n.qty ? 'disabled' : ''}>${icon('plus')} 1 caja</button>
                     </div>
                 </div>`
             })
             .join('')
 
         this.el.innerHTML = `
-            ${this.#head('Punto de acopio', `${this.barrio.name} · Elige qué dejar aquí.`)}
+            ${this.#head('¿Qué quieres donar?', `${this.barrio.name} · Punto de acopio`, 1)}
             <div class="supply-body step-enter">
                 <div class="cat-row">${this.#categoryStrip()}${stepToggle(this.byBox)}</div>
                 <p class="cat-title">${CATEGORIES[group?.category]?.label ?? ''}<span>${tiles ? ` · ${group.items.length} ${group.items.length === 1 ? 'insumo' : 'insumos'}` : ''}</span></p>
@@ -442,11 +444,11 @@ export class DonorPanel extends Panel {
                 this.render(true)
             })
         )
-        this.el.querySelectorAll('.tile').forEach((tile) => {
+        this.el.querySelectorAll('.dn-card').forEach((tile) => {
             const id = tile.dataset.item
             const max = this.#max(id)
             tile3D(this, tile, id, body)
-            tile.querySelector('.tile-toggle').addEventListener('click', () => {
+            tile.querySelector('.dn-add').addEventListener('click', () => {
                 const q = this.basket.get(id) ?? 0
                 if (q < max) this.#setQty(id, q + 1, max)
             })
@@ -459,7 +461,7 @@ export class DonorPanel extends Panel {
         this.#syncBasketRows()
         this.el.querySelector('.js-next').addEventListener('click', () => {
             if (!this.basket.size) {
-                this.el.querySelector('.tile .tile-toggle')?.focus()
+                this.el.querySelector('.dn-card .dn-add')?.focus()
                 this.audio.play('error')
                 this.#nudge()
                 return
@@ -482,7 +484,7 @@ export class DonorPanel extends Panel {
 
     #bindStepper(scope, id, max) {
         // on a phone the same buttons move a whole box when the switch says so
-        const step = () => (this.byBox && isNarrow() && scope.classList.contains('tile') ? perBox(id) : 1)
+        const step = () => (this.byBox && isNarrow() && scope.classList.contains('dn-card') ? perBox(id) : 1)
         scope.querySelector('.js-minus')?.addEventListener('click', () => this.#setQty(id, (this.basket.get(id) ?? 0) - step(), max))
         scope.querySelector('.js-plus')?.addEventListener('click', () => this.#setQty(id, (this.basket.get(id) ?? 0) + step(), max))
         // whoever already knows how many can type it; more than the barrio needs is capped
@@ -575,7 +577,7 @@ export class DonorPanel extends Panel {
     #method() {
         const t = this.#totals()
         this.el.innerHTML = `
-            ${this.#head('¿Cómo quieres aportar?', `Tu cesta: ${t.units} ${t.units === 1 ? 'unidad' : 'unidades'} · ${money(t.value)} · ${this.#boxWord(t)}`)}
+            ${this.#head('¿Cómo quieres aportar?', `Tu cesta: ${t.units} ${t.units === 1 ? 'unidad' : 'unidades'} · ${money(t.value)} · ${this.#boxWord(t)}`, 2)}
             <div class="supply-body step-enter">
                 <div class="choice-list">
                     <button class="choice js-physical" type="button" data-autofocus>
@@ -610,7 +612,7 @@ export class DonorPanel extends Panel {
         const windows = deliveryWindows(this.point)
         if (!windows.some((w) => w.id === d.window)) d.window = ''
         this.el.innerHTML = `
-            ${this.#head('Tus datos para la entrega', 'Solo lo necesario para coordinar.')}
+            ${this.#head('Tus datos para la entrega', 'Solo lo necesario para coordinar.', 3)}
             <form class="supply-body step-enter donor-form" novalidate>
                 <label class="field">
                     <span class="field-label">Nombre completo</span>
@@ -716,7 +718,7 @@ export class DonorPanel extends Panel {
         const w = findWindow(this.point, this.details.window)
         this.code = this.code ?? refCode()
         this.el.innerHTML = `
-            ${this.#head('Resumen del aporte', 'Revisa los datos y confirma.')}
+            ${this.#head('Resumen del aporte', 'Revisa los datos y confirma.', 4)}
             <div class="supply-body step-enter">
                 ${this.#itemsSummary()}
                 <div class="info-block">${icon('pin')}<div><span class="info-label">Dónde entregar</span><b>${esc(p.name)}</b><span>${esc(p.address)}, Cali</span><span>Atención ${esc(p.hours)}</span></div></div>
@@ -756,7 +758,7 @@ export class DonorPanel extends Panel {
             ['wallet', 'phone', 'Nequi o Daviplata', 'Desde tu celular'],
         ]
         this.el.innerHTML = `
-            ${this.#head('Aporte en dinero', `${this.barrio.name} · Punto de acopio`)}
+            ${this.#head('Aporte en dinero', `${this.barrio.name} · Punto de acopio`, 3)}
             <div class="supply-body step-enter">
                 <div class="gateway">
                     <div class="gateway-bar">${icon('lock')}<span>Pago seguro · Demostración</span></div>
