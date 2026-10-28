@@ -3572,3 +3572,57 @@ html.is-lite { background: #F3F5F8; }
     .board-head .icon-btn { width: 36px; height: 36px; }
     .board-head .icon-btn [data-icon] { width: 20px; height: 20px; }
 }
+
+/* ================================================================
+   Cover: the words and the two doors on the left, the city on the right
+   ================================================================ */
+.role-art { display: none; }
+@media (min-width: 1000px) {
+    .role { grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr); grid-template-rows: 100%; place-items: stretch; align-content: stretch; padding: 0; overflow: hidden; }
+    .role-card {
+        --logo: clamp(96px, min(12.5vw, 21vh), 210px);
+        --btn-h: max(52px, calc(var(--logo) / 2));
+        align-self: center;
+        justify-self: end;
+        width: min(760px, 100%);
+        padding: 40px 48px 40px clamp(32px, 6vw, 110px);
+        text-align: left;
+        align-items: flex-start;
+    }
+    .intro-logo { line-height: 0.9; }
+    .intro-tag { margin-top: 18px; }
+    .intro-lead { max-width: 36ch; }
+    .role-options { width: 100%; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .role-btn { position: relative; align-items: flex-start; gap: 16px; min-height: calc(var(--btn-h) * 1.75); padding: 22px 20px; border-radius: 22px; }
+    /* the title may use the whole width; the line under it leaves room for the arrow */
+    .role-text span { padding-right: 40px; }
+    .role-text { gap: 6px; padding-top: 4px; }
+    .role-text strong { font-size: clamp(18px, calc(var(--btn-h) * 0.22), 26px); }
+    .role-text span { display: block; font-size: clamp(14px, calc(var(--btn-h) * 0.16), 18px); line-height: 1.35; }
+    .role-go { position: absolute; right: 16px; bottom: 16px; width: 36px !important; height: 36px !important; padding: 8px; border-radius: 50%; background: rgba(255, 255, 255, 0.2); box-sizing: border-box; transition: background-color 200ms var(--ease-calm), transform 200ms var(--ease-calm); }
+    .role-btn:hover .role-go { background: rgba(255, 255, 255, 0.32); transform: translateX(2px); }
+    .role-links { justify-content: flex-start; margin-top: 16px; }
+    .role-art { display: block; position: relative; height: 100%; min-height: 100%; animation: fade-in 900ms var(--ease-calm) both 250ms; }
+    .role-art-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 40%; }
+    .role-art-edge { position: absolute; top: 0; bottom: 0; left: -2px; width: clamp(110px, 12vw, 200px); height: 100%; }
+    /* the image starts a few pixels in, so no hairline of it shows at the seam */
+    .role-art-img { left: 4px; width: calc(100% - 4px); }
+    .edge-white { fill: var(--white); }
+    .edge-red { fill: var(--red); }
+    .edge-line { fill: none; stroke: #fff; stroke-width: 2; opacity: 0.85; vector-effect: non-scaling-stroke; }
+}
+@media (min-width: 1000px) and (prefers-reduced-motion: reduce) {
+    .role-art { animation: none; }
+    .role-btn:hover .role-go { transform: none; }
+}
+/* narrower screens: the city as a banner over the words, its lower edge curved like the wide one's side */
+@media (max-width: 999px) {
+    .role { align-content: start; padding-top: 0; }
+    .role-art { order: -1; display: block; position: relative; width: calc(100% + 2 * var(--gutter)); margin: 0 calc(-1 * var(--gutter)) 18px; height: clamp(170px, 30vh, 320px); animation: fade-in 900ms var(--ease-calm) both 200ms; }
+    .role-art-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 28%; clip-path: ellipse(85% 100% at 50% 0); }
+    .role-art::after { content: ''; position: absolute; left: 0; right: 0; bottom: -6px; height: 26px; background: var(--red); clip-path: ellipse(85% 100% at 50% 0); transform: translateY(-20px); z-index: -1; }
+    .role-art-edge { display: none; }
+}
+@media (max-width: 999px) and (prefers-reduced-motion: reduce) {
+    .role-art { animation: none; }
+}
