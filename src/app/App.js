@@ -247,7 +247,7 @@ export class App {
         this.stage.hold = false
         await new Promise((r) => setTimeout(r, 200))
         await boot.done(() => this.setState('role'))
-        this.$('.role-donor').focus({ preventScroll: true })
+        this.#focusCover()
         // opened from a donation's QR or link: show where that donation is
         const code = new URLSearchParams(location.search).get('aporte')
         if (code) this.track.show(code)
@@ -482,11 +482,20 @@ export class App {
         })
     }
 
+    /**
+     * The cover's first door takes the focus for whoever moves with a keyboard. On a touch screen
+     * nobody needs it, and a phone would draw its focus ring round the button as if pressed.
+     */
+    #focusCover() {
+        if (matchMedia('(pointer: coarse)').matches) return
+        this.$('.role-donor').focus({ preventScroll: true })
+    }
+
     #loginBack() {
         this.$('.login').hidden = true
         session.role = null
         this.setState('role')
-        this.$('.role-donor').focus({ preventScroll: true })
+        this.#focusCover()
     }
 
     startDescent() {
@@ -1444,7 +1453,7 @@ export class App {
         session.baskets.clear()
         this.zone = this.barrio = null
         this.setState('role')
-        this.$('.role-donor').focus({ preventScroll: true })
+        this.#focusCover()
     }
 
     /**
