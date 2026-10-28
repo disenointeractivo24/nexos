@@ -3299,3 +3299,39 @@ html.is-lite { background: #F3F5F8; }
     .trk-steps li + li::before { top: 16px; }
     .trk-steps b { font-size: var(--fs-xs); }
 }
+
+/* ================================================================
+   Collection point sign-in, both versions (ui/loginView.js)
+   ================================================================ */
+.login-card { padding: 24px; gap: 14px; background: #fff; }
+.lg-head { display: flex; align-items: center; gap: 14px; }
+.lg-mark { width: 52px; height: 52px; flex: none; display: grid; place-items: center; border-radius: 16px; background: var(--navy); color: #fff; }
+.lg-mark [data-icon] { width: 28px; height: 28px; }
+.lg-head h2, .lg-head .lite-title { margin: 0; font-size: var(--fs-xl); line-height: 1.15; color: var(--navy); }
+.lg-head .sub { margin: 4px 0 0; font-size: var(--fs-sm); color: #4E5663; }
+.lg-fields { display: grid; gap: 0; }
+.login-card .field, .lite-login .field { margin-bottom: 12px; }
+.login-card .field input::placeholder, .lite-login .field input::placeholder { color: #8A919C; }
+.lg-pin-row { position: relative; display: block; }
+.lg-pin-row input { padding-right: 96px; }
+.lg-pin-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); min-height: 38px; padding: 0 14px; border: 0; border-radius: 10px; background: #EEF1F5; font: inherit; font-size: var(--fs-sm); font-weight: 700; color: var(--navy); cursor: pointer; }
+.lg-pin-toggle:hover { background: #E1E6ED; }
+.lg-pin-toggle:focus-visible { outline: 3px solid var(--navy); outline-offset: 2px; }
+.lg-pick { display: grid; gap: 8px; padding: 12px 14px; border-radius: var(--radius-md); background: #F3F5F8; }
+.lg-pick-label { font-size: var(--fs-sm); font-weight: 700; color: var(--navy); }
+.lg-pick-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.lg-point { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 14px; border: 1.5px solid rgba(1, 30, 65, 0.12); border-radius: var(--radius-pill); background: #fff; font: inherit; font-size: var(--fs-sm); font-weight: 600; color: var(--navy); cursor: pointer; transition: border-color 0.16s ease, box-shadow 0.16s ease; }
+.lg-point i { width: 10px; height: 10px; border-radius: 50%; background: var(--zone); }
+.lg-point:hover { border-color: var(--zone); }
+.lg-point[aria-pressed="true"] { border-color: var(--zone); box-shadow: 0 0 0 3px color-mix(in srgb, var(--zone) 24%, transparent); }
+.lg-point:focus-visible { outline: 3px solid var(--navy); outline-offset: 2px; }
+.lg-pick small { font-size: var(--fs-xs); color: #6B7280; }
+.login-card .form-actions { margin-top: 2px; }
+.login-card .form-actions .btn-primary { flex: 1; }
+.lite-login { gap: 14px; padding: 20px; margin-top: 8px; }
+.lite-login .lite-actions .btn-primary { flex: 1; justify-content: center; }
+@media (max-width: 520px) {
+    .login-card { padding: 18px; }
+    .lg-mark { width: 44px; height: 44px; border-radius: 14px; }
+    .lg-head h2, .lg-head .lite-title { font-size: var(--fs-lg); }
+}

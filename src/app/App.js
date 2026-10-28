@@ -28,6 +28,7 @@ import { Progress, STEPS } from '../ui/Progress.js'
 import { icon, hydrateIcons } from '../ui/icons.js'
 import { Toast, Dialog } from '../ui/feedback.js'
 import { TrackView } from '../ui/track.js'
+import { loginFields, pointPicker, bindLogin, resetLogin } from '../ui/loginView.js'
 import { ledger, localQueue } from './donations.js'
 import { setLite } from '../lite/detect.js'
 import { makeNeighbour, preloadNeighbours } from '../three/neighbour.js'
@@ -443,6 +444,7 @@ export class App {
         this.setState('login')
         const form = this.$('.login-card')
         form.reset()
+        resetLogin(form)
         form.querySelector('.form-error').hidden = true
         this.$('.login').hidden = false
         gsap.fromTo(form, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: this.reducedMotion ? 0.01 : 0.55, ease: 'power3.out' })
@@ -1747,7 +1749,11 @@ export class App {
         this.ui.querySelectorAll('.role-btn').forEach((b) => b.addEventListener('click', () => this.chooseRole(b.dataset.role)))
         this.ui.querySelector('.js-track')?.addEventListener('click', () => this.track.show())
         this.ui.querySelector('.js-lite')?.addEventListener('click', () => setLite(true))
-        this.$('.login-card').addEventListener('submit', (e) => this.#submitLogin(e))
+        const login = this.$('.login-card')
+        login.querySelector('.js-login-fields').innerHTML = loginFields()
+        login.querySelector('.js-point-picker').innerHTML = pointPicker()
+        bindLogin(login)
+        login.addEventListener('submit', (e) => this.#submitLogin(e))
         this.$('.js-login-back').addEventListener('click', () => this.#loginBack())
         this.$('.back-btn').addEventListener('click', () => this.back())
         this.$('.js-exit').addEventListener('click', () => this.exitSession())

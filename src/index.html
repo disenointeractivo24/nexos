@@ -93,22 +93,16 @@
         <!-- Collection point access -->
         <section class="login" aria-labelledby="login-title" hidden>
             <form class="login-card glass" novalidate>
-                <div class="panel-head">
+                <div class="lg-head">
+                    <span class="lg-mark"><span data-icon="box" aria-hidden="true"></span></span>
                     <div>
                         <h2 id="login-title">Acceso para puntos de acopio</h2>
                         <p class="sub">Usa el código de tu punto y tu clave.</p>
                     </div>
                 </div>
-                <label class="field">
-                    <span class="field-label">Código del punto</span>
-                    <input name="code" type="text" autocomplete="username" autocapitalize="characters" spellcheck="false" required>
-                </label>
-                <label class="field">
-                    <span class="field-label">Clave</span>
-                    <input name="pin" type="password" autocomplete="current-password" inputmode="numeric" required>
-                </label>
+                <div class="lg-fields js-login-fields"></div>
                 <p class="form-error" role="alert" hidden></p>
-                <p class="demo-note"><span data-icon="info" aria-hidden="true"></span><span>Prototipo: <b>ACOPIO-CENTRO</b>, <b>-NORTE</b>, <b>-SUR</b>, <b>-ORIENTE</b> u <b>-OESTE</b>, con la clave <b>2024</b>.</span></p>
+                <div class="js-point-picker"></div>
                 <div class="form-actions">
                     <button class="btn btn-secondary js-login-back" type="button"><span data-icon="chevron-left" aria-hidden="true"></span> Volver</button>
                     <button class="btn btn-primary js-login-submit" type="submit">Ingresar</button>

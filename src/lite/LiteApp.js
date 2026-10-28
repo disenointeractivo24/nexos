@@ -1,6 +1,7 @@
 import { icon, hydrateIcons } from '../ui/icons.js'
 import { Toast, Dialog, helpList, busyButton } from '../ui/feedback.js'
 import { TrackView } from '../ui/track.js'
+import { loginFields, pointPicker, bindLogin } from '../ui/loginView.js'
 import { pointMenu, POINT_TITLES } from '../ui/pointMenu.js'
 import { transferSheet } from '../ui/transferSheet.js'
 import { receiveWays, receiveLists, sentList } from '../ui/receiveView.js'
@@ -558,12 +559,14 @@ export class LiteApp {
 
     #login() {
         return `
-            <h1 class="lite-title">Acceso para puntos de acopio</h1>
-            <form class="lite-form" novalidate>
-                <label class="field"><span class="field-label">Código del punto</span><input name="code" type="text" autocomplete="username" autocapitalize="characters" spellcheck="false" required data-autofocus></label>
-                <label class="field"><span class="field-label">Clave</span><input name="pin" type="password" autocomplete="current-password" inputmode="numeric" required></label>
+            <form class="lite-form lite-card lite-login" novalidate>
+                <div class="lg-head">
+                    <span class="lg-mark">${icon('box')}</span>
+                    <div><h1 class="lite-title">Acceso para puntos de acopio</h1><p class="sub">Usa el código de tu punto y tu clave.</p></div>
+                </div>
+                ${loginFields('data-autofocus')}
                 <p class="form-error js-error" role="alert" hidden></p>
-                <p class="demo-note">${icon('info')}<span>Prototipo: <b>ACOPIO-CENTRO</b>, <b>-NORTE</b>, <b>-SUR</b>, <b>-ORIENTE</b> u <b>-OESTE</b>, con la clave <b>2024</b>.</span></p>
+                ${pointPicker()}
                 <div class="lite-actions">${this.#back('home')}<button class="btn btn-primary" type="submit">Ingresar</button></div>
             </form>`
     }
@@ -571,6 +574,7 @@ export class LiteApp {
     bind_login() {
         this.#bindBack()
         const form = this.root.querySelector('form')
+        bindLogin(form)
         form.addEventListener('submit', (e) => {
             e.preventDefault()
             const point = validateCredentials(form.code.value.trim().toUpperCase(), form.pin.value.trim())
