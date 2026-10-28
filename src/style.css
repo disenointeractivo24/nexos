@@ -3789,3 +3789,17 @@ html.is-lite { background: #F3F5F8; }
 .lite-overlay .xfer-point:has(input:checked) .xfer-point-text b { color: #fff; }
 .lite-overlay .xfer-point:has(input:checked) .xfer-point-house { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85); }
 .lite-overlay .xfer-point:has(input:checked) .xfer-point-count { background: rgba(255, 255, 255, 0.18); color: #fff; }
+/* light version: the two doors stay large but as rows, the arrow centred at the right (the 3D
+   cover's tall tiles are made to sit side by side, and here they are stacked) */
+.lite-roles .role-btn { position: relative; align-items: center; gap: 16px; min-height: 96px; padding: 16px 18px; border-radius: 22px; }
+.lite-roles .role-icon { width: 52px !important; height: 52px !important; padding: 12px; border-radius: 16px; }
+.lite-roles .role-text { gap: 4px; padding: 0; }
+.lite-roles .role-text strong { font-size: var(--fs-lg); }
+.lite-roles .role-text span { display: block; padding: 0; font-size: var(--fs-sm); }
+.lite-roles .role-go { position: static; flex: none; width: 38px !important; height: 38px !important; padding: 9px; border-radius: 50%; background: rgba(255, 255, 255, 0.2); box-sizing: border-box; }
+@media (max-width: 520px) {
+    .lite-roles .role-btn { min-height: 84px; padding: 14px; gap: 12px; }
+    .lite-roles .role-icon { width: 46px !important; height: 46px !important; padding: 11px; }
+    .lite-roles .role-text strong { font-size: var(--fs-md); }
+    .lite-roles .role-text span { font-size: var(--fs-xs); }
+}
