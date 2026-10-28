@@ -3484,3 +3484,91 @@ html.is-lite { background: #F3F5F8; }
 @media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
     .progress .progress-list { display: flex; }
 }
+
+/* ================================================================
+   The end of a donation, the payment, help windows and notices
+   ================================================================ */
+/* thanks, then the ticket to show at the point, then what comes next */
+.dd { display: grid; gap: 14px; }
+.dd-hero { display: grid; justify-items: center; gap: 4px; padding: 8px 0 2px; text-align: center; }
+.dd-mark { width: 64px; height: 64px; margin-bottom: 6px; display: grid; place-items: center; border-radius: 50%; background: #2E7D5B; color: #fff; box-shadow: 0 0 0 8px #E7F1EB; }
+.dd-mark [data-icon] { width: 34px; height: 34px; }
+.dd-hero h3 { margin: 0; font-size: var(--fs-xl); font-weight: 800; color: var(--navy); }
+.dd-hero p { margin: 0; font-size: var(--fs-md); color: #4E5663; }
+.dd-ticket { display: flex; align-items: center; gap: 16px; padding: 14px; border-radius: var(--radius-md); background: #fff; box-shadow: 0 2px 10px rgba(1, 30, 65, 0.08); }
+.dd-ticket .qr-img { width: 132px; height: 132px; flex: none; }
+.dd-ticket-text { min-width: 0; display: grid; gap: 4px; justify-items: start; }
+.dd-ticket-text small { font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6B7280; }
+.dd-code { font-size: var(--fs-xl); line-height: 1.1; letter-spacing: 0.06em; color: var(--navy); }
+.dd-ticket-text span { font-size: var(--fs-sm); color: #4E5663; }
+.dd-ticket-text .btn { margin-top: 6px; min-height: 44px; padding: 0 16px; font-size: var(--fs-sm); }
+.dd-ticket.is-ref { justify-content: center; text-align: center; }
+.dd-ticket.is-ref .dd-ticket-text { justify-items: center; }
+.dd-small { margin: 0; font-size: var(--fs-xs); color: #6B7280; text-align: center; }
+.dd .done-offline { margin: 0 !important; }
+.lite-done { text-align: left; justify-items: stretch; }
+@media (max-width: 520px) {
+    .dd-ticket { flex-direction: column; text-align: center; }
+    .dd-ticket-text { justify-items: center; }
+}
+/* the demo payment: the amount and the ways to pay, as cards */
+.supply-panel .gateway { gap: 12px; padding: 16px; border: 0; border-radius: var(--radius-md); background: #fff; box-shadow: 0 2px 10px rgba(1, 30, 65, 0.08); }
+.supply-panel .gateway-bar { align-self: start; justify-self: start; padding: 4px 12px; border-radius: var(--radius-pill); background: #E7F1EB; font-size: var(--fs-xs); }
+.supply-panel .gateway-bar [data-icon] { width: 16px; height: 16px; }
+.supply-panel .gateway-amount { padding: 4px 2px; }
+.supply-panel .gateway-amount span { font-size: var(--fs-sm); color: #4E5663; }
+.supply-panel .gateway-amount b { color: var(--navy); }
+.supply-panel .gateway-demo { padding: 10px 12px; border-radius: 12px; background: #EEF3F9; }
+.supply-panel .gateway .choice-list { gap: 8px; }
+.supply-panel .gateway .choice { min-height: 64px; padding: 10px 14px; }
+.supply-panel .gateway .choice .choice-icon { width: 44px; height: 44px; border-radius: 14px; }
+.supply-panel .gateway .choice .choice-icon [data-icon] { width: 22px; height: 22px; }
+.supply-panel .gateway .choice-text b { font-size: var(--fs-md); }
+.supply-panel .basket-peek { border: 0; border-radius: var(--radius-md); background: #fff; box-shadow: 0 1px 4px rgba(1, 30, 65, 0.08); }
+.supply-panel .processing { display: grid; gap: 14px; padding: 40px 12px; }
+.supply-panel .processing-bar { height: 8px; }
+.supply-panel .processing p { margin: 0; color: #4E5663; }
+/* help: each step numbered in a navy circle, on its own light card */
+.dialog { padding: 20px; border-radius: 24px; box-shadow: 0 24px 60px rgba(1, 30, 65, 0.28); }
+.dialog-backdrop { -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+.dialog-icon { background: var(--navy); color: #fff; }
+.dialog-icon [data-icon] { width: 24px; height: 24px; }
+.dialog-head h2 { font-size: var(--fs-lg); }
+.dialog-body { margin: 14px 0 16px; font-size: var(--fs-sm); }
+.help-steps { list-style: none; padding: 0; gap: 8px; counter-reset: help; }
+.help-steps li { position: relative; counter-increment: help; padding: 10px 12px 10px 46px; border-radius: 14px; background: #F3F5F8; line-height: 1.45; color: #3E4652; }
+.help-steps li::before { content: counter(help); position: absolute; left: 12px; top: 10px; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--navy); color: #fff; font-size: var(--fs-xs); font-weight: 800; }
+.help-steps li b { color: var(--navy); }
+.dialog-actions .btn { min-height: 48px; }
+/* notices: a dark card that fits two lines, the undo button in white */
+.toast { gap: 12px; padding: 8px 8px 8px 16px; border-radius: 18px; background: var(--navy); box-shadow: 0 14px 36px rgba(1, 30, 65, 0.32); line-height: 1.35; }
+.toast-action { min-height: 38px; border-radius: 12px; }
+/* phones: the zone card fits without scrolling; the point's address comes again in the donation's summary */
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    .zc-point { display: none; }
+    .zc-need { padding: 4px 0; }
+}
+/* the code field must not set the column's width: on a phone it ran past the panel's edge */
+.rcv-ways > *, .rcv-lists > * { min-width: 0; }
+.rcv-code-row input { width: 100%; }
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    .rcv-ways { grid-template-columns: minmax(0, 1fr); }
+    .rcv-lists { grid-template-columns: minmax(0, 1fr); }
+}
+/* phones: while sending, the board rises over the shelves so the form has room */
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    .supply-panel.is-board.has-xfer { max-height: calc(100dvh - 84px - env(safe-area-inset-top)); }
+}
+/* phones: a slimmer units/boxes switch, so "Inventario" fits beside it */
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    .board-head .step-toggle { padding: 2px; }
+    .board-head .step-toggle button { min-height: 32px; padding: 0 9px; font-size: var(--fs-xs); }
+    .board-head.supply-head { gap: 6px; }
+}
+/* a notice takes the width its text needs, centred by its margins: left: 50% squeezed it to half the
+   screen, and the translate that centred it was turned into a fixed offset by the animation */
+.toast { left: 0; right: 0; margin-inline: auto; translate: none; width: max-content; }
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    .board-head .icon-btn { width: 36px; height: 36px; }
+    .board-head .icon-btn [data-icon] { width: 20px; height: 20px; }
+}

@@ -4,6 +4,7 @@ import { pointMenu, POINT_TITLES } from './pointMenu.js'
 import { transferSheet } from './transferSheet.js'
 import { receiveWays, receiveLists, sentList } from './receiveView.js'
 import { inventoryFilter, updateFilterCounts, applyFilter } from './inventoryView.js'
+import { doneHtml } from './doneView.js'
 import { CATEGORIES, SUPPLIES, money, perBox, basketBoxes, BOX } from '../data/catalog.js'
 import { stockCap, stockState, stockRatio } from '../data/inventory.js'
 import { ZONES, zoneNeeds, zoneLevel, NEED_WORD, barrioNeeds } from '../data/zones.js'
@@ -893,23 +894,18 @@ export class DonorPanel extends Panel {
     #done() {
         const r = this.lastRecord
         const physical = r.mode === 'physical'
-        const w = findWindow(this.point, r.window)
         this.el.innerHTML = `
             ${this.#head(physical ? 'Entrega programada' : 'Aporte recibido', `${this.barrio.name} · Punto de acopio`)}
             <div class="supply-body step-enter">
-                <div class="done">
-                    <span class="done-mark">${icon('check')}</span>
-                    <h3>Gracias por tu apoyo</h3>
-                    <p>${physical ? `Te esperamos en <b>${esc(this.point.name)}</b>, ${esc((w?.detail ?? '').replace(/\.$/, ''))}.` : 'Con tu aporte, el equipo comprará y dejará estos suministros en el punto de acopio.'}</p>
-                    <p class="done-note">${physical ? 'Así recogerán tu aporte las familias cuando lo lleves al punto.' : 'Las familias ya salieron a recogerlos.'}</p>
-                    ${session.stock?.status === 'error'
-                        ? `<p class="done-offline">${icon('info')} Sin conexión en este momento: tu aporte quedó guardado en este dispositivo y se suma al inventario apenas vuelva la conexión.</p>`
-                        : ''}
-                    <p class="done-code">${physical ? 'Código de entrega' : 'Referencia'}<b>${r.code}</b></p>
-                    ${physical ? `<div class="done-qr"><div class="qr-img js-qr" role="img" aria-label="Código QR del aporte ${r.code}"></div><span>Muestra este QR en el punto: al escanearlo, tu aporte queda recibido. También lo encuentras en «Sigue tu aporte».</span></div>` : ''}
-                    <p class="done-small">Valor equivalente: ${money(r.totals.value)}${physical ? '' : ' · Pago de demostración'}</p>
-                    <button class="btn btn-secondary js-track" type="button">${icon('search')} Seguir mi aporte</button>
-                </div>
+                ${doneHtml({
+                    code: r.code,
+                    physical,
+                    place: this.point.name,
+                    slot: r.slot,
+                    items: r.items,
+                    value: r.totals.value,
+                    offline: session.stock?.status === 'error',
+                })}
             </div>
             <div class="supply-foot">
                 <button class="btn btn-secondary js-map" type="button">${icon('map')} Volver al mapa</button>

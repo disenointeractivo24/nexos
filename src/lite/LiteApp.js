@@ -2,6 +2,7 @@ import { icon, hydrateIcons } from '../ui/icons.js'
 import { Toast, Dialog, helpList, busyButton } from '../ui/feedback.js'
 import { TrackView } from '../ui/track.js'
 import { loginFields, pointPicker, bindLogin } from '../ui/loginView.js'
+import { doneHtml } from '../ui/doneView.js'
 import { pointMenu, POINT_TITLES } from '../ui/pointMenu.js'
 import { transferSheet } from '../ui/transferSheet.js'
 import { receiveWays, receiveLists, sentList } from '../ui/receiveView.js'
@@ -536,16 +537,10 @@ export class LiteApp {
         const p = this.pointNow
         return `
             <section class="lite-card lite-done">
-                <span class="done-mark">${icon('check')}</span>
-                <h1>Gracias por tu apoyo</h1>
-                <p>${physical ? `Te esperamos en <b>${esc(p.name)}</b>. ${esc(r.slot.replace(/\.$/, ''))}.` : 'Con tu aporte, el equipo comprará estos insumos y los dejará en el punto de acopio.'}</p>
-                <p class="done-code">${physical ? 'Código de entrega' : 'Referencia'}<b>${esc(r.code)}</b></p>
-                ${physical ? `<div class="done-qr"><div class="qr-img js-qr" role="img" aria-label="Código QR del aporte ${esc(r.code)}"></div><span>Muestra este QR en el punto: al escanearlo, tu aporte queda recibido.</span></div>` : ''}
-                <p class="lite-muted">${esc(itemsLine(r.items))} · ${money(r.value)}</p>
+                ${doneHtml({ code: r.code, physical, place: p.name, slot: r.slot, items: r.items, value: r.value })}
             </section>
             <div class="lite-actions">
-                <button class="btn btn-secondary js-again" type="button">Apoyar otra zona</button>
-                <button class="btn btn-primary js-follow" type="button">${icon('search')} Seguir mi aporte</button>
+                <button class="btn btn-primary js-again" type="button">Apoyar otra zona ${icon('chevron-right')}</button>
             </div>`
     }
 
