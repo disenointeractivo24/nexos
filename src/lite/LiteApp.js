@@ -347,7 +347,7 @@ export class LiteApp {
                               const urgent = this.board.isCritical(this.zone.id, s.id)
                               return `
                     <div class="lite-row" data-item="${s.id}">
-                        <span class="lite-row-icon" style="color:${CATEGORIES[s.category].color};background:${CATEGORIES[s.category].tint}">${icon(CATEGORIES[s.category].icon)}</span>
+                        <span class="lite-row-icon" style="color:${CATEGORIES[s.category].color};background:${CATEGORIES[s.category].tint}">${icon(s.icon ?? CATEGORIES[s.category].icon)}</span>
                         <span class="lite-row-text"><b>${esc(s.label)}${urgent ? ' <em>Urgente</em>' : ''}</b><small>${esc(s.unit)} · ${money(s.value)} · faltan ${max}</small></span>
                         <span class="stepper" role="group" aria-label="Unidades de ${esc(s.label)}">
                             <button type="button" class="js-minus" aria-label="Quitar una unidad de ${esc(s.label)}" ${q <= 0 ? 'disabled' : ''}>${icon('minus')}</button>

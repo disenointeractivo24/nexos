@@ -9,6 +9,12 @@ export const ICONS = {
     drop: fill('<path d="M12 2.8c.3 0 .6.2.8.4 2 2.7 6.2 8.3 6.2 11.6A7 7 0 0 1 5 14.8c0-3.3 4.2-8.9 6.2-11.6.2-.2.5-.4.8-.4z"/>'),
     cross: fill('<path d="M9.3 3.5h5.4v5.8h5.8v5.4h-5.8v5.8H9.3v-5.8H3.5V9.3h5.8z"/>'),
     soap: stroke('<path d="M7 10h10a2 2 0 0 1 2 2v6a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-6a2 2 0 0 1 2-2z"/><path d="M10 10V7h4v3"/><path d="M12 7V4h4"/><circle cx="18.5" cy="5" r="1" fill="currentColor"/>'),
+    // one per supply, where its category's icon would not say which thing it is
+    rice: stroke('<path d="M8.5 3h7l-1.2 3.2c2.6 1.6 4.2 4.5 4.2 7.8 0 4-3 7-6.5 7S5.5 18 5.5 14c0-3.3 1.6-6.2 4.2-7.8z"/><path d="M9.7 6.2h4.6"/><path d="M10 13.5l1 1.2M13.5 12.5l.5 1.4M11.5 16.5l1.2.6"/>'),
+    can: stroke('<ellipse cx="12" cy="5.5" rx="6" ry="2.5"/><path d="M6 5.5v13c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5v-13"/><path d="M6 10.5c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5"/>'),
+    milk: stroke('<path d="M8.5 2.5h7v3l2.5 3.5v11.5a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V9l2.5-3.5z"/><path d="M6 9h12"/><path d="M9.5 13.5h5"/>'),
+    blanket: stroke('<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M3.5 10h17M3.5 14.5h17"/>'),
+    kit: stroke('<rect x="3.5" y="7.5" width="17" height="12.5" rx="2.5"/><path d="M9 7.5V5.5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M3.5 12.5h17"/><path d="M11 12.5v2h2v-2"/>'),
     home: stroke('<path d="M3.5 11.2 12 4l8.5 7.2"/><path d="M5.8 9.6V20h12.4V9.6"/><path d="M10 20v-5.2h4V20"/>'),
     map: stroke('<path d="M3.5 6.5 9 4l6 2.5L20.5 4v13.5L15 20l-6-2.5-5.5 2.5z"/><path d="M9 4v13.5M15 6.5V20"/>'),
     'chevron-left': stroke('<path d="M15 5l-7 7 7 7"/>'),

@@ -30,14 +30,14 @@ export const CATEGORIES = {
  * while a box of milk holds far fewer. See BOX and perBox below.
  */
 export const SUPPLIES = {
-    rice: { id: 'rice', label: 'Arroz', asset: 'rice', category: 'alimentos', unit: 'bolsa de 1 kg', units: 'bolsas de 1 kg', value: 4800, litres: 1.2, kg: 1.02 },
+    rice: { id: 'rice', icon: 'rice', label: 'Arroz', asset: 'rice', category: 'alimentos', unit: 'bolsa de 1 kg', units: 'bolsas de 1 kg', value: 4800, litres: 1.2, kg: 1.02 },
     water: { id: 'water', label: 'Agua', asset: 'water', category: 'agua', unit: 'botella de 1,5 L', units: 'botellas de 1,5 L', value: 2600, litres: 1.85, kg: 1.56 },
-    cans: { id: 'cans', label: 'Alimentos enlatados', asset: 'cans', category: 'alimentos', unit: 'lata', units: 'latas', value: 6500, litres: 0.45, kg: 0.42 },
-    milk: { id: 'milk', label: 'Leche', asset: 'milk', category: 'alimentos', unit: 'caja de 1 L', units: 'cajas de 1 L', value: 4300, litres: 1.05, kg: 1.03 },
+    cans: { id: 'cans', icon: 'can', label: 'Alimentos enlatados', asset: 'cans', category: 'alimentos', unit: 'lata', units: 'latas', value: 6500, litres: 0.45, kg: 0.42 },
+    milk: { id: 'milk', icon: 'milk', label: 'Leche', asset: 'milk', category: 'alimentos', unit: 'caja de 1 L', units: 'cajas de 1 L', value: 4300, litres: 1.05, kg: 1.03 },
     medicine: { id: 'medicine', label: 'Medicinas', asset: 'medicine', category: 'medicinas', unit: 'botiquín básico', units: 'botiquines básicos', value: 18000, litres: 4.2, kg: 1.6 },
     soap: { id: 'soap', label: 'Jabón', asset: 'soap', category: 'higiene', unit: 'barra', units: 'barras', value: 3200, litres: 0.26, kg: 0.12 },
-    blanket: { id: 'blanket', label: 'Cobija', asset: 'blanket', category: 'refugio', unit: 'cobija', units: 'cobijas', value: 32000, litres: 11.5, kg: 1.5 },
-    hygieneKit: { id: 'hygieneKit', label: 'Kit de higiene', asset: 'hygiene-kit', category: 'higiene', unit: 'kit', units: 'kits', value: 21000, litres: 5.4, kg: 1.25 },
+    blanket: { id: 'blanket', icon: 'blanket', label: 'Cobija', asset: 'blanket', category: 'refugio', unit: 'cobija', units: 'cobijas', value: 32000, litres: 11.5, kg: 1.5 },
+    hygieneKit: { id: 'hygieneKit', icon: 'kit', label: 'Kit de higiene', asset: 'hygiene-kit', category: 'higiene', unit: 'kit', units: 'kits', value: 21000, litres: 5.4, kg: 1.25 },
 }
 
 /**
