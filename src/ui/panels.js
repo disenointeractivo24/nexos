@@ -422,7 +422,7 @@ export class DonorPanel extends Panel {
                     <p class="section-title">Tu cesta de apoyo</p>
                     <ul class="basket-list js-basket-list"></ul>
                     <div class="total-line"><span>Valor equivalente</span><b class="js-total"></b></div>
-                    <p class="hint js-pack-hint">${icon('box')} <span></span></p>
+                    <p class="hint js-pack-hint">${icon('box')} <span class="js-pack-text"></span></p>
                     <p class="hint">${icon('info')} Es un valor de referencia: así sabes cuánto representa tu aporte.</p>
                 </section>
             </div>
@@ -567,7 +567,7 @@ export class DonorPanel extends Panel {
         const t = this.#totals()
         const el = this.el.querySelector('.js-total')
         if (el) el.textContent = money(t.value)
-        const pack = this.el.querySelector('.js-pack-hint span')
+        const pack = this.el.querySelector('.js-pack-text')
         if (pack) pack.textContent = t.kinds ? `Por tamaño y peso, lo que llevas ${this.#boxWord(t)} (${BOX.label}).` : ''
         const next = this.step === 'supplies' && this.el.querySelector('.js-next')
         if (next) next.setAttribute('aria-disabled', String(!this.basket.size))
