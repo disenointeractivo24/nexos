@@ -3722,3 +3722,35 @@ html.is-lite { background: #F3F5F8; }
     .supply-panel .cat-tab { transition: none; }
     .supply-panel .cat-tab:active { transform: none; }
 }
+
+/* ================================================================
+   Light version: the kinds of help as tiles, as in the full version
+   ================================================================ */
+.lite-cats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; }
+.lite-cat { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 80px; padding: 10px 2px 8px; border: 0; border-radius: 16px; background: #fff; box-shadow: 0 1px 4px rgba(1, 30, 65, 0.1); font: inherit; font-size: var(--fs-xs); font-weight: 700; color: var(--navy); cursor: pointer; transition: background-color 0.16s ease, box-shadow 0.16s ease; }
+.lite-cat:hover { box-shadow: 0 4px 12px rgba(1, 30, 65, 0.14); }
+.lite-cat[aria-pressed="true"] { background: var(--navy); color: #fff; box-shadow: 0 6px 16px rgba(1, 30, 65, 0.28); }
+.lite-cat-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; background: #EEF1F5; color: var(--navy); }
+.lite-cat-icon [data-icon] { width: 20px; height: 20px; }
+.lite-cat[aria-pressed="true"] .lite-cat-icon { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85); }
+.lite-cat-dot { position: absolute; top: 7px; right: 7px; width: 10px; height: 10px; border-radius: 50%; background: var(--red); border: 2px solid #fff; }
+.lite-cat:focus-visible { outline: 3px solid var(--navy); outline-offset: 2px; }
+.lite-row[hidden] { display: none; }
+@media (max-width: 520px) {
+    .lite-cats { gap: 4px; }
+    .lite-cat { min-height: 70px; padding: 8px 1px 7px; font-size: 11px; border-radius: 14px; }
+    .lite-cat-icon { width: 32px; height: 32px; }
+    .lite-cat-icon [data-icon] { width: 17px; height: 17px; }
+}
+/* phones: the total on its own line, then the two buttons sharing the width (they overlapped) */
+@media (max-width: 520px) {
+    .lite-sticky { flex-wrap: wrap; gap: 8px; }
+    .lite-sticky > span { flex-basis: 100%; }
+    .lite-sticky .btn { flex: 1 1 0; min-width: 0; min-height: 52px; padding: 0 12px; font-size: var(--fs-md); justify-content: center; }
+}
+/* light version: the value line as quiet as the rest, and buttons that keep their words on one line */
+.lite .total-line { padding: 10px 14px; border-radius: 12px; }
+.lite .total-line b { font-size: var(--fs-lg); }
+@media (max-width: 520px) {
+    .lite-actions .btn { flex: 1 1 0; min-width: 0; min-height: 52px; padding: 0 12px; font-size: var(--fs-md); white-space: nowrap; justify-content: center; }
+}

@@ -339,6 +339,7 @@ export class LiteApp {
             ${this.#steps(1)}
             <h1 class="lite-title">Tu cesta para ${esc(this.zone.name)}</h1>
             <p class="lite-muted">${icon('pin')} ${esc(p.name)}. Solo puedes aportar lo que al punto le falta.</p>
+            ${list.length ? this.#catTiles(list) : ''}
             <div class="lite-list">
                 ${list.length
                     ? list
@@ -347,7 +348,7 @@ export class LiteApp {
                               const max = this.#max(s.id)
                               const urgent = this.board.isCritical(this.zone.id, s.id)
                               return `
-                    <div class="lite-row" data-item="${s.id}">
+                    <div class="lite-row" data-item="${s.id}" data-cat="${s.category}">
                         <span class="lite-row-icon" style="color:${CATEGORIES[s.category].color};background:${CATEGORIES[s.category].tint}">${icon(s.icon ?? CATEGORIES[s.category].icon)}</span>
                         <span class="lite-row-text"><b>${esc(s.label)}${urgent ? ' <em>Urgente</em>' : ''}</b><small>${esc(s.unit)} · ${money(s.value)} · faltan ${max}</small></span>
                         <span class="stepper" role="group" aria-label="Unidades de ${esc(s.label)}">
@@ -365,6 +366,27 @@ export class LiteApp {
                 ${this.#back('zones')}
                 <button class="btn btn-primary js-next" type="button">Continuar ${icon('chevron-right')}</button>
             </div>`
+    }
+
+    /** The kinds of help as tiles, as in the full version: Todo first, a red dot where something is urgent. */
+    #catTiles(list) {
+        const cats = Object.keys(CATEGORIES).filter((c) => list.some((s) => s.category === c))
+        const urgent = (c) => list.some((s) => s.category === c && this.board.isCritical(this.zone.id, s.id))
+        const tile = (id, label, ic, style, dot) => `
+            <button class="lite-cat js-cat" type="button" data-cat="${id}" aria-pressed="false">
+                <span class="lite-cat-icon" style="${style}">${icon(ic)}</span>${esc(label)}${dot ? '<i class="lite-cat-dot" aria-hidden="true"></i>' : ''}
+            </button>`
+        return `<div class="lite-cats" role="group" aria-label="Tipos de ayuda">${tile('all', 'Todo', 'basket', '', false)}${cats
+            .map((c) => tile(c, CATEGORIES[c].label, CATEGORIES[c].icon, `background:${CATEGORIES[c].tint};color:${CATEGORIES[c].color}`, urgent(c)))
+            .join('')}</div>`
+    }
+
+    /** Only the supplies of one kind (or all of them); what is in the basket stays. */
+    #showCat(cat) {
+        if (cat !== 'all' && !this.root.querySelector(`.js-cat[data-cat="${cat}"]`)) cat = 'all'
+        this.cat = cat
+        this.root.querySelectorAll('.js-cat').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.cat === cat)))
+        this.root.querySelectorAll('.lite-row[data-cat]').forEach((r) => (r.hidden = cat !== 'all' && r.dataset.cat !== cat))
     }
 
     #totals() {
@@ -401,6 +423,8 @@ export class LiteApp {
             input.addEventListener('change', () => set(input.value))
             input.addEventListener('focus', () => input.select())
         })
+        this.root.querySelectorAll('.js-cat').forEach((b) => b.addEventListener('click', () => this.#showCat(b.dataset.cat)))
+        if (this.root.querySelector('.js-cat')) this.#showCat(this.cat ?? 'all')
         this.root.querySelector('.js-next').addEventListener('click', () => this.go('method'))
         total()
     }
