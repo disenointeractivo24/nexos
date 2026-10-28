@@ -3235,20 +3235,6 @@ html.is-lite { background: #F3F5F8; }
    Zone card on the map, in the same look as the panels (ZoneCard)
    ================================================================ */
 .zone-card { padding: 20px; }
-.zone-card .panel-head h2 { font-size: var(--fs-xl); }
-.zone-card .panel-head .sub { margin-top: 4px; font-size: var(--fs-sm); }
-.zone-card .status-pill { margin: 14px 0 0; padding: 8px 12px; border-radius: 12px; background: #E7F1EB; font-size: var(--fs-sm); color: #1E5B36; }
-.zone-card .status-pill [data-icon] { width: 18px; height: 18px; color: #2E7D5B; }
-.zone-card .status-pill.is-urgent { margin-top: 8px; background: #FDE3E5; color: #8A1F1F; }
-.zone-card .status-pill.is-urgent [data-icon] { color: var(--red-press); }
-.zone-card .section-title { margin: 18px 0 8px; font-size: var(--fs-sm); font-weight: 700; color: var(--navy); }
-.zone-card .need-list { gap: 8px; }
-.zone-card .need-row { padding: 8px 12px 8px 8px; border: 0; border-radius: 14px; background: #fff; box-shadow: 0 1px 4px rgba(1, 30, 65, 0.08); font-size: var(--fs-md); }
-.zone-card .need-level { padding: 2px 10px; border-radius: var(--radius-pill); background: #EEF1F5; font-size: var(--fs-xs); }
-.zone-card .need-level.is-high { background: var(--amber-soft); color: var(--amber-ink); }
-.zone-card .need-level.is-high::before { display: none; }
-.zone-card .barrio-line { margin: 16px 0 12px; padding: 10px 14px; border-radius: 14px; background: rgba(1, 30, 65, 0.05); font-size: var(--fs-sm); }
-.zone-card .barrio-line strong { font-size: var(--fs-md); }
 
 /* ================================================================
    Following a donation (TrackView): status first, in the panels' look
@@ -3347,21 +3333,6 @@ html.is-lite { background: #F3F5F8; }
 .zc-title h2 { margin: 0; font-size: var(--fs-xl); line-height: 1.1; font-weight: 800; color: var(--navy); }
 .zc-title .sub { margin: 2px 0 0; font-size: var(--fs-sm); color: #4E5663; }
 .zc-head .icon-btn { flex: none; }
-.zc-status { display: flex; flex-wrap: wrap; gap: 6px; }
-.zc-status .need-pill { margin: 0; padding: 4px 12px; font-size: var(--fs-sm); }
-.zc-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: var(--radius-pill); background: #E7F1EB; font-size: var(--fs-sm); font-weight: 600; color: #1E5B36; }
-.zc-chip [data-icon] { width: 16px; height: 16px; color: #2E7D5B; }
-.zc-urgent { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 14px; background: #FDE3E5; }
-.zc-urgent [data-icon] { width: 20px; height: 20px; flex: none; margin-top: 1px; color: var(--red-press); }
-.zc-urgent div { display: grid; gap: 1px; }
-.zc-urgent b { font-size: var(--fs-sm); color: #8A1F1F; }
-.zc-urgent span { font-size: var(--fs-sm); color: #8A1F1F; }
-.zone-card .section-title { margin: 4px 2px -4px; }
-.zc-point { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 14px; background: #fff; box-shadow: 0 1px 4px rgba(1, 30, 65, 0.08); }
-.zc-point [data-icon] { width: 20px; height: 20px; flex: none; margin-top: 1px; color: var(--navy); }
-.zc-point div { display: grid; gap: 2px; min-width: 0; }
-.zc-point b { font-size: var(--fs-sm); color: var(--navy); }
-.zc-point span { font-size: var(--fs-xs); color: #6B7280; }
 .zone-card .js-enter { justify-content: space-between; padding: 0 20px; text-align: left; }
 .zc-go { display: grid; line-height: 1.15; }
 .zc-go small { font-size: var(--fs-xs); font-weight: 600; opacity: 0.9; }
@@ -3370,3 +3341,34 @@ html.is-lite { background: #F3F5F8; }
     .zc-mark { width: 40px; height: 40px; }
     .zc-title h2 { font-size: var(--fs-lg); }
 }
+
+/* the zone card as a sheet of facts: flat, white, only the two buttons stand out */
+.zone-card { gap: 14px; background: #fff; }
+.zc-facts { list-style: none; margin: 0; padding: 0 0 2px; display: grid; gap: 6px; font-size: var(--fs-sm); color: #3E4652; }
+.zc-facts li { display: flex; align-items: baseline; gap: 8px; }
+.zc-facts i { width: 9px; height: 9px; flex: none; border-radius: 50%; background: #2E7D5B; transform: translateY(-1px); }
+.zc-facts li[data-level="alta"] i { background: #E0A100; }
+.zc-facts li[data-level="media"] i { background: #8A919C; }
+.zc-facts li.is-urgent i { background: var(--red); }
+.zc-facts b { color: #A3262F; font-weight: 700; }
+.zc-section { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid rgba(1, 30, 65, 0.08); }
+.zc-section h3 { margin: 0; font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6B7280; }
+.zc-needs { list-style: none; margin: 0; padding: 0; display: grid; }
+.zc-need { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: var(--fs-md); font-weight: 600; color: var(--navy); }
+.zc-need .wlabel-icon { width: 30px; height: 30px; box-shadow: none; border: 0; }
+.zc-need .wlabel-icon [data-icon] { width: 17px; height: 17px; }
+.zc-need-name { flex: 1; min-width: 0; }
+.zc-bars { display: flex; gap: 3px; }
+.zc-bars i { width: 14px; height: 6px; border-radius: 3px; background: #E1E6ED; }
+.zc-bars[data-level="baja"] i:nth-child(1),
+.zc-bars[data-level="media"] i:nth-child(-n + 2),
+.zc-bars[data-level="alta"] i { background: var(--tone); }
+.zc-bars[data-level="alta"] { --tone: #E0A100; }
+.zc-bars[data-level="media"] { --tone: #8A919C; }
+.zc-bars[data-level="baja"] { --tone: #2E7D5B; }
+.zc-need-level { width: 44px; text-align: right; font-size: var(--fs-xs); font-weight: 600; color: #6B7280; }
+.zc-need-level[data-level="alta"] { color: var(--amber-ink); }
+.zc-point { margin: 0; display: flex; align-items: flex-start; gap: 10px; padding-top: 12px; border-top: 1px solid rgba(1, 30, 65, 0.08); font-size: var(--fs-sm); color: var(--navy); }
+.zc-point [data-icon] { width: 18px; height: 18px; flex: none; margin-top: 2px; color: #6B7280; }
+.zc-point span { display: grid; gap: 2px; min-width: 0; }
+.zc-point small { font-size: var(--fs-xs); color: #6B7280; }

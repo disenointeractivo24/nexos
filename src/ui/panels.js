@@ -105,9 +105,9 @@ export class ZoneCard extends Panel {
     }
 
     /**
-     * A zone at a glance: who it is (its colour and house, as on the map) and how much it
-     * needs; what is urgent, by name; the kinds of help it needs most; the point that
-     * receives it; and one button into the barrio, which says which barrio.
+     * A zone at a glance, read like a sheet of facts: nothing on it looks tappable except the
+     * close button and the one way in, the barrio. How much it needs and what is urgent go in
+     * a line each; the kinds of help as a plain list with a level bar; then the point.
      */
     render(zone) {
         const theme = session.theme
@@ -115,13 +115,20 @@ export class ZoneCard extends Panel {
         const level = zoneLevel(zone, theme)
         const point = pointForZone(zone.id)
         const urgent = Object.values(SUPPLIES).filter((s) => session.isUrgent(zone.id, s.id))
+        // three names are enough to read at a glance; the rest is a count
+        const names = urgent.slice(0, 3).map((s) => esc(s.label))
+        const urgentLine = urgent.length
+            ? `${names.join(', ')}${urgent.length > 3 ? ` y ${urgent.length - 3} más` : ''}`
+            : ''
+        const word = { alta: 'Alta', media: 'Media', baja: 'Baja' }
         const needs = zoneNeeds(zone, theme)
             .map(
                 ([cat, lvl]) => `
-            <li class="need-row">
+            <li class="zc-need">
                 ${catIcon(cat)}
-                <span>${CATEGORIES[cat].label}</span>
-                <span class="need-level ${lvl === 'alta' ? 'is-high' : ''}">${lvl === 'alta' ? 'Alta' : lvl === 'media' ? 'Media' : 'Baja'}</span>
+                <span class="zc-need-name">${CATEGORIES[cat].label}</span>
+                <span class="zc-bars" data-level="${lvl}" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="zc-need-level" data-level="${lvl}">${word[lvl]}</span>
             </li>`
             )
             .join('')
@@ -135,16 +142,15 @@ export class ZoneCard extends Panel {
                 </div>
                 <button class="icon-btn js-close" type="button" aria-label="Cerrar y volver al mapa">${icon('x')}</button>
             </div>
-            <div class="zc-status">
-                <span class="need-pill" data-level="${level}">Necesidad ${esc(NEED_WORD[level].replace(/^Necesidad /i, '').toLowerCase())}</span>
-                <span class="zc-chip">${icon(collector ? 'box' : 'shield')} ${collector ? 'Tu zona' : 'Punto de ayuda activo'}</span>
-            </div>
-            ${urgent.length
-                ? `<div class="zc-urgent">${icon('urgent')}<div><b>Falta con urgencia</b><span>${urgent.map((s) => esc(s.label)).join(', ')}</span></div></div>`
-                : ''}
-            <p class="section-title">Lo que más se necesita</p>
-            <ul class="need-list">${needs}</ul>
-            <div class="zc-point">${icon('pin')}<div><b>${esc(point?.name ?? '')}</b><span>${esc(point?.address ?? '')} · Atiende ${esc(point?.hours ?? '')}</span></div></div>
+            <ul class="zc-facts">
+                <li data-level="${level}"><i aria-hidden="true"></i>${esc(NEED_WORD[level])} en la zona</li>
+                ${urgent.length ? `<li class="is-urgent"><i aria-hidden="true"></i><span><b>${urgent.length} ${urgent.length === 1 ? 'insumo urgente' : 'insumos urgentes'}:</b> ${urgentLine}</span></li>` : ''}
+            </ul>
+            <section class="zc-section" aria-labelledby="zc-needs-title">
+                <h3 id="zc-needs-title">Lo que más se necesita</h3>
+                <ul class="zc-needs">${needs}</ul>
+            </section>
+            <p class="zc-point">${icon('pin')}<span><b>${esc(point?.name ?? '')}</b>${collector ? ' · tu punto' : ''}<small>${esc(point?.address ?? '')} · Atiende ${esc(point?.hours ?? '')}</small></span></p>
             <button class="btn btn-primary btn-block btn-lg js-enter" type="button">
                 <span class="zc-go"><small>${collector ? 'Revisar el barrio' : 'Ir al barrio'}</small>${esc(zone.barrio)}</span> ${icon('chevron-right')}
             </button>`
