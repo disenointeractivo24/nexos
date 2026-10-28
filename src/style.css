@@ -3466,3 +3466,21 @@ html.is-lite { background: #F3F5F8; }
 .wlabel.is-zone .wlabel-text small.is-urgent::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
 .wlabel.is-zone:hover, .wlabel.is-zone.is-hover { background: #fff; box-shadow: 0 0 0 2px rgba(1, 30, 65, 0.35), 0 10px 26px rgba(1, 30, 65, 0.24); }
 .wlabel.is-zone.is-active { box-shadow: 0 0 0 3px var(--navy), 0 10px 26px rgba(1, 30, 65, 0.24); }
+
+/* ================================================================
+   Phones: the zone list, in the markers' look (App #showZoneList)
+   ================================================================ */
+.ui[data-state="city"] .zone-list.is-on { align-items: stretch; gap: 6px; }
+.zone-item { min-width: 168px; gap: 10px; min-height: 52px; padding: 6px 10px 6px 6px; border: 0; border-radius: 18px; background: #fff; box-shadow: 0 6px 18px rgba(1, 30, 65, 0.18); }
+.zone-item .wlabel-icon { width: 40px; height: 40px; }
+.zone-item-text { flex: 1; gap: 1px; }
+.zone-item-text strong { font-size: var(--fs-sm); font-weight: 800; color: var(--navy); }
+.zone-item-text small { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); font-weight: 600; color: #6B7280; }
+.zone-item-text small.is-urgent { color: #A3262F; }
+.zone-item-text small.is-urgent::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
+.zone-item > [data-icon] { width: 18px; height: 18px; flex: none; color: #8A919C; }
+.zone-item:focus-visible { outline: 3px solid var(--navy); outline-offset: 2px; }
+/* phones keep the step segments too, beside the step's name */
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    .progress .progress-list { display: flex; }
+}

@@ -568,13 +568,9 @@ export class App {
      * point sees its own zone marked as such.
      */
     #zoneLabelHtml(zone) {
-        const level = zoneLevel(zone, this.theme)
-        const urgent = session.urgentCount(zone.id)
-        const own = session.role === 'collector' && session.point?.zone === zone.id
-        const line = own ? 'Tu zona' : urgent ? `${urgent} ${urgent === 1 ? 'urgente' : 'urgentes'}` : NEED_WORD[level]
         return `
             <span class="wlabel-icon" style="background:${zone.color}">${icon('home')}</span>
-            <span class="wlabel-text"><b>${zone.name.replace(/^Zona /, '')}</b><small class="${urgent && !own ? 'is-urgent' : ''}">${line}</small></span>`
+            <span class="wlabel-text"><b>${zone.name.replace(/^Zona /, '')}</b>${this.#zoneLine(zone)}</span>`
     }
 
     /**
@@ -601,19 +597,20 @@ export class App {
         if (this.state === 'city') this.#frameForPanel(null)
     }
 
+    /** How a zone is doing, in a few words: shared by its marker and its row in the phone's list. */
+    #zoneLine(zone) {
+        const urgent = session.urgentCount(zone.id)
+        const own = session.role === 'collector' && session.point?.zone === zone.id
+        const text = own ? 'Tu zona' : urgent ? `${urgent} ${urgent === 1 ? 'urgente' : 'urgentes'}` : NEED_WORD[zoneLevel(zone, this.theme)]
+        return `<small class="${urgent && !own ? 'is-urgent' : ''}">${text}</small>`
+    }
+
+    /** A zone's row in the phone's list: the same as its marker, with an arrow, since it opens. */
     #zoneItemHtml(zone) {
-        const level = zoneLevel(zone, this.theme)
-        const urgent = session.zoneHasUrgent(zone.id)
-        const high = level === 'alta' || urgent
         return `
-            <span class="wlabel-icon" style="background:${zone.color}">
-                ${icon('home')}
-                <span class="wlabel-dot ${urgent ? 'is-urgent' : high ? 'is-high' : ''}"></span>
-            </span>
-            <span class="zone-item-text">
-                <strong>${zone.name.replace(/^Zona /, '')}</strong>
-                <span>${NEED_WORD[level]}</span>
-            </span>`
+            <span class="wlabel-icon" style="background:${zone.color}">${icon('home')}</span>
+            <span class="zone-item-text"><strong>${zone.name.replace(/^Zona /, '')}</strong>${this.#zoneLine(zone)}</span>
+            ${icon('chevron-right')}`
     }
 
     /** The zones' markers (or the phone's list) say again what each zone needs. */
