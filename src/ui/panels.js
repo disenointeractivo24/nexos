@@ -3,6 +3,7 @@ import { icon, hydrateIcons } from './icons.js'
 import { pointMenu, POINT_TITLES } from './pointMenu.js'
 import { transferSheet } from './transferSheet.js'
 import { receiveWays, receiveLists, sentList } from './receiveView.js'
+import { inventoryFilter, updateFilterCounts, applyFilter } from './inventoryView.js'
 import { CATEGORIES, SUPPLIES, money, perBox, basketBoxes, BOX } from '../data/catalog.js'
 import { stockCap, stockState, stockRatio } from '../data/inventory.js'
 import { ZONES, zoneNeeds, zoneLevel, NEED_WORD, barrioNeeds } from '../data/zones.js'
@@ -909,6 +910,7 @@ export class InventoryPanel extends Panel {
         this.store = store
         // every visit starts on the three options
         this.tab = null
+        this.filter = 'all'
         this.el.classList.add('is-board')
         await Promise.all(Object.keys(SUPPLIES).map((id) => this.loader.load(SUPPLIES[id].asset)))
         this.render()
@@ -941,36 +943,39 @@ export class InventoryPanel extends Panel {
         )
     }
 
+    /**
+     * One supply: what it is and its state at the top, the count large (it can be typed over),
+     * the bar against the cap, then one unit at a time and, below, a whole box at a time.
+     */
     #card(s) {
         const qty = this.store.get(s.id)
         const cap = stockCap(s.id)
         const st = stockState(s.id, qty)
         const per = perBox(s.id)
         return `
-        <div class="stock-card is-${st.id}" data-item="${s.id}">
-            <div class="stock-top">
-                <span class="tile-stage" aria-hidden="true"></span>
-                <span class="stock-name">
-                    <b>${esc(s.label)}</b>
-                    <span class="stock-unit">${per} por caja</span>
-                </span>
+        <div class="inv-card is-${st.id}" data-item="${s.id}">
+            <div class="inv-head">
+                <span class="tile-stage inv-pic" aria-hidden="true"></span>
+                <span class="inv-name"><b>${esc(s.label)}</b><small>${per} por caja</small></span>
             </div>
-            <div class="stock-line">
-                <span class="stock-state" data-state="${st.id}">${st.label}</span>
-                <span class="stock-boxes js-boxes">${boxesLabel(qty, per)}</span>
+            <div class="inv-main">
+                <div class="inv-count">
+                    <label class="inv-qty"><input class="js-qty" type="number" inputmode="numeric" min="0" max="${cap}" step="1" value="${qty}"
+                        aria-label="Cantidad de ${esc(s.label)}, de ${cap}" title="Toca para escribir la cantidad"></label>
+                    <span class="inv-sub">de ${cap} · <span class="js-boxes">${boxesLabel(qty, per)}</span></span>
+                </div>
+                <div class="inv-pm" role="group" aria-label="Unidades de ${esc(s.label)}">
+                    <button type="button" class="js-minus" aria-label="Quitar una unidad de ${esc(s.label)}" ${qty <= 0 ? 'disabled' : ''}>${icon('minus')}</button>
+                    <button type="button" class="js-plus" aria-label="Agregar una unidad de ${esc(s.label)}" ${qty >= cap ? 'disabled' : ''}>${icon('plus')}</button>
+                </div>
             </div>
-            <div class="stock-meter" role="img" aria-label="${qty} de ${cap} ${esc(s.units)}. ${st.label}.">
-                <span class="stock-fill" style="width:${Math.round(stockRatio(s.id, qty) * 100)}%"></span>
+            <div class="inv-status">
+                <span class="inv-state" data-state="${st.id}">${st.label}</span>
+                <span class="inv-meter" role="img" aria-label="${qty} de ${cap} ${esc(s.units)}. ${st.label}."><span class="inv-fill" style="width:${Math.round(stockRatio(s.id, qty) * 100)}%"></span></span>
             </div>
-            <div class="stepper stepper-board" role="group" aria-label="Unidades de ${esc(s.label)}">
-                <button type="button" class="js-minus" aria-label="Quitar una unidad de ${esc(s.label)}" ${qty <= 0 ? 'disabled' : ''}>${icon('minus')}</button>
-                <label class="qty-field"><input class="js-qty" type="number" inputmode="numeric" min="0" max="${cap}" step="1" value="${qty}"
-                    aria-label="Cantidad de ${esc(s.label)}, de ${cap}" title="Toca para escribir la cantidad"><small>de ${cap}</small></label>
-                <button type="button" class="js-plus" aria-label="Agregar una unidad de ${esc(s.label)}" ${qty >= cap ? 'disabled' : ''}>${icon('plus')}</button>
-            </div>
-            <div class="box-step">
-                <button type="button" class="js-box-minus" aria-label="Quitar una caja de ${esc(s.label)}" ${qty <= 0 ? 'disabled' : ''}>${icon('minus')} caja</button>
-                <button type="button" class="js-box-plus" aria-label="Agregar una caja de ${esc(s.label)}" ${qty >= cap ? 'disabled' : ''}>${icon('plus')} caja</button>
+            <div class="inv-boxbtns">
+                <button type="button" class="js-box-minus" aria-label="Quitar una caja (${per}) de ${esc(s.label)}" ${qty <= 0 ? 'disabled' : ''}>${icon('minus')} 1 caja</button>
+                <button type="button" class="js-box-plus" aria-label="Agregar una caja (${per}) de ${esc(s.label)}" ${qty >= cap ? 'disabled' : ''}>${icon('plus')} 1 caja</button>
             </div>
         </div>`
     }
@@ -994,12 +999,14 @@ export class InventoryPanel extends Panel {
             <div class="supply-body step-enter">
                 <section class="board-view" id="view-home">${pointMenu()}</section>
                 <section class="board-view" id="view-stock" aria-labelledby="supply-title" hidden>
-                    <div class="stock-tools">
-                        <p>Cuenta lo que hay en el punto: toca <b>−</b> y <b>+</b>, o escribe la cantidad.</p>
+                    <div class="inv-tools">
+                        ${inventoryFilter(this.filter)}
+                        <p class="inv-hint">Toca <b>−</b> y <b>+</b> o escribe el número. Se guarda solo.</p>
                     </div>
-                    <div class="stock-grid" role="group" aria-label="Inventario del punto de acopio">
+                    <div class="inv-grid" role="group" aria-label="Inventario del punto de acopio">
                         ${this.supplies.map((s) => this.#card(s)).join('')}
                     </div>
+                    <p class="rcv-empty js-filter-empty" hidden>${icon('check')}<span>Ningún insumo en ese estado.</span></p>
                 </section>
                 <section class="board-view" id="view-receive" aria-labelledby="supply-title" hidden>
                     <p class="rcv-intro">¿Llegó un donante o un traslado? Recíbelo aquí: lo que llega se suma solo al inventario.</p>
@@ -1021,7 +1028,7 @@ export class InventoryPanel extends Panel {
             </div>`
         hydrateIcons(this.el)
         const body = this.el.querySelector('.supply-body')
-        this.el.querySelectorAll('.stock-card').forEach((card) => {
+        this.el.querySelectorAll('.inv-card').forEach((card) => {
             const id = card.dataset.item
             tile3D(this, card, id, body)
             const per = perBox(id)
@@ -1039,6 +1046,12 @@ export class InventoryPanel extends Panel {
                 this.#setTo(id, n)
             })
         })
+        this.el.querySelectorAll('.js-filter').forEach((b) =>
+            b.addEventListener('click', () => {
+                this.audio.play('tap')
+                this.filter = applyFilter(this.el, this.store, b.dataset.filter, '.inv-card')
+            })
+        )
         this.el.querySelector('.js-help').addEventListener('click', () => this.#help())
         this.el.querySelector('.js-close').addEventListener('click', () => this.onClose())
         this.queueKey = null
@@ -1127,7 +1140,8 @@ export class InventoryPanel extends Panel {
                           'Si te equivocas, toca <b>Deshacer</b> en el aviso de abajo: el inventario vuelve a como estaba.',
                       ])
                     : helpList([
-                          'Cada tarjeta es un insumo. Usa <b>−</b> y <b>+</b> para contar unidades; con <b>Caja</b> (en el celular) o los botones <b>caja</b>, cuentas cajas completas.',
+                          'Cada tarjeta es un insumo. Usa <b>−</b> y <b>+</b> para contar unidades; con <b>1 caja</b> (o <b>Caja</b> arriba, en el celular) cuentas cajas completas.',
+                          'Arriba, toca <b>Críticos</b>, <b>Estables</b> o <b>Abastecidos</b> para ver solo esos insumos.',
                           'Si ya sabes el número, <b>toca la cantidad y escríbela</b>.',
                           'Colores: <b class="t-critico">rojo</b> es crítico (menos del 30 %), <b class="t-estable">amarillo</b> estable y <b class="t-abastecido">verde</b> abastecido.',
                           'Para recibir donaciones o enviar a otro punto, vuelve a las opciones con la flecha de arriba.',
@@ -1173,27 +1187,28 @@ export class InventoryPanel extends Panel {
     /** Redraw the numbers in place — the sheet may also have moved them. */
     #sync() {
         if (!this.el.isConnected || !this.point) return
-        for (const card of this.el.querySelectorAll('.stock-card')) {
+        for (const card of this.el.querySelectorAll('.inv-card')) {
             const id = card.dataset.item
             const qty = this.store.get(id)
             const cap = stockCap(id)
             const st = stockState(id, qty)
-            card.className = `stock-card is-${st.id}`
+            card.className = `inv-card is-${st.id}`
             const input = card.querySelector('.js-qty')
             // never type over what the person is writing
             if (document.activeElement !== input) input.value = qty
             input.disabled = !this.store.ready
             card.querySelector('.js-boxes').textContent = boxesLabel(qty, perBox(id))
-            card.querySelector('.stock-fill').style.width = `${Math.round(stockRatio(id, qty) * 100)}%`
-            const chip = card.querySelector('.stock-state')
+            card.querySelector('.inv-fill').style.width = `${Math.round(stockRatio(id, qty) * 100)}%`
+            const chip = card.querySelector('.inv-state')
             chip.textContent = st.label
             chip.dataset.state = st.id
-            card.querySelector('.stock-meter').setAttribute('aria-label', `${qty} de ${cap} ${SUPPLIES[id].units}. ${st.label}.`)
+            card.querySelector('.inv-meter').setAttribute('aria-label', `${qty} de ${cap} ${SUPPLIES[id].units}. ${st.label}.`)
             // until the sheet has answered once, the numbers are only this device's guess: no edits
             for (const b of card.querySelectorAll('.js-minus, .js-box-minus')) b.disabled = !this.store.ready || qty <= 0
             for (const b of card.querySelectorAll('.js-plus, .js-box-plus')) b.disabled = !this.store.ready || qty >= cap
             this.items.setSelected(`tile:${id}`, st.id === 'critico')
         }
+        updateFilterCounts(this.el, this.store, Object.keys(SUPPLIES))
         const short = this.store.shortages()
         const sum = this.el.querySelector('.js-summary')
         if (sum) {

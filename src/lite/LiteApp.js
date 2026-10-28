@@ -4,6 +4,7 @@ import { TrackView } from '../ui/track.js'
 import { pointMenu, POINT_TITLES } from '../ui/pointMenu.js'
 import { transferSheet } from '../ui/transferSheet.js'
 import { receiveWays, receiveLists, sentList } from '../ui/receiveView.js'
+import { inventoryFilter, updateFilterCounts, applyFilter } from '../ui/inventoryView.js'
 import { qrSvg, scanQr } from '../ui/qr.js'
 import { CATEGORIES, SUPPLIES, money, perBox } from '../data/catalog.js'
 import { stockCap, stockState } from '../data/inventory.js'
@@ -605,7 +606,9 @@ export class LiteApp {
                         <button type="button" role="radio" class="js-by" data-by="box" aria-checked="${!!this.byBox}">Caja</button>
                     </div>
                 </div>
+                ${inventoryFilter(this.filter ?? 'all')}
                 <div class="lite-list js-stock"></div>
+                <p class="rcv-empty js-filter-empty" hidden>${icon('check')}<span>Ningún insumo en ese estado.</span></p>
             </section>
             <section id="lv-receive" hidden>
                 <p class="rcv-intro">¿Llegó un donante o un traslado? Recíbelo aquí: lo que llega se suma solo al inventario.</p>
@@ -655,6 +658,7 @@ export class LiteApp {
             })
         )
         this.root.querySelector('.js-transfer').addEventListener('click', () => this.#transfer())
+        this.root.querySelectorAll('.js-filter').forEach((b) => b.addEventListener('click', () => (this.filter = applyFilter(this.root, this.store, b.dataset.filter, '.lite-row'))))
         this.root.querySelector('.js-logout').addEventListener('click', () => {
             this.store.stop()
             this.point = this.store = null
@@ -685,8 +689,9 @@ export class LiteApp {
                     const q = st.get(s.id)
                     const state = stockState(s.id, q)
                     return `
-                <div class="lite-row" data-item="${s.id}">
-                    <span class="lite-row-text"><b>${esc(s.label)}</b><small><i class="stock-state" data-state="${state.id}">${state.label}</i> · de ${stockCap(s.id)}</small></span>
+                <div class="lite-row is-${state.id}" data-item="${s.id}">
+                    <span class="lite-row-text"><b>${esc(s.label)}</b><small><i class="stock-state" data-state="${state.id}">${state.label}</i> · ${q} de ${stockCap(s.id)}</small>
+                        <span class="inv-meter" aria-hidden="true"><span class="inv-fill" style="width:${Math.round(Math.min(1, q / stockCap(s.id)) * 100)}%"></span></span></span>
                     <span class="stepper" role="group" aria-label="Unidades de ${esc(s.label)}">
                         <button type="button" class="js-minus" aria-label="Quitar una unidad de ${esc(s.label)}" ${!st.ready || q <= 0 ? 'disabled' : ''}>${icon('minus')}</button>
                         <input class="js-qty" type="number" inputmode="numeric" min="0" max="${stockCap(s.id)}" value="${q}" ${st.ready ? '' : 'disabled'} aria-label="Cantidad de ${esc(s.label)}">
@@ -709,6 +714,8 @@ export class LiteApp {
                     input.blur()
                 })
             })
+            updateFilterCounts(this.root, st, Object.keys(SUPPLIES))
+            applyFilter(this.root, st, this.filter ?? 'all', '.lite-row')
             this.board.mirror(this.point.id, st.stock)
         }
         const q = st.queue ?? {}
