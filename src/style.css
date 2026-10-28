@@ -3677,3 +3677,48 @@ html.is-lite { background: #F3F5F8; }
     .role-card { padding-top: 0; }
     .intro-tag { margin-bottom: 18px; }
 }
+
+/* ================================================================
+   Donating: the kinds of help as square tiles, each supply as one row
+   ================================================================ */
+/* tiles: the icon in its colour's circle over the name; the open one in navy; a red dot if urgent */
+.supply-panel .cat-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(62px, 1fr)); gap: 8px; width: 100%; }
+.supply-panel .cat-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 84px; width: auto; padding: 10px 4px 8px; border: 0; border-radius: 16px; background: #fff; color: var(--navy); box-shadow: 0 1px 4px rgba(1, 30, 65, 0.1); transition: background-color 0.16s ease, box-shadow 0.16s ease, transform 0.12s ease; }
+.supply-panel .cat-tab:hover { background: #fff; box-shadow: 0 4px 12px rgba(1, 30, 65, 0.14); }
+.supply-panel .cat-tab:active { transform: scale(0.97); }
+.supply-panel .cat-tab.is-on { background: var(--navy); color: #fff; box-shadow: 0 6px 16px rgba(1, 30, 65, 0.28); }
+.supply-panel .cat-tab .cat-icon { width: 38px; height: 38px; border-radius: 50%; }
+.supply-panel .cat-tab .cat-icon [data-icon] { width: 20px; height: 20px; }
+.supply-panel .cat-tab.is-on .cat-icon { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85); }
+.supply-panel .cat-tab .cat-label { font-size: var(--fs-xs); font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.supply-panel .cat-tab .cat-dot { top: 6px; right: 6px; width: 10px; height: 10px; }
+.supply-panel .cat-tab:focus-visible { outline: 3px solid var(--navy); outline-offset: 2px; }
+.supply-panel .cat-row { margin-bottom: 12px; }
+/* the open kind is already shown by its tile */
+.supply-panel .cat-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+/* a supply as one row: its picture, what it is and what is needed, and the count at the right */
+.supply-panel .supply-grid { grid-template-columns: 1fr; gap: 10px; }
+.dn-card { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "add step" "need boxes"; align-items: center; gap: 6px 14px; padding: 12px 14px 12px 12px; }
+.dn-add { grid-area: add; gap: 12px; }
+.dn-pic.tile-stage { width: 64px; height: 64px; }
+.dn-need { grid-area: need; padding-left: 76px; gap: 6px; font-size: var(--fs-xs); }
+.dn-card .stepper { grid-area: step; justify-content: flex-end; gap: 6px; }
+.supply-panel .dn-card .stepper button { width: 38px; height: 38px; }
+.supply-panel .dn-card .stepper .qty-input { flex: none; width: 52px; height: 38px; font-size: var(--fs-md); }
+.dn-card .inv-boxbtns { grid-area: boxes; grid-template-columns: 1fr 1fr; gap: 6px; width: 142px; }
+.dn-card .inv-boxbtns button { min-height: 30px; font-size: 12px; }
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    /* all five in one row, the names whole */
+    .supply-panel .cat-strip { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-columns: none; gap: 5px; overflow: visible; }
+    .supply-panel .cat-tab { min-height: 70px; padding: 8px 2px 7px; border-radius: 14px; gap: 5px; }
+    .supply-panel .cat-tab .cat-icon { width: 32px; height: 32px; }
+    .supply-panel .cat-tab .cat-icon [data-icon] { width: 17px; height: 17px; }
+    .supply-panel .cat-tab .cat-label { font-size: 11px; letter-spacing: -0.01em; text-overflow: clip; }
+    .dn-card { grid-template-areas: "add step" "need step"; }
+    .dn-pic.tile-stage { width: 46px; height: 46px; }
+    .dn-need { padding-left: 58px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .supply-panel .cat-tab { transition: none; }
+    .supply-panel .cat-tab:active { transform: none; }
+}
