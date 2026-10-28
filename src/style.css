@@ -3650,3 +3650,12 @@ html.is-lite { background: #F3F5F8; }
     .role-art { animation: none; }
     .role-btn:hover .role-go { transform: none; }
 }
+/* narrower screens: the words first, the city below them filling the rest of the screen, its
+   upper edge the red curve and thin line (the same curve, turned over) */
+@media (max-width: 999px) {
+    .role { grid-template-rows: auto minmax(clamp(170px, 26vh, 300px), 1fr); align-content: stretch; padding: 0; }
+    .role-card { align-self: start; padding-top: calc(28px + env(safe-area-inset-top)); }
+    .role-art { order: 0; align-self: stretch; justify-self: stretch; height: auto; min-height: clamp(170px, 26vh, 300px); margin-top: 22px; }
+    .role-art-img { object-position: 50% 45%; }
+    .role-art-wave { top: -1px; bottom: auto; transform: scaleY(-1); }
+}
