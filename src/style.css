@@ -3574,55 +3574,79 @@ html.is-lite { background: #F3F5F8; }
 }
 
 /* ================================================================
-   Cover: the words and the two doors on the left, the city on the right
+   Cover: the words and the two doors on one side, the city on the other
    ================================================================ */
 .role-art { display: none; }
+/* the logo is as wide as the column allows (NEXOS is about 3.6 times its size), never wider */
+.role-card { container-type: inline-size; }
+.intro-logo { font-size: min(var(--logo), 27cqi); white-space: nowrap; }
+.edge-white { fill: var(--white); }
+.edge-red { fill: var(--red); }
+.edge-line { fill: none; stroke: #fff; stroke-width: 2; opacity: 0.85; vector-effect: non-scaling-stroke; }
+
+/* wide screens: two halves; the words are centred in theirs, with the same room on each side */
 @media (min-width: 1000px) {
-    .role { grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr); grid-template-rows: 100%; place-items: stretch; align-content: stretch; padding: 0; overflow: hidden; }
+    .role { grid-template-columns: minmax(0, 1fr) minmax(0, 0.82fr); grid-template-rows: 100%; place-items: stretch; align-content: stretch; padding: 0; overflow: hidden; }
     .role-card {
-        --logo: clamp(96px, min(12.5vw, 21vh), 210px);
-        --btn-h: max(52px, calc(var(--logo) / 2));
+        --logo: clamp(96px, 21vh, 200px);
+        --btn-h: 60px;
         align-self: center;
-        justify-self: end;
-        width: min(760px, 100%);
-        padding: 40px 48px 40px clamp(32px, 6vw, 110px);
+        justify-self: center;
+        width: min(640px, calc(100% - 2 * clamp(32px, 5vw, 96px)));
+        /* the white curve reaches into the picture, so the white the eye sees is a little wider
+           than this half: centre the words in that, not in the column */
+        margin-right: calc(-0.5 * clamp(100px, 10vw, 180px));
+        padding: 32px 0;
         text-align: left;
         align-items: flex-start;
     }
     .intro-logo { line-height: 0.9; }
     .intro-tag { margin-top: 18px; }
-    .intro-lead { max-width: 36ch; }
-    .role-options { width: 100%; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .role-btn { position: relative; align-items: flex-start; gap: 16px; min-height: calc(var(--btn-h) * 1.75); padding: 22px 20px; border-radius: 22px; }
-    /* the title may use the whole width; the line under it leaves room for the arrow */
-    .role-text span { padding-right: 40px; }
-    .role-text { gap: 6px; padding-top: 4px; }
-    .role-text strong { font-size: clamp(18px, calc(var(--btn-h) * 0.22), 26px); }
-    .role-text span { display: block; font-size: clamp(14px, calc(var(--btn-h) * 0.16), 18px); line-height: 1.35; }
-    .role-go { position: absolute; right: 16px; bottom: 16px; width: 36px !important; height: 36px !important; padding: 8px; border-radius: 50%; background: rgba(255, 255, 255, 0.2); box-sizing: border-box; transition: background-color 200ms var(--ease-calm), transform 200ms var(--ease-calm); }
+    .intro-lead { max-width: 40ch; }
+    .role-options { width: 100%; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .role-btn { position: relative; align-items: flex-start; gap: 14px; min-height: 150px; padding: 20px 18px; border-radius: 22px; }
+    .role-icon { width: 46px !important; height: 46px !important; padding: 11px; border-radius: 14px; }
+    .role-text { gap: 6px; padding-top: 2px; }
+    .role-text strong { font-size: clamp(17px, 1.25vw, 21px); }
+    /* the line under the title leaves room for the arrow */
+    .role-text span { display: block; padding-right: 40px; font-size: clamp(14px, 0.95vw, 16px); line-height: 1.35; }
+    .role-go { position: absolute; right: 14px; bottom: 14px; width: 36px !important; height: 36px !important; padding: 8px; border-radius: 50%; background: rgba(255, 255, 255, 0.2); box-sizing: border-box; transition: background-color 200ms var(--ease-calm), transform 200ms var(--ease-calm); }
     .role-btn:hover .role-go { background: rgba(255, 255, 255, 0.32); transform: translateX(2px); }
     .role-links { justify-content: flex-start; margin-top: 16px; }
-    .role-art { display: block; position: relative; height: 100%; min-height: 100%; animation: fade-in 900ms var(--ease-calm) both 250ms; }
-    .role-art-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 40%; }
-    .role-art-edge { position: absolute; top: 0; bottom: 0; left: -2px; width: clamp(110px, 12vw, 200px); height: 100%; }
-    /* the image starts a few pixels in, so no hairline of it shows at the seam */
-    .role-art-img { left: 4px; width: calc(100% - 4px); }
-    .edge-white { fill: var(--white); }
-    .edge-red { fill: var(--red); }
-    .edge-line { fill: none; stroke: #fff; stroke-width: 2; opacity: 0.85; vector-effect: non-scaling-stroke; }
+    .role-art { display: block; position: relative; height: 100%; animation: fade-in 900ms var(--ease-calm) both 250ms; }
+    .role-art-img { position: absolute; top: 0; bottom: 0; left: 4px; width: calc(100% - 4px); height: 100%; object-fit: cover; object-position: 50% 40%; }
+    .role-art-edge { position: absolute; top: 0; bottom: 0; left: -2px; width: clamp(100px, 10vw, 180px); height: 100%; }
+    .role-art-wave { display: none; }
 }
-@media (min-width: 1000px) and (prefers-reduced-motion: reduce) {
+
+/* narrower screens: the city as a banner on top, its lower edge the same red curve and thin
+   line turned on its side; the words below, aligned left as on wide screens */
+@media (max-width: 999px) {
+    .role { align-content: start; padding: 0 0 24px; }
+    .role-art { order: -1; display: block; position: relative; width: 100%; height: clamp(170px, 28vh, 320px); animation: fade-in 900ms var(--ease-calm) both 200ms; }
+    .role-art-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 12%; }
+    .role-art-edge { display: none; }
+    .role-art-wave { position: absolute; left: 0; right: 0; bottom: -1px; width: 100%; height: clamp(46px, 9vw, 80px); }
+    .role-card {
+        --logo: 150px;
+        --btn-h: 56px;
+        width: min(560px, calc(100% - 2 * var(--gutter) - 8px));
+        padding: 4px 0 0;
+        text-align: left;
+        align-items: flex-start;
+    }
+    .theme-chip { margin-bottom: 14px; }
+    .intro-tag { margin-top: 10px; font-size: var(--fs-lg); }
+    .intro-lead { margin: 8px 0 18px; font-size: var(--fs-sm); max-width: none; }
+    .role-options { width: 100%; gap: 10px; }
+    .role-btn { min-height: 76px; padding: 12px 12px 12px 14px; gap: 12px; border-radius: 18px; }
+    .role-icon { width: 44px !important; height: 44px !important; padding: 10px; border-radius: 13px; }
+    .role-text strong { font-size: var(--fs-md); }
+    .role-text span { display: block; font-size: var(--fs-xs); line-height: 1.3; }
+    .role-go { width: 32px !important; height: 32px !important; padding: 7px; border-radius: 50%; background: rgba(255, 255, 255, 0.2); box-sizing: border-box; flex: none; }
+    .role-links { justify-content: flex-start; gap: 8px; margin-top: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
     .role-art { animation: none; }
     .role-btn:hover .role-go { transform: none; }
-}
-/* narrower screens: the city as a banner over the words, its lower edge curved like the wide one's side */
-@media (max-width: 999px) {
-    .role { align-content: start; padding-top: 0; }
-    .role-art { order: -1; display: block; position: relative; width: calc(100% + 2 * var(--gutter)); margin: 0 calc(-1 * var(--gutter)) 18px; height: clamp(170px, 30vh, 320px); animation: fade-in 900ms var(--ease-calm) both 200ms; }
-    .role-art-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 28%; clip-path: ellipse(85% 100% at 50% 0); }
-    .role-art::after { content: ''; position: absolute; left: 0; right: 0; bottom: -6px; height: 26px; background: var(--red); clip-path: ellipse(85% 100% at 50% 0); transform: translateY(-20px); z-index: -1; }
-    .role-art-edge { display: none; }
-}
-@media (max-width: 999px) and (prefers-reduced-motion: reduce) {
-    .role-art { animation: none; }
 }
