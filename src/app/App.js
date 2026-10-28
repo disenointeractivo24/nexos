@@ -427,7 +427,6 @@ export class App {
         chip.querySelector('[data-icon]').dataset.icon = t.icon
         chip.querySelector('[data-icon]').innerHTML = ''
         chip.querySelector('.theme-chip-text').textContent = t.title
-        this.$('.intro-lead').textContent = t.lead
         hydrateIcons(chip)
     }
 

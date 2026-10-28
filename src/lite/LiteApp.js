@@ -244,7 +244,6 @@ export class LiteApp {
                 <p class="theme-chip">${icon(t.icon)}<span>${esc(t.title)}</span></p>
                 <p class="lite-logo" aria-hidden="true">NE<span class="brand-x">X</span>OS</p>
                 <h1>Red de ayuda en tiempo real</h1>
-                <p class="lite-lead">${esc(t.lead)}</p>
                 <div class="lite-roles">
                     <button class="role-btn role-donor js-donor" type="button" data-autofocus><span class="role-icon" data-icon="heart" aria-hidden="true"></span><span class="role-text"><strong>Quiero donar</strong><span>Elige una zona y arma una cesta de apoyo.</span></span><span class="role-go" data-icon="chevron-right" aria-hidden="true"></span></button>
                     <button class="role-btn role-point js-point" type="button"><span class="role-icon" data-icon="box" aria-hidden="true"></span><span class="role-text"><strong>Soy punto de acopio</strong><span>Ingresa y actualiza el inventario de tu zona.</span></span><span class="role-go" data-icon="chevron-right" aria-hidden="true"></span></button>
