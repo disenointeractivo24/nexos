@@ -3372,3 +3372,50 @@ html.is-lite { background: #F3F5F8; }
 .zc-point [data-icon] { width: 18px; height: 18px; flex: none; margin-top: 2px; color: #6B7280; }
 .zc-point span { display: grid; gap: 2px; min-width: 0; }
 .zc-point small { font-size: var(--fs-xs); color: #6B7280; }
+
+/* ================================================================
+   Top bar, step bar, guide bubble and cover, in the panels' look
+   ================================================================ */
+/* top bar: one row, nothing runs under the buttons */
+.topbar { gap: 14px; padding: 10px 10px 10px 20px; border-radius: 22px; }
+.brand-mark { font-size: var(--fs-xl); }
+.topbar-divider { align-self: center; height: 32px; width: 1px; }
+/* the place comes first; the weather gives way when the bar is short */
+.context { gap: 10px; flex: 0 0 auto; min-width: 0; }
+.context-title, .context-sub { overflow: visible; text-overflow: clip; }
+.context-icon { width: 40px !important; height: 40px !important; flex: none; padding: 9px; border-radius: 12px; background: var(--navy-06); box-sizing: border-box; }
+.context-title { font-size: var(--fs-md); line-height: 1.2; }
+.context-sub { font-size: var(--fs-xs); color: #6B7280; overflow: hidden; text-overflow: ellipsis; }
+.topbar .clock { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.topbar .clock-text { min-width: 0; overflow: hidden; }
+.topbar .clock-sub { overflow: hidden; text-overflow: ellipsis; }
+.topbar .sound-btn:not(.is-floating), .topbar .exit-btn { flex: none; }
+.session { margin-left: 0; }
+/* step bar: a segment per step and the current one by name */
+.progress { display: flex; align-items: center; gap: 12px; padding: 10px 16px; }
+.progress-list { gap: 4px; }
+.progress .progress-step { position: relative; width: 22px; height: 6px; padding: 0; border-radius: 3px; background: rgba(1, 30, 65, 0.14); transition: background-color 400ms var(--ease-calm), width 400ms var(--ease-calm); }
+.progress .progress-step::before { display: none !important; }
+.progress .progress-step.is-done { background: var(--navy); }
+.progress .progress-step.is-current { width: 34px; background: var(--red); }
+.progress .progress-dot,
+.progress .progress-label { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.progress .progress-compact { display: flex !important; align-items: baseline; gap: 8px; margin: 0; white-space: nowrap; }
+.progress-compact b { font-size: var(--fs-sm); font-weight: 800; color: var(--navy); }
+.progress-compact span { font-size: var(--fs-xs); font-weight: 600; color: #6B7280; }
+/* the guide's bubble: a plain white speech card, the instruction in bold */
+.bubble { max-width: 340px; padding: 14px 18px; border-radius: 20px; background: #fff; box-shadow: 0 10px 28px rgba(1, 30, 65, 0.16); font-size: var(--fs-md); line-height: 1.4; color: #3E4652; -webkit-backdrop-filter: none; backdrop-filter: none; border: 0; }
+.bubble strong { margin-top: 4px; font-weight: 700; color: var(--navy); }
+.bubble-dock::before { background: #fff; border: 0; box-shadow: -2px 2px 4px rgba(1, 30, 65, 0.06); }
+/* cover: the two ways out below the doors as quiet pills, not underlined links */
+.role-links { gap: 8px; margin-top: 18px; }
+.role-links .role-track { min-height: 44px; padding: 0 16px; background: var(--navy-06); text-decoration: none; font-size: var(--fs-sm); }
+.role-links .role-track:hover { background: var(--navy-12); }
+.role-links .role-track [data-icon] { width: 18px; height: 18px; }
+@media (max-width: 760px), (max-height: 560px) and (max-width: 1000px) {
+    .topbar { padding: 8px 8px 8px 14px; }
+    .progress { padding: 8px 12px; gap: 10px; }
+    .progress .progress-step { width: 16px; }
+    .progress .progress-step.is-current { width: 24px; }
+    .bubble { max-width: 280px; padding: 12px 14px; font-size: var(--fs-sm); }
+}

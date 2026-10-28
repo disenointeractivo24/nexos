@@ -46,7 +46,8 @@ export class Progress {
             else li.removeAttribute('aria-current')
         })
         const c = this.el.querySelector('.progress-compact')
-        if (c && this.steps[index]) c.textContent = `Paso ${index + 1} de ${this.steps.length} · ${this.steps[index]}`
+        // the step by name, and how far along it is; the bar beside it shows the same at a glance
+        if (c && this.steps[index]) c.innerHTML = `<b>${this.steps[index]}</b><span>Paso ${index + 1} de ${this.steps.length}</span>`
         this.el.setAttribute('aria-label', `Progreso: paso ${index + 1} de ${this.steps.length}, ${this.steps[index] ?? ''}`)
     }
 
