@@ -329,7 +329,7 @@ export class DonorPanel extends Panel {
         }
     }
 
-    /** : which of the four donating screens (0 once it is done); the bar at the top says where in the whole way. */
+    /** step: which of the four donating screens (0 once it is done); the bar at the top says where in the whole way. */
     #head(title, sub, step = 0) {
         return `
             <div class="supply-head">
