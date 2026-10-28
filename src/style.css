@@ -3249,3 +3249,53 @@ html.is-lite { background: #F3F5F8; }
 .zone-card .need-level.is-high::before { display: none; }
 .zone-card .barrio-line { margin: 16px 0 12px; padding: 10px 14px; border-radius: 14px; background: rgba(1, 30, 65, 0.05); font-size: var(--fs-sm); }
 .zone-card .barrio-line strong { font-size: var(--fs-md); }
+
+/* ================================================================
+   Following a donation (TrackView): status first, in the panels' look
+   ================================================================ */
+.track-card { gap: 14px; padding: 20px; background: #F6F7F9; }
+.track-head { align-items: center; gap: 12px; }
+.track-title { min-width: 0; flex: 1; }
+.track-head h2 { font-size: var(--fs-lg); }
+.track-form .field { margin: 0; padding: 12px 14px; border-radius: var(--radius-md); background: #fff; box-shadow: 0 1px 4px rgba(1, 30, 65, 0.08); }
+.track-form .field-label { font-size: var(--fs-sm); }
+.trk-status { display: grid; gap: 14px; padding: 16px; border-radius: var(--radius-md); background: #fff; box-shadow: 0 2px 10px rgba(1, 30, 65, 0.08); }
+.trk-code { display: grid; gap: 0; }
+.trk-code small { font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6B7280; }
+.trk-code .track-code { font-size: var(--fs-xl); line-height: 1.1; }
+/* the stops, joined by a line that fills as the donation advances */
+.trk-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); }
+.trk-steps li { position: relative; display: grid; justify-items: center; gap: 2px; text-align: center; }
+.trk-steps li + li::before { content: ''; position: absolute; top: 19px; right: 50%; width: 100%; height: 4px; border-radius: 2px; background: #E1E6ED; z-index: 0; }
+.trk-steps li.is-done + li.is-done::before { background: #2E7D5B; }
+.trk-dot { position: relative; z-index: 1; width: 42px; height: 42px; margin-bottom: 4px; display: grid; place-items: center; border-radius: 50%; background: #EEF1F5; color: #8A919C; border: 3px solid #fff; box-shadow: 0 0 0 1px #E1E6ED; }
+.trk-dot [data-icon] { width: 20px; height: 20px; }
+.trk-steps li.is-done .trk-dot { background: #2E7D5B; color: #fff; box-shadow: none; }
+.trk-steps li.is-now .trk-dot { background: var(--navy); box-shadow: 0 0 0 4px rgba(1, 30, 65, 0.14); }
+.trk-steps b { font-size: var(--fs-sm); line-height: 1.2; color: #6B7280; }
+.trk-steps li.is-done b { color: var(--navy); }
+.trk-steps small { font-size: var(--fs-xs); color: #8A919C; }
+.trk-steps li.is-done small { color: #4E5663; }
+.trk-next { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border-radius: 14px; background: #EEF3F9; }
+.trk-next [data-icon] { width: 22px; height: 22px; flex: none; margin-top: 1px; color: var(--navy); }
+.trk-next div { display: grid; gap: 2px; }
+.trk-next b { font-size: var(--fs-md); color: var(--navy); }
+.trk-next span { font-size: var(--fs-sm); color: #4E5663; }
+.trk-status.is-cancelled .trk-next { background: #ECEDEF; }
+.track-card .qr-box { border: 0; border-radius: var(--radius-md); box-shadow: 0 1px 4px rgba(1, 30, 65, 0.08); }
+.trk-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.track-card .info-block { margin: 0; padding: 12px 14px; border-radius: var(--radius-md); background: #fff; box-shadow: 0 1px 4px rgba(1, 30, 65, 0.08); }
+/* the donations made on this device */
+.trk-mine-title { margin: 4px 2px 8px; display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--navy); }
+.trk-mine-title [data-icon] { width: 16px; height: 16px; color: var(--red); }
+.track-card .mine-list { margin: 0; gap: 8px; }
+.track-card .mine-row { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 12px 14px; border: 0; border-radius: 14px; box-shadow: 0 1px 4px rgba(1, 30, 65, 0.08); }
+.track-card .mine-row:hover { box-shadow: 0 4px 12px rgba(1, 30, 65, 0.12); }
+.mine-text { min-width: 0; display: grid; gap: 1px; }
+.mine-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: #6B7280; }
+@media (max-width: 520px) {
+    .track-card { padding: 16px; }
+    .trk-dot { width: 36px; height: 36px; }
+    .trk-steps li + li::before { top: 16px; }
+    .trk-steps b { font-size: var(--fs-xs); }
+}

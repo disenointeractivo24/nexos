@@ -10,11 +10,35 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const pointOf = (id) => COLLECTION_POINTS.find((p) => p.id === id)
 const when = (iso) =>
     iso ? new Date(iso).toLocaleString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }) : ''
+const short = (iso) => (iso ? new Date(iso).toLocaleString('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '')
 const itemsLine = (items) =>
     Object.entries(items ?? {})
         .filter(([id]) => SUPPLIES[id])
         .map(([id, n]) => `${n} × ${SUPPLIES[id].label}`)
         .join(', ')
+
+/**
+ * The way a donation or transfer goes, as three (or two) stops in a row: each with its icon,
+ * its name and when it happened, the ones done filled in and the current one marked.
+ */
+function progress(steps, at) {
+    return `
+        <ol class="trk-steps" style="--n:${steps.length}">
+            ${steps
+                .map(
+                    (s, i) => `
+            <li class="${i < at ? 'is-done' : i === at ? 'is-done is-now' : ''}"${i === at ? ' aria-current="step"' : ''}>
+                <span class="trk-dot" aria-hidden="true">${icon(i <= at ? (i === at ? s.icon : 'check') : s.icon)}</span>
+                <b>${s.label}</b>
+                <small>${i <= at && s.at ? esc(short(s.at)) : i <= at ? 'Listo' : 'Pendiente'}</small>
+            </li>`
+                )
+                .join('')}
+        </ol>`
+}
+
+/** What is happening now and what comes next, in one sentence the donor can act on. */
+const nextBox = (ic, title, text) => `<div class="trk-next">${icon(ic)}<div><b>${title}</b><span>${text}</span></div></div>`
 
 /** What each state is called: the same words the collection point sees. */
 const STATE_WORD = { Agendado: 'Agendado', Recibido: 'Recibido', Entregado: 'Entregado', 'En camino': 'En camino', Cancelado: 'Cancelado' }
@@ -81,7 +105,7 @@ export class TrackView {
         this.card.innerHTML = `
             <div class="track-head">
                 <span class="track-mark">${icon('search')}</span>
-                <div>
+                <div class="track-title">
                     <h2 id="track-title">¿Dónde está mi ayuda?</h2>
                     <p class="sub">Sigue tu aporte desde que lo confirmas hasta que llega a las familias.</p>
                 </div>
@@ -117,19 +141,19 @@ export class TrackView {
             return
         }
         el.innerHTML = `
-            <span class="info-label">Tus aportes en este dispositivo</span>
+            <h3 class="trk-mine-title">${icon('heart')} Tus aportes en este dispositivo</h3>
             <ul class="mine-list">
                 ${list
                     .map(
                         (r) => `
                     <li><button type="button" class="mine-row" data-code="${esc(r.code)}">
-                        <b>${esc(r.code)}</b>
-                        <span>${esc(itemsLine(r.items))}</span>
+                        <span class="mine-text"><b>${esc(r.code)}</b><span>${esc(itemsLine(r.items))}</span></span>
                         <span class="state-pill" data-state="${esc(r.state)}">${esc(STATE_WORD[r.state] ?? r.state)}</span>
                     </button></li>`
                     )
                     .join('')}
             </ul>`
+        hydrateIcons(el)
         el.querySelectorAll('.mine-row').forEach((b) => b.addEventListener('click', () => this.#find(b.dataset.code)))
     }
 
@@ -199,46 +223,51 @@ export class TrackView {
         gsap.fromTo(out, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: this.reducedMotion ? 0.01 : 0.3 })
     }
 
+    /**
+     * A donation: where it is on its way (agendado, in the point, with the families) and what
+     * to do next first; then the QR when it still has to be taken to the point, since that is
+     * what the donor needs there; then the point and what was given, side by side.
+     */
     async #donation(r, { pending, offline, unsupported }) {
         const p = pointOf(r.point)
         const zone = ZONES.find((z) => z.id === p?.zone)
         const physical = r.mode !== 'money'
         const order = ['Agendado', 'Recibido', 'Entregado']
         const cancelled = r.state === 'Cancelado'
-        const at = cancelled ? 0 : order.indexOf(r.state)
+        const at = cancelled ? 0 : Math.max(0, order.indexOf(r.state))
         const steps = physical
             ? [
-                  ['Aporte agendado', [when(r.at), r.slot ? `Entrega: ${r.slot}` : ''].filter(Boolean).join(' · ')],
-                  ['Recibido en el punto', r.receivedAt ? when(r.receivedAt) : 'Cuando lo lleves al punto y muestres tu código.'],
-                  ['Entregado a las familias', r.deliveredAt ? when(r.deliveredAt) : 'Cuando las familias lo recojan en el punto.'],
+                  { label: 'Agendado', icon: 'calendar', at: r.at },
+                  { label: 'En el punto', icon: 'box', at: r.receivedAt },
+                  { label: 'Con las familias', icon: 'home', at: r.deliveredAt },
               ]
             : [
-                  ['Aporte confirmado', `${when(r.at)} · Pago de demostración`],
-                  ['Insumos en el punto', r.receivedAt ? `${when(r.receivedAt)} · Comprados por el equipo` : ''],
-                  ['Entregado a las familias', r.deliveredAt ? when(r.deliveredAt) : 'Cuando las familias lo recojan en el punto.'],
+                  { label: 'Confirmado', icon: 'card', at: r.at },
+                  { label: 'En el punto', icon: 'box', at: r.receivedAt },
+                  { label: 'Con las familias', icon: 'home', at: r.deliveredAt },
               ]
+        const place = esc(p?.name ?? r.point)
+        const next = cancelled
+            ? nextBox('x', 'Cancelaste esta entrega', 'El punto ya no la espera.')
+            : at === 2
+              ? nextBox('heart', '¡Llegó a las familias!', `Gracias: tu aporte ya está con las familias${zone ? ` de ${esc(zone.name)}` : ''}.`)
+              : at === 1
+                ? nextBox('box', physical ? 'Ya está en el punto' : 'El equipo dejó los insumos en el punto', 'Las familias lo recogen allí; cuando lo hagan, aparece aquí como entregado.')
+                : physical
+                  ? nextBox('pin', 'Llévalo al punto', `${r.slot ? `${esc(r.slot.replace(/\.$/, ''))}, en ` : 'En '}${place}. Muestra el QR de abajo o di tu código.`)
+                  : nextBox('box', 'El equipo está comprando los insumos', `Los deja en ${place}.`)
         const qr = physical && r.state === 'Agendado' ? await qrSvg(trackUrl(r.code)) : ''
         const canCancel = physical && r.state === 'Agendado' && !pending
         return `
-            <div class="track-card-head">
-                <b class="track-code">${esc(r.code)}</b>
-                <span class="state-pill" data-state="${esc(r.state)}">${esc(STATE_WORD[r.state] ?? r.state)}</span>
-            </div>
+            <section class="trk-status${cancelled ? ' is-cancelled' : ''}">
+                <div class="track-card-head">
+                    <span class="trk-code"><small>Código</small><b class="track-code">${esc(r.code)}</b></span>
+                    <span class="state-pill" data-state="${esc(r.state)}">${esc(STATE_WORD[r.state] ?? r.state)}</span>
+                </div>
+                ${cancelled ? '' : progress(steps, at)}
+                ${next}
+            </section>
             ${pending || offline || unsupported ? `<p class="done-offline">${icon('info')} ${unsupported ? 'El seguimiento todavía no está activo en la hoja de los puntos: esto es lo que guardó este dispositivo.' : pending ? 'Tu aporte está guardado en este dispositivo y llegará a la hoja apenas haya conexión.' : 'Sin conexión: esto es lo último que sabemos.'}</p>` : ''}
-            ${cancelled ? `<p class="track-cancelled">${icon('x')} Cancelaste esta entrega. El punto ya no la espera.</p>` : ''}
-            <ol class="timeline${cancelled ? ' is-cancelled' : ''}">
-                ${(cancelled ? steps.slice(0, 1) : steps)
-                    .map(
-                        ([title, detail], i) => `
-                    <li class="${i < at ? 'is-done' : i === at ? 'is-done is-now' : ''}">
-                        <span class="tl-dot">${i <= at ? icon('check') : ''}</span>
-                        <span class="tl-text"><b>${title}</b>${detail ? `<span>${esc(detail)}</span>` : ''}</span>
-                    </li>`
-                    )
-                    .join('')}
-            </ol>
-            <div class="info-block">${icon('pin')}<div><span class="info-label">Punto de acopio</span><b>${esc(p?.name ?? r.point)}</b><span>${esc(p?.address ?? '')}${zone ? ` · ${esc(zone.name)}` : ''}</span>${p ? `<a href="${directionsUrl(p)}" target="_blank" rel="noopener">Cómo llegar ${icon('chevron-right')}</a>` : ''}</div></div>
-            <div class="info-block">${icon('basket')}<div><span class="info-label">Qué llevaste</span><b>${esc(itemsLine(r.items))}</b><span>Valor equivalente: ${money(r.value ?? 0)}</span></div></div>
             ${qr
                 ? `<div class="qr-box">
                     <div class="qr-img" role="img" aria-label="Código QR del aporte ${esc(r.code)}">${qr}</div>
@@ -246,6 +275,10 @@ export class TrackView {
                     <button class="btn btn-secondary js-save-qr" type="button">${icon('download')} Guardar QR</button></div>
                 </div>`
                 : ''}
+            <div class="trk-info">
+                <div class="info-block">${icon('pin')}<div><span class="info-label">Punto de acopio</span><b>${place}</b><span>${esc(p?.address ?? '')}${zone ? ` · ${esc(zone.name)}` : ''}</span>${p ? `<span>Atiende ${esc(p.hours)}</span><a href="${directionsUrl(p)}" target="_blank" rel="noopener">Cómo llegar ${icon('chevron-right')}</a>` : ''}</div></div>
+                <div class="info-block">${icon('basket')}<div><span class="info-label">${physical ? 'Qué llevas' : 'Qué compra tu aporte'}</span><b>${esc(itemsLine(r.items))}</b><span>Valor equivalente: ${money(r.value ?? 0)}</span><span>Confirmado el ${esc(when(r.at))}</span></div></div>
+            </div>
             <div class="track-actions">
                 ${canCancel
                     ? `<button class="btn btn-secondary btn-danger-text js-cancel" type="button">${icon('x')} Cancelar entrega</button>
@@ -257,25 +290,35 @@ export class TrackView {
             </div>`
     }
 
+    /** A transfer between two points: sent, then received, in the same row of stops. */
     #transfer(t) {
         const from = pointOf(t.from)
         const to = pointOf(t.to)
         const done = t.state === 'Recibido'
+        const name = (p, id) => esc(p?.name.replace('Punto de acopio ', '') ?? id)
         if (t.state === 'Cancelado') {
             return `
-            <div class="track-card-head"><b class="track-code">${esc(t.code)}</b><span class="state-pill" data-state="Cancelado">Cancelado</span></div>
-            <p class="track-cancelled">${icon('x')} ${esc(from?.name ?? t.from)} anuló este traslado: los insumos volvieron a su inventario.</p>
+            <section class="trk-status is-cancelled">
+                <div class="track-card-head"><span class="trk-code"><small>Traslado</small><b class="track-code">${esc(t.code)}</b></span><span class="state-pill" data-state="Cancelado">Cancelado</span></div>
+                ${nextBox('x', 'Traslado anulado', `${name(from, t.from)} lo anuló: los insumos volvieron a su inventario.`)}
+            </section>
             <div class="info-block">${icon('truck')}<div><span class="info-label">Qué se iba a enviar</span><b>${esc(itemsLine(t.items))}</b></div></div>`
         }
         return `
-            <div class="track-card-head">
-                <b class="track-code">${esc(t.code)}</b>
-                <span class="state-pill" data-state="${esc(t.state)}">${esc(STATE_WORD[t.state] ?? t.state)}</span>
-            </div>
-            <ol class="timeline">
-                <li class="is-done ${done ? '' : 'is-now'}"><span class="tl-dot">${icon('check')}</span><span class="tl-text"><b>Enviado desde ${esc(from?.name ?? t.from)}</b><span>${esc(when(t.at))}</span></span></li>
-                <li class="${done ? 'is-done is-now' : ''}"><span class="tl-dot">${done ? icon('check') : ''}</span><span class="tl-text"><b>Recibido en ${esc(to?.name ?? t.to)}</b><span>${done ? esc(when(t.receivedAt)) : 'Cuando el punto confirme que llegó.'}</span></span></li>
-            </ol>
+            <section class="trk-status">
+                <div class="track-card-head">
+                    <span class="trk-code"><small>Traslado</small><b class="track-code">${esc(t.code)}</b></span>
+                    <span class="state-pill" data-state="${esc(t.state)}">${esc(STATE_WORD[t.state] ?? t.state)}</span>
+                </div>
+                ${progress(
+                    [
+                        { label: `Sale de ${name(from, t.from)}`, icon: 'truck', at: t.at },
+                        { label: `Llega a ${name(to, t.to)}`, icon: 'box', at: t.receivedAt },
+                    ],
+                    done ? 1 : 0
+                )}
+                ${done ? nextBox('check', 'Traslado recibido', 'Los insumos ya están en el inventario del otro punto.') : nextBox('truck', 'En camino', 'Aparece como recibido cuando el otro punto confirme que llegó.')}
+            </section>
             <div class="info-block">${icon('truck')}<div><span class="info-label">Qué se envió</span><b>${esc(itemsLine(t.items))}</b></div></div>
             <div class="track-actions"><button class="btn btn-secondary js-refresh" type="button">${icon('refresh')} Actualizar</button></div>`
     }
