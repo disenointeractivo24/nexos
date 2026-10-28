@@ -2,6 +2,7 @@ import gsap from 'gsap'
 import { icon, hydrateIcons } from './icons.js'
 import { pointMenu, POINT_TITLES } from './pointMenu.js'
 import { transferSheet } from './transferSheet.js'
+import { receiveWays, receiveLists, sentList } from './receiveView.js'
 import { CATEGORIES, SUPPLIES, money, perBox, basketBoxes, BOX } from '../data/catalog.js'
 import { stockCap, stockState, stockRatio } from '../data/inventory.js'
 import { ZONES, zoneNeeds, zoneLevel, NEED_WORD, barrioNeeds } from '../data/zones.js'
@@ -9,7 +10,7 @@ import { pointForZone, mapEmbedUrl, directionsUrl } from '../data/collectionPoin
 import { session } from '../app/session.js'
 import { cloneMaterials } from '../three/GuideCharacter.js'
 import { helpList, busyButton } from './feedback.js'
-import { deliveryWindows } from '../data/delivery.js'
+import { deliveryWindows, findWindow } from '../data/delivery.js'
 import { newCode, trackUrl, ledger, readCode } from '../app/donations.js'
 import { qrSvg, scanQr } from './qr.js'
 import { COLLECTION_POINTS } from '../data/collectionPoints.js'
@@ -605,7 +606,7 @@ export class DonorPanel extends Panel {
     /* ---------- 3a · physical: details ---------- */
     #detailsForm() {
         const d = this.details
-        const windows = deliveryWindows()
+        const windows = deliveryWindows(this.point)
         if (!windows.some((w) => w.id === d.window)) d.window = ''
         this.el.innerHTML = `
             ${this.#head('Tus datos para la entrega', 'Solo lo necesario para coordinar.')}
@@ -626,7 +627,7 @@ export class DonorPanel extends Panel {
                     <span class="field-error" data-for="email" hidden></span>
                 </label>
                 <fieldset class="field">
-                    <legend class="field-label">¿Cuándo puedes llevarlo?</legend>
+                    <legend class="field-label">¿Cuándo puedes llevarlo? <span class="optional">El punto atiende ${esc(this.point.hours)}</span></legend>
                     <div class="chips">
                         ${windows
                             .map(
@@ -711,7 +712,7 @@ export class DonorPanel extends Panel {
     /* ---------- 4a · physical: summary ---------- */
     #summary() {
         const p = this.point
-        const w = deliveryWindows().find((x) => x.id === this.details.window)
+        const w = findWindow(this.point, this.details.window)
         this.code = this.code ?? refCode()
         this.el.innerHTML = `
             ${this.#head('Resumen del aporte', 'Revisa los datos y confirma.')}
@@ -814,7 +815,7 @@ export class DonorPanel extends Panel {
 
     #finish() {
         this.code = this.code ?? refCode()
-        const w = deliveryWindows().find((x) => x.id === this.details.window)
+        const w = findWindow(this.point, this.details.window)
         const record = {
             code: this.code,
             mode: this.mode,
@@ -837,7 +838,7 @@ export class DonorPanel extends Panel {
     #done() {
         const r = this.lastRecord
         const physical = r.mode === 'physical'
-        const w = deliveryWindows().find((x) => x.id === r.window)
+        const w = findWindow(this.point, r.window)
         this.el.innerHTML = `
             ${this.#head(physical ? 'Entrega programada' : 'Aporte recibido', `${this.barrio.name} · Punto de acopio`)}
             <div class="supply-body step-enter">
@@ -1001,18 +1002,9 @@ export class InventoryPanel extends Panel {
                     </div>
                 </section>
                 <section class="board-view" id="view-receive" aria-labelledby="supply-title" hidden>
-                    <div class="receive-card">
-                        <h3>Recibir un aporte o un traslado</h3>
-                        <p>Escanea el QR que trae el donante, o escribe su código. Lo recibido se suma solo al inventario.</p>
-                        <button class="btn btn-primary receive-scan js-scan" type="button">${icon('camera')} Escanear QR</button>
-                        <form class="pending-form js-receive-form" novalidate>
-                            <label class="sr-only" for="receive-code">Código del aporte o del traslado</label>
-                            <input id="receive-code" name="code" type="text" placeholder="O escribe el código (NX-… o TR-…)" autocapitalize="characters" autocomplete="off" spellcheck="false">
-                            <button class="btn btn-secondary" type="submit">Recibir</button>
-                        </form>
-                        <p class="form-error js-receive-error" role="alert" hidden></p>
-                    </div>
-                    <div class="pending-lists js-pending-lists"></div>
+                    <p class="rcv-intro">¿Llegó un donante o un traslado? Recíbelo aquí: lo que llega se suma solo al inventario.</p>
+                    ${receiveWays('receive-code')}
+                    <div class="rcv-lists js-pending-lists"></div>
                 </section>
                 <section class="board-view" id="view-send" aria-labelledby="supply-title" hidden>
                     <div class="receive-card">
@@ -1020,7 +1012,7 @@ export class InventoryPanel extends Panel {
                         <p>Elige el punto y qué le mandas. Te sugerimos cuánto según lo que te sobra y lo que le falta; lo revisas antes de confirmar.</p>
                         <button class="btn btn-primary receive-scan js-transfer" type="button">${icon('truck')} Nuevo envío</button>
                     </div>
-                    <div class="pending-lists js-sent-lists"></div>
+                    <div class="rcv-lists js-sent-lists"></div>
                 </section>
             </div>
             <div class="board-foot">
@@ -1258,7 +1250,6 @@ export class InventoryPanel extends Panel {
         this.queueKey = key
         const toReceive = [...(q.scheduled ?? []), ...(q.incoming ?? [])]
         const toDeliver = q.toDeliver ?? []
-        const outgoing = q.outgoing ?? []
         // the Recibir option says how much waits there, so it is seen from the start
         const badge = this.el.querySelector('.js-receive-badge')
         const waiting = toReceive.length + toDeliver.length
@@ -1267,43 +1258,12 @@ export class InventoryPanel extends Panel {
             badge.textContent = waiting
             badge.setAttribute('aria-label', [toReceive.length && `${toReceive.length} por recibir`, toDeliver.length && `${toDeliver.length} por entregar`].filter(Boolean).join(', '))
         }
-        const name = (id) => COLLECTION_POINTS.find((p) => p.id === id)?.name.replace('Punto de acopio ', '') ?? id
-        const items = (it) =>
-            Object.entries(it ?? {})
-                .filter(([id]) => SUPPLIES[id])
-                .map(([id, n]) => `${n} × ${SUPPLIES[id].label}`)
-                .join(', ')
-        const row = (ic, x, sub, action, label) => `
-            <li class="pend-row">
-                <span class="pend-icon">${icon(ic)}</span>
-                <span class="pend-text"><b>${esc(x.code)}</b><span>${esc(items(x.items))}</span><small>${esc(sub)}</small></span>
-                ${action ? `<button class="btn btn-primary pend-btn" type="button" data-action="${action}" data-code="${esc(x.code)}">${label}</button>` : ''}
-            </li>`
-        const list = (title, rows, empty) => `
-            <div class="pend-group"><h3>${title}</h3>${rows.length ? `<ul class="pend-list">${rows.join('')}</ul>` : `<p class="pend-empty">${empty}</p>`}</div>`
         const lists = this.el.querySelector('.js-pending-lists')
         if (!lists) return
-        lists.innerHTML =
-            list(
-                'Por recibir',
-                [
-                    ...(q.scheduled ?? []).map((d) => row('heart', d, d.slot || 'Entrega agendada', 'receive', 'Recibir')),
-                    ...(q.incoming ?? []).map((t) => row('truck', t, `Traslado desde ${name(t.from)}`, 'receive', 'Recibir')),
-                ],
-                'Nada por recibir. Cuando un donante agende una entrega o te envíen un traslado, aparece aquí.'
-            ) +
-            list(
-                'Por entregar a las familias',
-                toDeliver.map((d) => row('home', d, d.mode === 'money' ? 'Aporte en dinero · comprado por el equipo' : 'Recibido en el punto', 'deliver', 'Entregado')),
-                'Todo lo recibido ya se entregó.'
-            )
+        lists.innerHTML = receiveLists(q)
         hydrateIcons(lists)
         const sent = this.el.querySelector('.js-sent-lists')
-        sent.innerHTML = list(
-            'Traslados en camino',
-            outgoing.map((t) => row('truck', t, `En camino a ${name(t.to)}`)),
-            'No tienes traslados en camino. Cuando envíes uno, aparece aquí hasta que el otro punto lo reciba.'
-        )
+        sent.innerHTML = sentList(q)
         hydrateIcons(sent)
     }
 

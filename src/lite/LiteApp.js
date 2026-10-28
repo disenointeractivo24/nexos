@@ -3,12 +3,13 @@ import { Toast, Dialog, helpList, busyButton } from '../ui/feedback.js'
 import { TrackView } from '../ui/track.js'
 import { pointMenu, POINT_TITLES } from '../ui/pointMenu.js'
 import { transferSheet } from '../ui/transferSheet.js'
+import { receiveWays, receiveLists, sentList } from '../ui/receiveView.js'
 import { qrSvg, scanQr } from '../ui/qr.js'
 import { CATEGORIES, SUPPLIES, money, perBox } from '../data/catalog.js'
 import { stockCap, stockState } from '../data/inventory.js'
 import { ZONES, NEED_WORD, zoneNeeds, zoneLevel, useStock } from '../data/zones.js'
 import { COLLECTION_POINTS, pointForZone, validateCredentials, directionsUrl } from '../data/collectionPoints.js'
-import { deliveryWindows } from '../data/delivery.js'
+import { deliveryWindows, findWindow } from '../data/delivery.js'
 import { session } from '../app/session.js'
 import { StockBoard } from '../app/stockBoard.js'
 import { InventoryStore } from '../app/inventoryStore.js'
@@ -428,7 +429,7 @@ export class LiteApp {
 
     #details() {
         const d = this.details
-        const windows = deliveryWindows()
+        const windows = deliveryWindows(this.pointNow)
         return `
             ${this.#steps(3)}
             <h1 class="lite-title">¿Cuándo lo llevas?</h1>
@@ -436,7 +437,7 @@ export class LiteApp {
             <form class="lite-form donor-form" novalidate>
                 <label class="field"><span class="field-label">Nombre</span><input name="name" type="text" autocomplete="name" value="${esc(d.name)}" required data-autofocus></label>
                 <label class="field"><span class="field-label">Teléfono</span><input name="phone" type="tel" autocomplete="tel" inputmode="tel" value="${esc(d.phone)}" required></label>
-                <fieldset class="field"><legend class="field-label">Franja de entrega</legend>
+                <fieldset class="field"><legend class="field-label">Franja de entrega <span class="optional">El punto atiende ${esc(this.pointNow.hours)}</span></legend>
                     <div class="chips">${windows
                         .map((w) => `<label class="chip"><input type="radio" name="window" value="${w.id}" ${d.window === w.id ? 'checked' : ''}><span><b>${w.label}</b><small>${w.detail}</small></span></label>`)
                         .join('')}</div>
@@ -469,7 +470,7 @@ export class LiteApp {
     #summary() {
         const p = this.pointNow
         const t = this.#totals()
-        const w = deliveryWindows().find((x) => x.id === this.details.window)
+        const w = findWindow(this.pointNow, this.details.window)
         const physical = this.mode === 'physical'
         return `
             ${this.#steps(4)}
@@ -496,7 +497,7 @@ export class LiteApp {
     /** Same as the full version: recorded in the sheet; in money it counts in the stock at once. */
     #confirm() {
         const p = this.pointNow
-        const w = deliveryWindows().find((x) => x.id === this.details.window)
+        const w = findWindow(this.pointNow, this.details.window)
         const record = {
             code: newCode(),
             mode: this.mode,
@@ -607,18 +608,9 @@ export class LiteApp {
                 <div class="lite-list js-stock"></div>
             </section>
             <section id="lv-receive" hidden>
-                <div class="receive-card">
-                    <h3>Recibir un aporte o un traslado</h3>
-                    <p>Escanea el QR que trae el donante, o escribe su código. Lo recibido se suma solo al inventario.</p>
-                    <button class="btn btn-primary receive-scan js-scan" type="button">${icon('camera')} Escanear QR</button>
-                    <form class="pending-form js-receive-form" novalidate>
-                        <label class="sr-only" for="lite-code">Código del aporte o del traslado</label>
-                        <input id="lite-code" name="code" type="text" placeholder="O escribe el código (NX-… o TR-…)" autocapitalize="characters" autocomplete="off" spellcheck="false">
-                        <button class="btn btn-secondary" type="submit">Recibir</button>
-                    </form>
-                    <p class="form-error js-receive-error" role="alert" hidden></p>
-                </div>
-                <div class="lite-card js-pending-lists"></div>
+                <p class="rcv-intro">¿Llegó un donante o un traslado? Recíbelo aquí: lo que llega se suma solo al inventario.</p>
+                ${receiveWays('lite-code')}
+                <div class="rcv-lists js-pending-lists"></div>
             </section>
             <section id="lv-send" hidden>
                 <div class="receive-card">
@@ -626,7 +618,7 @@ export class LiteApp {
                     <p>Elige el punto y qué le mandas. Te sugerimos cuánto; lo revisas antes de confirmar.</p>
                     <button class="btn btn-primary receive-scan js-transfer" type="button">${icon('truck')} Nuevo envío</button>
                 </div>
-                <div class="lite-card js-sent-lists"></div>
+                <div class="rcv-lists js-sent-lists"></div>
             </section>
             <div class="lite-actions"><button class="btn btn-exit js-logout" type="button">${icon('logout')} Salir</button></div>`
     }
@@ -723,24 +715,15 @@ export class LiteApp {
         const qKey = JSON.stringify(q)
         if (qKey === this.queueKey) return
         this.queueKey = qKey
-        const name = (id) => COLLECTION_POINTS.find((p) => p.id === id)?.name.replace('Punto de acopio ', '') ?? id
-        const row = (ic, x, sub, action, label) => `
-            <li class="pend-row"><span class="pend-icon">${icon(ic)}</span><span class="pend-text"><b>${esc(x.code)}</b><span>${esc(itemsLine(x.items))}</span><small>${esc(sub)}</small></span>
-            ${action ? `<button class="btn btn-primary pend-btn" type="button" data-action="${action}" data-code="${esc(x.code)}">${label}</button>` : ''}</li>`
-        const group = (title, rows, empty) => `<div class="pend-group"><h3>${title}</h3>${rows.length ? `<ul class="pend-list">${rows.join('')}</ul>` : `<p class="pend-empty">${empty}</p>`}</div>`
-        const toReceive = [...(q.scheduled ?? []).map((d) => row('heart', d, d.slot || 'Entrega agendada', 'receive', 'Recibir')), ...(q.incoming ?? []).map((t) => row('truck', t, `Traslado desde ${name(t.from)}`, 'receive', 'Recibir'))]
-        const toDeliver = (q.toDeliver ?? []).map((d) => row('home', d, d.mode === 'money' ? 'Aporte en dinero' : 'Recibido en el punto', 'deliver', 'Entregado'))
-        const out = (q.outgoing ?? []).map((t) => row('truck', t, `En camino a ${name(t.to)}`))
+        const waiting = (q.scheduled ?? []).length + (q.incoming ?? []).length + (q.toDeliver ?? []).length
         const badge = this.root.querySelector('.js-receive-badge')
-        badge.hidden = !(toReceive.length + toDeliver.length)
-        badge.textContent = toReceive.length + toDeliver.length
+        badge.hidden = !waiting
+        badge.textContent = waiting
         const lists = this.root.querySelector('.js-pending-lists')
-        lists.innerHTML =
-            group('Por recibir', toReceive, 'Nada por recibir por ahora.') +
-            group('Por entregar a las familias', toDeliver, 'Todo lo recibido ya se entregó.')
+        lists.innerHTML = receiveLists(q)
         hydrateIcons(lists)
         const sent = this.root.querySelector('.js-sent-lists')
-        sent.innerHTML = group('Traslados en camino', out, 'No tienes traslados en camino.')
+        sent.innerHTML = sentList(q)
         hydrateIcons(sent)
     }
 

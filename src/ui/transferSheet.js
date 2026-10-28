@@ -17,8 +17,9 @@ const ORDER = { critico: 0, estable: 1, abastecido: 2 }
  *
  * Every quantity starts at 0: the person adds what they want to send. The point where this
  * point's spare stock does most good is marked (its crítico supplies count three times) and
- * chosen first, and each supply offers a suggestion to tap: just enough to bring the other
- * point up to abastecido, never more than this one can spare (it keeps half of its cap).
+ * chosen first. Every supply offers a suggestion to tap: what the other point lacks to reach
+ * abastecido, out of what this one can spare (above half of its cap); with nothing to spare,
+ * a fifth of what it holds; with nothing lacking there, a tenth. Never less than one unit.
  * It all leaves this stock now, and enters the other point's when that point receives it.
  *
  * @param {{host: HTMLElement, point: object, store: object, board: object, toast?: object,
@@ -33,9 +34,18 @@ export function transferSheet({ host, point, store, board, toast = null, audio =
     const mine = (id) => store.get(id)
     const spare = (id) => Math.max(0, mine(id) - Math.ceil(stockCap(id) * 0.5))
     const toStocked = (p, id) => Math.max(0, Math.ceil(stockCap(id) * 0.75) - board.qty(p.id, id))
-    const suggest = (p, id) => (board.state(p.id, id).id === 'abastecido' ? 0 : Math.min(spare(id), toStocked(p, id)))
+    // how much this point's stock helps there: what picks the point marked "Más lo necesita"
+    const useful = (p, id) => (board.state(p.id, id).id === 'abastecido' ? 0 : Math.min(spare(id), toStocked(p, id)))
+    // the number offered on each supply's "Sugerido" button
+    const suggest = (p, id) => {
+        const has = mine(id)
+        if (!has) return 0
+        const give = spare(id) || Math.ceil(has * 0.2)
+        const lack = toStocked(p, id) || Math.ceil(has * 0.1)
+        return Math.max(1, Math.min(has, give, lack))
+    }
     const criticalOf = (p) => Object.keys(SUPPLIES).filter((id) => board.state(p.id, id).id === 'critico')
-    const helps = (p) => Object.keys(SUPPLIES).reduce((n, id) => n + suggest(p, id) * (board.state(p.id, id).id === 'critico' ? 3 : 1), 0)
+    const helps = (p) => Object.keys(SUPPLIES).reduce((n, id) => n + useful(p, id) * (board.state(p.id, id).id === 'critico' ? 3 : 1), 0)
     const best = [...others].sort((a, b) => helps(b) - helps(a) || criticalOf(b).length - criticalOf(a).length)[0]
     let dest = best
     const qty = {}

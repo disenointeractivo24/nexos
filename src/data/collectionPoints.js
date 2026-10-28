@@ -18,7 +18,7 @@ export const COLLECTION_POINTS = [
         lat: 3.433045,
         lon: -76.544152,
         zone: 'centro',
-        hours: 'de 8:00 a. m. a 5:00 p. m.',
+        hours: 'de 8:00 a. m. a 5:00 p. m.', open: 8 * 60, close: 17 * 60,
     },
     {
         id: 'acopio-norte',
@@ -29,7 +29,7 @@ export const COLLECTION_POINTS = [
         lat: 3.484822,
         lon: -76.522905,
         zone: 'norte',
-        hours: 'de 8:00 a. m. a 4:00 p. m.',
+        hours: 'de 8:00 a. m. a 4:00 p. m.', open: 8 * 60, close: 16 * 60,
     },
     {
         id: 'acopio-oeste',
@@ -40,7 +40,7 @@ export const COLLECTION_POINTS = [
         lat: 3.447505,
         lon: -76.541927,
         zone: 'oeste',
-        hours: 'de 9:00 a. m. a 5:00 p. m.',
+        hours: 'de 9:00 a. m. a 5:00 p. m.', open: 9 * 60, close: 17 * 60,
     },
     {
         id: 'acopio-oriente',
@@ -51,7 +51,7 @@ export const COLLECTION_POINTS = [
         lat: 3.42016,
         lon: -76.491119,
         zone: 'oriente',
-        hours: 'de 7:00 a. m. a 4:00 p. m.',
+        hours: 'de 7:00 a. m. a 4:00 p. m.', open: 7 * 60, close: 16 * 60,
     },
     {
         id: 'acopio-sur',
@@ -62,7 +62,7 @@ export const COLLECTION_POINTS = [
         lat: 3.3833118,
         lon: -76.5329216,
         zone: 'sur',
-        hours: 'de 8:00 a. m. a 5:00 p. m.',
+        hours: 'de 8:00 a. m. a 5:00 p. m.', open: 8 * 60, close: 17 * 60,
     },
 ]
 
