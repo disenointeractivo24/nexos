@@ -104,12 +104,17 @@ export class ZoneCard extends Panel {
         this.onClose = onClose
     }
 
+    /**
+     * A zone at a glance: who it is (its colour and house, as on the map) and how much it
+     * needs; what is urgent, by name; the kinds of help it needs most; the point that
+     * receives it; and one button into the barrio, which says which barrio.
+     */
     render(zone) {
         const theme = session.theme
         const collector = session.role === 'collector'
         const level = zoneLevel(zone, theme)
         const point = pointForZone(zone.id)
-        const urgent = session.zoneHasUrgent(zone.id)
+        const urgent = Object.values(SUPPLIES).filter((s) => session.isUrgent(zone.id, s.id))
         const needs = zoneNeeds(zone, theme)
             .map(
                 ([cat, lvl]) => `
@@ -122,20 +127,26 @@ export class ZoneCard extends Panel {
             .join('')
 
         this.el.innerHTML = `
-            <div class="panel-head">
-                <div>
+            <div class="zc-head">
+                <span class="zc-mark" style="background:${zone.color}" aria-hidden="true">${icon('home')}</span>
+                <div class="zc-title">
                     <h2 id="zone-title">${zone.name}</h2>
                     <p class="sub">${esc(theme.title)}</p>
                 </div>
                 <button class="icon-btn js-close" type="button" aria-label="Cerrar y volver al mapa">${icon('x')}</button>
             </div>
-            <p class="status-pill">${icon(collector ? 'box' : 'shield')} ${collector ? esc(point.name) : 'Punto de ayuda activo'}</p>
-            ${urgent ? `<p class="status-pill is-urgent">${icon('urgent')} Hay faltantes urgentes en esta zona</p>` : ''}
+            <div class="zc-status">
+                <span class="need-pill" data-level="${level}">Necesidad ${esc(NEED_WORD[level].replace(/^Necesidad /i, '').toLowerCase())}</span>
+                <span class="zc-chip">${icon(collector ? 'box' : 'shield')} ${collector ? 'Tu zona' : 'Punto de ayuda activo'}</span>
+            </div>
+            ${urgent.length
+                ? `<div class="zc-urgent">${icon('urgent')}<div><b>Falta con urgencia</b><span>${urgent.map((s) => esc(s.label)).join(', ')}</span></div></div>`
+                : ''}
             <p class="section-title">Lo que más se necesita</p>
             <ul class="need-list">${needs}</ul>
-            <p class="barrio-line">${collector ? 'Barrio a revisar' : 'Barrio con más necesidad'}<strong>${zone.barrio}</strong></p>
+            <div class="zc-point">${icon('pin')}<div><b>${esc(point?.name ?? '')}</b><span>${esc(point?.address ?? '')} · Atiende ${esc(point?.hours ?? '')}</span></div></div>
             <button class="btn btn-primary btn-block btn-lg js-enter" type="button">
-                ${collector ? 'Revisar el barrio' : 'Ir al barrio'} ${icon('chevron-right')}
+                <span class="zc-go"><small>${collector ? 'Revisar el barrio' : 'Ir al barrio'}</small>${esc(zone.barrio)}</span> ${icon('chevron-right')}
             </button>`
         hydrateIcons(this.el)
         this.el.querySelector('.js-close').addEventListener('click', () => this.onClose())
