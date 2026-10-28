@@ -1117,9 +1117,11 @@ export class App {
      */
     #showBarrioLabels() {
         this.labels.clear()
+        const mine = session.role === 'collector'
+        // it says what it is and that it opens: it is the one thing to tap here
         const acopioEl = this.labels.add('acopio', {
-            className: 'is-compact is-point',
-            html: `<span class="wlabel-icon" style="background:#011E41">${icon('box')}</span>`,
+            className: 'is-point is-call',
+            html: `<span class="wlabel-icon" style="background:#011E41">${icon('box')}</span><span class="wlabel-text"><b>${mine ? 'Tu punto de acopio' : 'Punto de acopio'}</b><small>${mine ? 'Toca para abrir el inventario' : 'Toca para entrar y donar'}</small></span>${icon('chevron-right')}`,
             ariaLabel: `Punto de acopio del ${this.barrio.name}. Abrir`,
             anchor: () => this.hood.acopioAnchor(this._aAnchor ?? (this._aAnchor = new THREE.Vector3())),
             onClick: () => this.openPoint(),

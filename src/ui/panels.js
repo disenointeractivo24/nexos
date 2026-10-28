@@ -329,12 +329,12 @@ export class DonorPanel extends Panel {
         }
     }
 
+    /** : which of the four donating screens (0 once it is done); the bar at the top says where in the whole way. */
     #head(title, sub, step = 0) {
         return `
             <div class="supply-head">
                 <span class="wlabel-icon" style="background:#011E41">${icon(step ? 'basket' : 'check')}</span>
                 <div class="dn-title">
-                    ${step ? `<span class="dn-step">Paso ${step} de 4</span>` : ''}
                     <h2 id="supply-title">${title}</h2>
                     <p class="sub">${sub}</p>
                 </div>
