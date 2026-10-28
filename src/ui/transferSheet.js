@@ -83,9 +83,11 @@ export function transferSheet({ host, point, store, board, toast = null, audio =
             <label class="xfer-point" style="--zone:${z?.color ?? '#011E41'}">
                 <input type="radio" name="xfer-dest" value="${p.id}" ${p.id === dest.id ? 'checked' : ''}>
                 <span class="xfer-point-dot" aria-hidden="true"></span>
+                <span class="xfer-point-house" aria-hidden="true">${icon('home')}</span>
                 <span class="xfer-point-text">
                     <b>${esc(z?.name ?? '')}${p.id === best.id && helps(best) > 0 ? '<i class="xfer-tag">Más lo necesita</i>' : ''}</b>
                     <small>${esc(place(p))}</small>
+                    <span class="xfer-point-count ${crit.length ? 'is-critical' : ''}">${crit.length ? `${crit.length} ${crit.length === 1 ? 'crítico' : 'críticos'}` : 'Sin críticos'}</span>
                     <span class="xfer-point-need ${crit.length ? 'is-critical' : ''}">${
                         crit.length ? `Le falta: ${crit.map((id) => esc(SUPPLIES[id].label)).join(', ')}` : 'No le falta nada crítico'
                     }</span>

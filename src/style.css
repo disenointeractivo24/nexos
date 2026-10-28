@@ -3771,3 +3771,21 @@ html.is-lite { background: #F3F5F8; }
 .rcv-tiles .inv-tile-count.is-on { background: var(--red); color: #fff; }
 .rcv-group[hidden] { display: none; }
 .lite .rcv-lists .rcv-group-title .rcv-count { display: none; }
+
+/* the destination's house and count only show as tiles (light version) */
+.xfer-point-house, .xfer-point-count { display: none; }
+/* light version, sending: the points as tiles, like the kinds of help (the supplies below say what each lacks) */
+.lite-overlay .xfer-dest { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); grid-auto-flow: column; gap: 6px; }
+.lite-overlay .xfer-point { flex-direction: column; align-items: center; justify-content: flex-start; gap: 5px; min-height: 104px; padding: 10px 4px 9px; border: 0; border-radius: 16px; text-align: center; box-shadow: 0 1px 4px rgba(1, 30, 65, 0.1); }
+.lite-overlay .xfer-point-dot { display: none; }
+.lite-overlay .xfer-point-house { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: var(--zone); color: #fff; }
+.lite-overlay .xfer-point-house [data-icon] { width: 20px; height: 20px; }
+.lite-overlay .xfer-point-text { justify-items: center; gap: 3px; }
+.lite-overlay .xfer-point-text b { justify-content: center; font-size: var(--fs-xs); line-height: 1.15; }
+.lite-overlay .xfer-point-text small, .lite-overlay .xfer-point-need, .lite-overlay .xfer-tag { display: none; }
+.lite-overlay .xfer-point-count { display: inline-block; padding: 1px 7px; border-radius: var(--radius-pill); background: #E7F1EB; font-size: 11px; font-weight: 700; color: #1E5B36; }
+.lite-overlay .xfer-point-count.is-critical { background: #FDE3E5; color: #A3262F; }
+.lite-overlay .xfer-point:has(input:checked) { background: var(--navy); box-shadow: 0 6px 16px rgba(1, 30, 65, 0.28); }
+.lite-overlay .xfer-point:has(input:checked) .xfer-point-text b { color: #fff; }
+.lite-overlay .xfer-point:has(input:checked) .xfer-point-house { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85); }
+.lite-overlay .xfer-point:has(input:checked) .xfer-point-count { background: rgba(255, 255, 255, 0.18); color: #fff; }
