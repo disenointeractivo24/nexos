@@ -562,28 +562,19 @@ export class App {
      * Beside each one, a bubble shows what is missing there: one icon per
      * supply category, each with an alert mark.
      */
+    /**
+     * A zone's marker on the map: its house in the zone's colour, its name, and one line that
+     * says how it is doing (how many supplies are urgent, or how much it needs). A collection
+     * point sees its own zone marked as such.
+     */
     #zoneLabelHtml(zone) {
         const level = zoneLevel(zone, this.theme)
-        const urgent = session.zoneHasUrgent(zone.id)
-        const high = level === 'alta' || urgent
-        // the shortage bubble is for donors: it answers "where is my help needed?".
-        // A collection point is looking at its own shelves, not shopping the city.
-        const missing = session.role === 'collector' ? [] : this.#zoneMissing(zone)
-        const bubble = missing.length
-            ? `<span class="need-bubble" aria-hidden="true">${missing
-                  .map(
-                      ([cat]) => `
-                <span class="need-chip" style="background:${CATEGORIES[cat].tint};color:${CATEGORIES[cat].color}">${icon(CATEGORIES[cat].icon)}</span>`
-                  )
-                  .join('')}</span>`
-            : ''
-        // the house is drawn in the zone's own colour; urgency is carried by the dot
+        const urgent = session.urgentCount(zone.id)
+        const own = session.role === 'collector' && session.point?.zone === zone.id
+        const line = own ? 'Tu zona' : urgent ? `${urgent} ${urgent === 1 ? 'urgente' : 'urgentes'}` : NEED_WORD[level]
         return `
-            <span class="wlabel-icon" style="background:${zone.color}">
-                ${icon('home')}
-                <span class="wlabel-dot ${urgent ? 'is-urgent' : high ? 'is-high' : ''}"></span>
-            </span>
-            ${bubble}`
+            <span class="wlabel-icon" style="background:${zone.color}">${icon('home')}</span>
+            <span class="wlabel-text"><b>${zone.name.replace(/^Zona /, '')}</b><small class="${urgent && !own ? 'is-urgent' : ''}">${line}</small></span>`
     }
 
     /**
@@ -659,7 +650,7 @@ export class App {
         }
         ZONES.forEach((zone, i) => {
             const el = this.labels.add(`zone:${zone.id}`, {
-                className: 'is-compact has-needs',
+                className: 'is-zone',
                 html: this.#zoneLabelHtml(zone),
                 ariaLabel: this.#zoneAria(zone),
                 anchor: () => this.city.labelAnchor(zone.id, this._anchor ?? (this._anchor = new THREE.Vector3())),

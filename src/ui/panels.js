@@ -401,11 +401,19 @@ export class DonorPanel extends Panel {
             </div>`
     }
 
-    /* ---------- 1 · supplies, at the collection point ---------- */
-    #supplies() {
+    get #group() {
+        return this.groups.find((g) => g.category === this.category) ?? this.groups[0]
+    }
+
+    #catTitle(group) {
+        const n = group?.items.length ?? 0
+        return `${CATEGORIES[group?.category]?.label ?? ''}<span>${n ? ` · ${n} ${n === 1 ? 'insumo' : 'insumos'}` : ''}</span>`
+    }
+
+    /** The supply cards of one category, the most urgent first. */
+    #tilesHtml(group) {
         const key = this.barrio.id
-        const group = this.groups.find((g) => g.category === this.category) ?? this.groups[0]
-        const tiles = [...(group?.items ?? [])]
+        return [...(group?.items ?? [])]
             .sort((a, b) => session.isUrgent(key, b.item) - session.isUrgent(key, a.item))
             .map((n) => {
                 const s = SUPPLIES[n.item]
@@ -428,39 +436,11 @@ export class DonorPanel extends Panel {
                 </div>`
             })
             .join('')
+    }
 
-        this.el.innerHTML = `
-            ${this.#head('¿Qué quieres donar?', `${this.barrio.name} · Punto de acopio`, 1)}
-            <div class="supply-body step-enter">
-                <div class="cat-row">${this.#categoryStrip()}${stepToggle(this.byBox)}</div>
-                <p class="cat-title">${CATEGORIES[group?.category]?.label ?? ''}<span>${tiles ? ` · ${group.items.length} ${group.items.length === 1 ? 'insumo' : 'insumos'}` : ''}</span></p>
-                <div class="supply-grid" role="group" aria-label="Suministros que necesita el barrio">${tiles}</div>
-                <section class="basket-inline" aria-label="Tu cesta de apoyo" hidden>
-                    <p class="section-title">Tu cesta de apoyo</p>
-                    <ul class="basket-list js-basket-list"></ul>
-                    <div class="total-line"><span>Valor equivalente</span><b class="js-total"></b></div>
-                    <p class="hint js-pack-hint">${icon('box')} <span class="js-pack-text"></span></p>
-                    <p class="hint">${icon('info')} Es un valor de referencia: así sabes cuánto representa tu aporte.</p>
-                </section>
-            </div>
-            <div class="supply-foot">
-                <div class="basket-bar" aria-live="polite"></div>
-                <button class="btn btn-primary js-primary js-next" type="button">Continuar ${icon('chevron-right')}</button>
-            </div>`
-
+    /** Each card: a tap on it adds one, its stepper, its box buttons, and its 3D picture. */
+    #bindTiles() {
         const body = this.el.querySelector('.supply-body')
-        bindStepToggle(this.el, (byBox) => {
-            this.byBox = byBox
-            this.audio.play('tap')
-        })
-        this.el.querySelectorAll('.cat-tab').forEach((tab) =>
-            tab.addEventListener('click', () => {
-                if (tab.dataset.cat === this.category) return
-                this.category = tab.dataset.cat
-                this.audio.play('tap')
-                this.render(true)
-            })
-        )
         this.el.querySelectorAll('.dn-card').forEach((tile) => {
             const id = tile.dataset.item
             const max = this.#max(id)
@@ -475,6 +455,61 @@ export class DonorPanel extends Panel {
             tile.querySelector('.js-box-minus')?.addEventListener('click', () => this.#setQty(id, (this.basket.get(id) ?? 0) - per, max))
             tile.querySelector('.js-box-plus')?.addEventListener('click', () => this.#setQty(id, (this.basket.get(id) ?? 0) + per, max))
         })
+    }
+
+    /**
+     * Another kind of help: only the cards change, with a short fade under the chips. The
+     * header, the basket and the buttons stay put, so nothing blinks.
+     */
+    #showCategory(cat) {
+        this.category = cat
+        this.audio.play('tap')
+        for (const t of this.el.querySelectorAll('.cat-tab')) {
+            const on = t.dataset.cat === cat
+            t.classList.toggle('is-on', on)
+            t.setAttribute('aria-selected', String(on))
+        }
+        this.items.removeWhere('tile:')
+        const grid = this.el.querySelector('.supply-grid')
+        grid.innerHTML = this.#tilesHtml(this.#group)
+        hydrateIcons(grid)
+        this.el.querySelector('.cat-title').innerHTML = this.#catTitle(this.#group)
+        this.#bindTiles()
+        if (!this.reducedMotion) gsap.fromTo(grid, { opacity: 0, y: 6 }, { opacity: 1, y: 0, duration: 0.22, ease: 'power2.out' })
+    }
+
+    /* ---------- 1 · supplies, at the collection point ---------- */
+    #supplies() {
+        const group = this.#group
+        const tiles = this.#tilesHtml(group)
+
+        this.el.innerHTML = `
+            ${this.#head('¿Qué quieres donar?', `${this.barrio.name} · Punto de acopio`, 1)}
+            <div class="supply-body step-enter">
+                <div class="cat-row">${this.#categoryStrip()}${stepToggle(this.byBox)}</div>
+                <p class="cat-title">${this.#catTitle(group)}</p>
+                <div class="supply-grid" role="group" aria-label="Suministros que necesita el barrio">${tiles}</div>
+                <section class="basket-inline" aria-label="Tu cesta de apoyo" hidden>
+                    <p class="section-title">Tu cesta de apoyo</p>
+                    <ul class="basket-list js-basket-list"></ul>
+                    <div class="total-line"><span>Valor equivalente</span><b class="js-total"></b></div>
+                    <p class="hint js-pack-hint">${icon('box')} <span class="js-pack-text"></span></p>
+                    <p class="hint">${icon('info')} Es un valor de referencia: así sabes cuánto representa tu aporte.</p>
+                </section>
+            </div>
+            <div class="supply-foot">
+                <div class="basket-bar" aria-live="polite"></div>
+                <button class="btn btn-primary js-primary js-next" type="button">Continuar ${icon('chevron-right')}</button>
+            </div>`
+
+        bindStepToggle(this.el, (byBox) => {
+            this.byBox = byBox
+            this.audio.play('tap')
+        })
+        this.el.querySelectorAll('.cat-tab').forEach((tab) =>
+            tab.addEventListener('click', () => tab.dataset.cat !== this.category && this.#showCategory(tab.dataset.cat))
+        )
+        this.#bindTiles()
         this.#syncBasketRows()
         this.el.querySelector('.js-next').addEventListener('click', () => {
             if (!this.basket.size) {

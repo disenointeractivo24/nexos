@@ -3451,3 +3451,18 @@ html.is-lite { background: #F3F5F8; }
     .wlabel.is-call .wlabel-text small { display: none; }
     .back-btn { min-height: 50px; padding: 0 14px; }
 }
+
+/* ================================================================
+   City: each zone's marker with its name and how it is doing
+   ================================================================ */
+.wlabel.is-zone { gap: 10px; min-height: 0; padding: 5px 14px 5px 5px; background: #fff; box-shadow: 0 8px 22px rgba(1, 30, 65, 0.2); font-size: var(--fs-sm); }
+.wlabel.is-zone::after { background: #fff; border: 0; }
+.wlabel.is-zone .wlabel-icon { width: 38px; height: 38px; }
+.wlabel.is-zone .wlabel-icon [data-icon] { width: 21px; height: 21px; }
+.wlabel.is-zone .wlabel-text { gap: 1px; }
+.wlabel.is-zone .wlabel-text b { font-size: var(--fs-sm); font-weight: 800; color: var(--navy); }
+.wlabel.is-zone .wlabel-text small { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); font-weight: 600; color: #6B7280; }
+.wlabel.is-zone .wlabel-text small.is-urgent { color: #A3262F; }
+.wlabel.is-zone .wlabel-text small.is-urgent::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
+.wlabel.is-zone:hover, .wlabel.is-zone.is-hover { background: #fff; box-shadow: 0 0 0 2px rgba(1, 30, 65, 0.35), 0 10px 26px rgba(1, 30, 65, 0.24); }
+.wlabel.is-zone.is-active { box-shadow: 0 0 0 3px var(--navy), 0 10px 26px rgba(1, 30, 65, 0.24); }
