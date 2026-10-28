@@ -629,7 +629,7 @@ export class LiteApp {
                         <button type="button" role="radio" class="js-by" data-by="box" aria-checked="${!!this.byBox}">Caja</button>
                     </div>
                 </div>
-                ${inventoryFilter(this.filter ?? 'all')}
+                ${inventoryFilter(this.filter ?? 'all', { tiles: true })}
                 <div class="lite-list js-stock"></div>
                 <p class="rcv-empty js-filter-empty" hidden>${icon('check')}<span>Ningún insumo en ese estado.</span></p>
             </section>
@@ -713,6 +713,7 @@ export class LiteApp {
                     const state = stockState(s.id, q)
                     return `
                 <div class="lite-row is-${state.id}" data-item="${s.id}">
+                    <span class="lite-row-icon" style="color:${CATEGORIES[s.category].color};background:${CATEGORIES[s.category].tint}">${icon(s.icon ?? CATEGORIES[s.category].icon)}</span>
                     <span class="lite-row-text"><b>${esc(s.label)}</b><small><i class="stock-state" data-state="${state.id}">${state.label}</i> · ${q} de ${stockCap(s.id)}</small>
                         <span class="inv-meter" aria-hidden="true"><span class="inv-fill" style="width:${Math.round(Math.min(1, q / stockCap(s.id)) * 100)}%"></span></span></span>
                     <span class="stepper" role="group" aria-label="Unidades de ${esc(s.label)}">

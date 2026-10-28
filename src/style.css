@@ -3754,3 +3754,12 @@ html.is-lite { background: #F3F5F8; }
 @media (max-width: 520px) {
     .lite-actions .btn { flex: 1 1 0; min-width: 0; min-height: 52px; padding: 0 12px; font-size: var(--fs-md); white-space: nowrap; justify-content: center; }
 }
+/* light inventory: the states as tiles, each icon in its state's colour, the count under the name */
+.inv-tiles { margin-bottom: 10px; }
+.inv-tiles .lite-cat { min-height: 92px; gap: 4px; }
+.inv-tiles .lite-cat[data-state="critico"] .lite-cat-icon { background: #FDE3E5; color: var(--red-press); }
+.inv-tiles .lite-cat[data-state="estable"] .lite-cat-icon { background: var(--amber-soft); color: var(--amber-ink); }
+.inv-tiles .lite-cat[data-state="abastecido"] .lite-cat-icon { background: #E7F1EB; color: #2E7D5B; }
+.inv-tile-count { min-width: 24px; padding: 1px 7px; border-radius: var(--radius-pill); background: #EEF1F5; font-size: var(--fs-xs); font-weight: 800; color: var(--navy); }
+.inv-tiles .lite-cat[aria-pressed="true"] .inv-tile-count { background: rgba(255, 255, 255, 0.2); color: #fff; }
+.lite .lite-row.is-critico { box-shadow: inset 0 0 0 2px rgba(245, 51, 63, 0.45), 0 1px 4px rgba(1, 30, 65, 0.08); }
