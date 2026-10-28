@@ -48,9 +48,9 @@ function row({ kind, ic, label, x, when = '', action = null, button = '' }) {
         </li>`
 }
 
-function group({ ic, title, hint, rows, empty }) {
+function group({ id = '', ic, title, hint, rows, empty }) {
     return `
-        <section class="rcv-group">
+        <section class="rcv-group" data-group="${id}">
             <h3 class="rcv-group-title"><span class="rcv-group-icon" aria-hidden="true">${icon(ic)}</span>${title}${rows.length ? `<span class="rcv-count">${rows.length}</span>` : ''}</h3>
             <p class="rcv-group-hint">${hint}</p>
             ${rows.length ? `<ul class="rcv-list">${rows.join('')}</ul>` : `<p class="rcv-empty">${icon('check')}<span>${empty}</span></p>`}
@@ -61,6 +61,7 @@ function group({ ic, title, hint, rows, empty }) {
 export function receiveLists(q = {}) {
     return (
         group({
+            id: 'in',
             ic: 'box',
             title: 'Por recibir',
             hint: 'Aportes agendados y traslados que vienen a tu punto. Toca <b>Recibir</b> cuando lleguen.',
@@ -71,6 +72,7 @@ export function receiveLists(q = {}) {
             empty: 'Nada por recibir. Cuando un donante agende una entrega o te envíen un traslado, aparece aquí.',
         }) +
         group({
+            id: 'out',
             ic: 'home',
             title: 'Por entregar a las familias',
             hint: 'Lo que ya está en el punto. Toca <b>Entregado</b> cuando las familias lo recojan.',

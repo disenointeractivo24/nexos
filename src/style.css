@@ -3763,3 +3763,11 @@ html.is-lite { background: #F3F5F8; }
 .inv-tile-count { min-width: 24px; padding: 1px 7px; border-radius: var(--radius-pill); background: #EEF1F5; font-size: var(--fs-xs); font-weight: 800; color: var(--navy); }
 .inv-tiles .lite-cat[aria-pressed="true"] .inv-tile-count { background: rgba(255, 255, 255, 0.2); color: #fff; }
 .lite .lite-row.is-critico { box-shadow: inset 0 0 0 2px rgba(245, 51, 63, 0.45), 0 1px 4px rgba(1, 30, 65, 0.08); }
+/* light receiving: two tiles over one list at a time */
+.rcv-tiles { margin: 2px 0 10px; }
+.rcv-tiles .lite-cat { min-height: 92px; gap: 4px; }
+.rcv-tiles .lite-cat[data-group="in"] .lite-cat-icon { background: #FDE3E5; color: var(--red-press); }
+.rcv-tiles .lite-cat[data-group="out"] .lite-cat-icon { background: #FFF1D6; color: #8A5A00; }
+.rcv-tiles .inv-tile-count.is-on { background: var(--red); color: #fff; }
+.rcv-group[hidden] { display: none; }
+.lite .rcv-lists .rcv-group-title .rcv-count { display: none; }

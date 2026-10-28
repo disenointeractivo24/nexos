@@ -636,6 +636,7 @@ export class LiteApp {
             <section id="lv-receive" hidden>
                 <p class="rcv-intro">¿Llegó un donante o un traslado? Recíbelo aquí: lo que llega se suma solo al inventario.</p>
                 ${receiveWays('lite-code')}
+                <div class="lite-cats rcv-tiles js-rcv-tiles" role="group" aria-label="Qué ver"></div>
                 <div class="rcv-lists js-pending-lists"></div>
             </section>
             <section id="lv-send" hidden>
@@ -752,6 +753,22 @@ export class LiteApp {
         badge.textContent = waiting
         const lists = this.root.querySelector('.js-pending-lists')
         lists.innerHTML = receiveLists(q)
+        // two tiles, as in the inventory: what is on its way in, what is ready for the families
+        const nIn = (q.scheduled ?? []).length + (q.incoming ?? []).length
+        const nOut = (q.toDeliver ?? []).length
+        const tiles = this.root.querySelector('.js-rcv-tiles')
+        const tile = (id, label, ic, n) => `
+            <button class="lite-cat js-rcv-tab" type="button" data-group="${id}" aria-pressed="false">
+                <span class="lite-cat-icon">${icon(ic)}</span>${label}<span class="inv-tile-count${n ? ' is-on' : ''}">${n}</span>
+            </button>`
+        tiles.innerHTML = tile('in', 'Por recibir', 'box', nIn) + tile('out', 'Por entregar', 'home', nOut)
+        const show = (g) => {
+            this.rcvTab = g
+            tiles.querySelectorAll('.js-rcv-tab').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.group === g)))
+            lists.querySelectorAll('.rcv-group[data-group]').forEach((s) => (s.hidden = s.dataset.group !== g))
+        }
+        tiles.querySelectorAll('.js-rcv-tab').forEach((b) => b.addEventListener('click', () => show(b.dataset.group)))
+        show(this.rcvTab ?? (nIn || !nOut ? 'in' : 'out'))
         hydrateIcons(lists)
         const sent = this.root.querySelector('.js-sent-lists')
         sent.innerHTML = sentList(q)
