@@ -1,6 +1,8 @@
 import { icon, hydrateIcons } from '../ui/icons.js'
 import { Toast, Dialog, helpList, busyButton } from '../ui/feedback.js'
 import { TrackView } from '../ui/track.js'
+import { pointMenu, POINT_TITLES } from '../ui/pointMenu.js'
+import { transferSheet } from '../ui/transferSheet.js'
 import { qrSvg, scanQr } from '../ui/qr.js'
 import { CATEGORIES, SUPPLIES, money, perBox } from '../data/catalog.js'
 import { stockCap, stockState } from '../data/inventory.js'
@@ -133,16 +135,21 @@ export class LiteApp {
     }
 
     #bindHeader() {
-        this.root.querySelector('.js-home').addEventListener('click', () => this.go(this.point ? 'point' : 'home'))
+        this.root.querySelector('.js-home').addEventListener('click', () => {
+            // a point goes back to its three options
+            this.pointTab = null
+            this.go(this.point ? 'point' : 'home')
+        })
         this.root.querySelector('.js-track-open').addEventListener('click', () => this.track.show())
         this.root.querySelector('.js-full').addEventListener('click', () => setLite(false))
         this.root.querySelector('.js-help').addEventListener('click', () => this.#help())
     }
 
-    /** Help about what is on screen: donating, or the point's two tabs. */
+    /** Help about what is on screen: donating, or the point's options and each of its views. */
     #help() {
         const point = this.screen === 'point'
-        const receive = point && this.pointTab === 'receive'
+        const tab = point ? (this.pointTab ?? 'home') : null
+        const receive = tab === 'receive'
         const steps = !point
             ? [
                   'Elige una <b>zona</b>: primero aparecen las que más lo necesitan, con lo que les falta.',
@@ -151,7 +158,20 @@ export class LiteApp {
                   'Revisa el <b>resumen</b> y confirma. Recibes un código y, si lo llevas, un QR para mostrar en el punto.',
                   'Con <b>Sigue tu aporte</b> ves en qué va tu donación, y puedes cancelar una entrega agendada.',
               ]
-            : receive
+            : tab === 'home'
+              ? [
+                    '<b>Gestionar inventario</b>: cuenta lo que hay en el punto. Lo que quede en rojo es lo primero que ven los donantes.',
+                    '<b>Recibir donaciones</b>: escanea el QR del donante o escribe su código, y marca lo que ya se entregó a las familias.',
+                    '<b>Enviar a otros puntos</b>: manda lo que te sobra a un punto al que le falta.',
+                    'Con <b>Opciones</b> vuelves a estas tres.',
+                ]
+              : tab === 'send'
+              ? [
+                    'Toca <b>Nuevo envío</b>: te proponemos el punto que más lo necesita y cuánto mandar.',
+                    'Revisa y toca <b>Confirmar envío</b>: sale de tu inventario y entra en el del otro punto cuando lo reciba.',
+                    'Si te equivocas, toca <b>Deshacer</b> en el aviso.',
+                ]
+              : receive
               ? [
                     'Toca <b>Escanear QR</b> y apunta al código del donante: queda recibido y se suma al inventario.',
                     'Sin QR, escribe su código (<b>NX-</b>…) y toca <b>Recibir</b>. Los traslados empiezan por <b>TR-</b>.',
@@ -162,12 +182,11 @@ export class LiteApp {
               : [
                     'Cuenta lo que hay en el punto con − y +, o escribe la cantidad. Con <b>Caja</b>, los botones cuentan cajas completas.',
                     'Rojo es crítico (menos del 30 %), amarillo estable y verde abastecido.',
-                    '<b>Enviar a otro punto</b> manda lo que te sobra a quien le falta: lo revisas antes de confirmar.',
-                    'Para recibir donaciones o traslados, abre la pestaña <b>Recibir</b>.',
+                    'Para recibir donaciones o enviar a otro punto, toca <b>Opciones</b>.',
                 ]
         this.dialog.ask({
             icon: 'help',
-            title: !point ? 'Cómo donar' : receive ? 'Cómo recibir y entregar' : 'Cómo usar el inventario',
+            title: !point ? 'Cómo donar' : { home: 'Qué puedes hacer en el punto', receive: 'Cómo recibir y entregar', send: 'Cómo enviar a otro punto' }[tab] ?? 'Cómo usar el inventario',
             body: helpList(steps),
             actions: [{ label: 'Entendido', value: true, kind: 'primary' }],
         })
@@ -573,21 +592,21 @@ export class LiteApp {
         return `
             <h1 class="lite-title">${esc(z?.name ?? '')}</h1>
             <p class="lite-muted">${esc(this.point.name)} · <span class="js-sync"></span></p>
-            <div class="board-tabs" role="tablist" aria-label="Secciones del punto">
-                <button class="board-tab js-tab" type="button" role="tab" id="lt-stock" data-tab="stock" aria-controls="lv-stock">${icon('basket')} Inventario</button>
-                <button class="board-tab js-tab" type="button" role="tab" id="lt-receive" data-tab="receive" aria-controls="lv-receive">${icon('qr')} Recibir<span class="tab-badge js-pending-count" hidden></span></button>
+            <div class="lite-view-head js-view-head" hidden>
+                <button class="btn btn-secondary lite-back js-back" type="button">${icon('chevron-left')} Opciones</button>
+                <h2 class="lite-view-title js-view-title" tabindex="-1"></h2>
             </div>
-            <section class="lite-card" id="lv-stock" role="tabpanel" aria-labelledby="lt-stock">
+            <section id="lv-home">${pointMenu()}</section>
+            <section class="lite-card" id="lv-stock" hidden>
                 <div class="stock-tools">
                     <div class="step-toggle lite-by" role="radiogroup" aria-label="Los botones suman o quitan">
                         <button type="button" role="radio" class="js-by" data-by="unit" aria-checked="${!this.byBox}">Unidad</button>
                         <button type="button" role="radio" class="js-by" data-by="box" aria-checked="${!!this.byBox}">Caja</button>
                     </div>
-                    <button class="btn btn-secondary js-transfer" type="button">${icon('truck')} Enviar a otro punto</button>
                 </div>
                 <div class="lite-list js-stock"></div>
             </section>
-            <section id="lv-receive" role="tabpanel" aria-labelledby="lt-receive" hidden>
+            <section id="lv-receive" hidden>
                 <div class="receive-card">
                     <h3>Recibir un aporte o un traslado</h3>
                     <p>Escanea el QR que trae el donante, o escribe su código. Lo recibido se suma solo al inventario.</p>
@@ -601,23 +620,36 @@ export class LiteApp {
                 </div>
                 <div class="lite-card js-pending-lists"></div>
             </section>
-            <div class="lite-actions"><button class="btn btn-secondary js-logout" type="button">${icon('logout')} Salir</button></div>`
+            <section id="lv-send" hidden>
+                <div class="receive-card">
+                    <h3>Enviar insumos a otro punto</h3>
+                    <p>Elige el punto y qué le mandas. Te sugerimos cuánto; lo revisas antes de confirmar.</p>
+                    <button class="btn btn-primary receive-scan js-transfer" type="button">${icon('truck')} Nuevo envío</button>
+                </div>
+                <div class="lite-card js-sent-lists"></div>
+            </section>
+            <div class="lite-actions"><button class="btn btn-exit js-logout" type="button">${icon('logout')} Salir</button></div>`
     }
 
-    /** Inventario and Recibir, one at a time, as in the full version. */
-    #tab(tab) {
+    /** The three options first, then one view at a time, as in the full version. */
+    #tab(tab, { focus = false } = {}) {
+        const from = this.pointTab
         this.pointTab = tab
-        for (const t of this.root.querySelectorAll('.js-tab')) {
-            t.setAttribute('aria-selected', String(t.dataset.tab === tab))
-            t.tabIndex = t.dataset.tab === tab ? 0 : -1
-        }
-        this.root.querySelector('#lv-stock').hidden = tab !== 'stock'
-        this.root.querySelector('#lv-receive').hidden = tab !== 'receive'
+        for (const v of ['home', 'stock', 'receive', 'send']) this.root.querySelector(`#lv-${v}`).hidden = tab !== v
+        const home = tab === 'home'
+        this.root.querySelector('.js-view-head').hidden = home
+        const title = this.root.querySelector('.js-view-title')
+        title.textContent = POINT_TITLES[tab].join('')
+        window.scrollTo(0, 0)
+        if (!focus) return
+        if (home) this.root.querySelector(`.js-option[data-tab="${from}"]`)?.focus()
+        else title.focus()
     }
 
     bind_point() {
-        this.root.querySelectorAll('.js-tab').forEach((t) => t.addEventListener('click', () => this.#tab(t.dataset.tab)))
-        this.#tab(this.pointTab ?? 'stock')
+        this.root.querySelectorAll('.js-option').forEach((b) => b.addEventListener('click', () => this.#tab(b.dataset.tab, { focus: true })))
+        this.root.querySelector('.js-back').addEventListener('click', () => this.#tab('home', { focus: true }))
+        this.#tab(this.pointTab ?? 'home')
         const form = this.root.querySelector('.js-receive-form')
         form.addEventListener('submit', (e) => {
             e.preventDefault()
@@ -699,15 +731,17 @@ export class LiteApp {
         const toReceive = [...(q.scheduled ?? []).map((d) => row('heart', d, d.slot || 'Entrega agendada', 'receive', 'Recibir')), ...(q.incoming ?? []).map((t) => row('truck', t, `Traslado desde ${name(t.from)}`, 'receive', 'Recibir'))]
         const toDeliver = (q.toDeliver ?? []).map((d) => row('home', d, d.mode === 'money' ? 'Aporte en dinero' : 'Recibido en el punto', 'deliver', 'Entregado'))
         const out = (q.outgoing ?? []).map((t) => row('truck', t, `En camino a ${name(t.to)}`))
-        const badge = this.root.querySelector('.js-pending-count')
+        const badge = this.root.querySelector('.js-receive-badge')
         badge.hidden = !(toReceive.length + toDeliver.length)
         badge.textContent = toReceive.length + toDeliver.length
         const lists = this.root.querySelector('.js-pending-lists')
         lists.innerHTML =
             group('Por recibir', toReceive, 'Nada por recibir por ahora.') +
-            group('Por entregar a las familias', toDeliver, 'Todo lo recibido ya se entregó.') +
-            (out.length ? group('Traslados enviados', out, '') : '')
+            group('Por entregar a las familias', toDeliver, 'Todo lo recibido ya se entregó.')
         hydrateIcons(lists)
+        const sent = this.root.querySelector('.js-sent-lists')
+        sent.innerHTML = group('Traslados en camino', out, 'No tienes traslados en camino.')
+        hydrateIcons(sent)
     }
 
     /** As in the full version: a tap on the list asks what arrived; busy while the sheet answers; undo after. */
@@ -807,105 +841,16 @@ export class LiteApp {
         if (text) this.#receive(text)
     }
 
-    /** Send to another point: the same suggestions as the full version (see InventoryPanel). */
+    /** Send to another point: the same sheet as the full version (see transferSheet.js). */
     #transfer() {
-        const st = this.store
-        if (!st.ready) return
-        const me = this.point.id
-        const others = COLLECTION_POINTS.filter((p) => p.id !== me)
-        const spare = (id) => Math.max(0, st.get(id) - Math.ceil(stockCap(id) * 0.5))
-        const toStocked = (p, id) => Math.max(0, Math.ceil(stockCap(id) * 0.75) - this.board.qty(p.id, id))
-        const suggest = (p, id) => (this.board.state(p.id, id).id === 'abastecido' ? 0 : Math.min(spare(id), toStocked(p, id)))
-        const critical = (p) => Object.keys(SUPPLIES).filter((id) => this.board.state(p.id, id).id === 'critico').length
-        const helps = (p) => Object.keys(SUPPLIES).reduce((n, id) => n + suggest(p, id) * (this.board.state(p.id, id).id === 'critico' ? 3 : 1), 0)
-        let dest = [...others].sort((a, b) => helps(b) - helps(a) || critical(b) - critical(a))[0]
-        const zname = (p) => ZONES.find((z) => z.id === p.zone)?.name ?? ''
-        const sheet = document.createElement('div')
-        sheet.className = 'xfer-sheet lite-overlay'
-        sheet.setAttribute('role', 'dialog')
-        sheet.setAttribute('aria-label', 'Enviar a otro punto')
-        document.body.appendChild(sheet)
-        const qty = {}
-        const draw = () => {
-            const list = Object.values(SUPPLIES).filter((s) => st.get(s.id) > 0)
-            for (const s of list) qty[s.id] ??= suggest(dest, s.id)
-            sheet.innerHTML = `
-                <div class="xfer-head"><span class="track-mark">${icon('truck')}</span><div><h3>Enviar a otro punto</h3><p class="sub">Sale de tu inventario ahora y entra en el del otro punto cuando lo reciba.</p></div>
-                <button class="icon-btn js-close" type="button" aria-label="Cerrar">${icon('x')}</button></div>
-                <fieldset class="xfer-dest"><legend class="field-label">¿A qué punto?</legend>${others
-                    .map((p) => `<label class="xfer-point"><input type="radio" name="dest" value="${p.id}" ${p.id === dest.id ? 'checked' : ''}><span><b>${esc(zname(p))}</b><small>${esc(p.name.replace('Punto de acopio ', ''))}</small></span><em class="${critical(p) ? 'is-critical' : ''}">${critical(p) ? `${critical(p)} ${critical(p) === 1 ? 'crítico' : 'críticos'}` : 'Sin críticos'}</em></label>`)
-                    .join('')}</fieldset>
-                <div class="xfer-items">${list
-                    .map((s) => {
-                        const ds = this.board.state(dest.id, s.id)
-                        return `<div class="xfer-row"><span class="xfer-name">${esc(s.label)}</span><span>${st.get(s.id)}</span><span><i class="stock-state" data-state="${ds.id}">${ds.label}</i></span><input class="js-q" type="number" inputmode="numeric" min="0" max="${st.get(s.id)}" value="${qty[s.id]}" data-item="${s.id}" aria-label="Unidades de ${esc(s.label)} para enviar"></div>`
-                    })
-                    .join('')}</div>
-                <p class="form-error js-err" role="alert" hidden></p>
-                <div class="xfer-foot"><span class="js-sum"></span><button class="btn btn-secondary js-close" type="button">Cancelar</button><button class="btn btn-primary js-send" type="button">${icon('truck')} Enviar</button></div>`
-            hydrateIcons(sheet)
-            const sum = () => {
-                const n = Object.values(qty).reduce((a, b) => a + b, 0)
-                sheet.querySelector('.js-sum').textContent = n ? `${n} unidades para ${zname(dest)}` : 'Elige qué enviar'
-                sheet.querySelector('.js-send').disabled = !n
-            }
-            sheet.querySelectorAll('.js-q').forEach((i) => i.addEventListener('input', () => ((qty[i.dataset.item] = Math.max(0, Math.min(st.get(i.dataset.item), Math.round(Number(i.value) || 0)))), sum())))
-            sheet.querySelectorAll('input[name="dest"]').forEach((r) =>
-                r.addEventListener('change', () => {
-                    dest = others.find((p) => p.id === r.value)
-                    for (const k of Object.keys(qty)) delete qty[k]
-                    draw()
-                })
-            )
-            sheet.querySelectorAll('.js-close').forEach((b) => b.addEventListener('click', () => sheet.remove()))
-            sheet.querySelector('.js-send').addEventListener('click', () => {
-                const items = Object.fromEntries(Object.entries(qty).filter(([, n]) => n > 0))
-                if (!Object.keys(items).length) return
-                // first what will go where; only "Confirmar envío" sends it
-                sheet.innerHTML = `
-                    <div class="xfer-review">
-                        <h4>Revisa el envío</h4>
-                        <p>Para <b>${esc(zname(dest))}</b> · ${esc(dest.name)}</p>
-                        <ul class="dialog-items">${Object.entries(items)
-                            .map(([id, n]) => `<li><b>${n}</b> × ${esc(SUPPLIES[id].label)} <small>(te quedan ${st.get(id) - n})</small></li>`)
-                            .join('')}</ul>
-                        <p class="xfer-note">${icon('info')} Sale de tu inventario ahora y entra en el de ${esc(zname(dest))} cuando lo reciban. Mientras siga en camino, puedes anularlo.</p>
-                        <p class="form-error js-err" role="alert" hidden></p>
-                        <div class="xfer-foot">
-                            <button class="btn btn-secondary js-edit" type="button">${icon('chevron-left')} Cambiar</button>
-                            <button class="btn btn-primary js-confirm" type="button">${icon('truck')} Confirmar envío</button>
-                        </div>
-                    </div>`
-                hydrateIcons(sheet)
-                sheet.querySelector('.js-confirm').focus()
-                sheet.querySelector('.js-edit').addEventListener('click', draw)
-                sheet.querySelector('.js-confirm').addEventListener('click', async (e) => {
-                    const busy = busyButton(e.currentTarget, 'Enviando…')
-                    const out = await ledger.transfer(me, dest.id, items)
-                    busy()
-                    if (!out.ok) {
-                        const err = sheet.querySelector('.js-err')
-                        err.textContent = out.error
-                        err.hidden = false
-                        return
-                    }
-                    sheet.remove()
-                    const tcode = out.transfer.code
-                    this.toast.show(`Traslado <b>${tcode}</b> en camino a ${esc(zname(dest))}.`, {
-                        duration: 7000,
-                        action: 'Deshacer',
-                        onAction: async () => {
-                            const back = await ledger.transferCancel(tcode, me)
-                            if (!back.ok) return this.toast.show(esc(back.error), { duration: 4500 })
-                            this.toast.show(`Se anuló <b>${tcode}</b>: los insumos volvieron a tu inventario.`, { duration: 3500 })
-                            if (back.rows) st.take(back.rows)
-                        },
-                    })
-                    if (out.rows) st.take(out.rows)
-                })
-            })
-            sum()
-        }
-        draw()
+        transferSheet({
+            host: document.body,
+            extraClass: 'lite-overlay',
+            point: this.point,
+            store: this.store,
+            board: this.board,
+            toast: this.toast,
+            onClose: () => this.root.querySelector('.js-transfer')?.focus(),
+        })
     }
 }

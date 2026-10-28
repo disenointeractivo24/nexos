@@ -1,5 +1,7 @@
 import gsap from 'gsap'
 import { icon, hydrateIcons } from './icons.js'
+import { pointMenu, POINT_TITLES } from './pointMenu.js'
+import { transferSheet } from './transferSheet.js'
 import { CATEGORIES, SUPPLIES, money, perBox, basketBoxes, BOX } from '../data/catalog.js'
 import { stockCap, stockState, stockRatio } from '../data/inventory.js'
 import { ZONES, zoneNeeds, zoneLevel, NEED_WORD, barrioNeeds } from '../data/zones.js'
@@ -904,6 +906,8 @@ export class InventoryPanel extends Panel {
     async openFor(point, store) {
         this.point = point
         this.store = store
+        // every visit starts on the three options
+        this.tab = null
         this.el.classList.add('is-board')
         await Promise.all(Object.keys(SUPPLIES).map((id) => this.loader.load(SUPPLIES[id].asset)))
         this.render()
@@ -976,30 +980,27 @@ export class InventoryPanel extends Panel {
         this.el.dataset.step = 'inventario'
         this.el.innerHTML = `
             <div class="supply-head board-head">
-                <span class="wlabel-icon" style="background:${zone?.color ?? '#011E41'}">${icon('box')}</span>
+                <button class="icon-btn point-back js-back" type="button" aria-label="Volver a las opciones del punto" title="Volver" hidden>${icon('chevron-left')}</button>
+                <span class="wlabel-icon js-head-mark" style="background:${zone?.color ?? '#011E41'}">${icon('box')}</span>
                 <div class="board-title">
-                    <h2 id="supply-title">Inventario<span class="board-title-more"> del punto</span></h2>
+                    <h2 id="supply-title" tabindex="-1">Punto de acopio</h2>
                     <p class="sub">${esc(this.point.name)} · ${esc(zone?.name ?? '')}</p>
                 </div>
                 ${stepToggle(this.byBox)}
-                <button class="icon-btn help-btn js-help" type="button" aria-label="Ayuda: cómo usar el inventario" title="Ayuda">${icon('help')}</button>
-                <button class="icon-btn js-close" type="button" aria-label="Cerrar el inventario" title="Cerrar">${icon('x')}</button>
-            </div>
-            <div class="board-tabs" role="tablist" aria-label="Secciones del punto">
-                <button class="board-tab js-tab" type="button" role="tab" id="tab-stock" data-tab="stock" aria-controls="view-stock">${icon('basket')} Inventario</button>
-                <button class="board-tab js-tab" type="button" role="tab" id="tab-receive" data-tab="receive" aria-controls="view-receive">${icon('qr')} Recibir<span class="tab-badge js-receive-badge" hidden></span></button>
+                <button class="icon-btn help-btn js-help" type="button" aria-label="Ayuda" title="Ayuda">${icon('help')}</button>
+                <button class="icon-btn js-close" type="button" aria-label="Cerrar el punto de acopio" title="Cerrar">${icon('x')}</button>
             </div>
             <div class="supply-body step-enter">
-                <section class="board-view" id="view-stock" role="tabpanel" aria-labelledby="tab-stock">
+                <section class="board-view" id="view-home">${pointMenu()}</section>
+                <section class="board-view" id="view-stock" aria-labelledby="supply-title" hidden>
                     <div class="stock-tools">
                         <p>Cuenta lo que hay en el punto: toca <b>−</b> y <b>+</b>, o escribe la cantidad.</p>
-                        <button class="btn btn-secondary js-transfer" type="button">${icon('truck')} Enviar a otro punto</button>
                     </div>
                     <div class="stock-grid" role="group" aria-label="Inventario del punto de acopio">
                         ${this.supplies.map((s) => this.#card(s)).join('')}
                     </div>
                 </section>
-                <section class="board-view" id="view-receive" role="tabpanel" aria-labelledby="tab-receive" hidden>
+                <section class="board-view" id="view-receive" aria-labelledby="supply-title" hidden>
                     <div class="receive-card">
                         <h3>Recibir un aporte o un traslado</h3>
                         <p>Escanea el QR que trae el donante, o escribe su código. Lo recibido se suma solo al inventario.</p>
@@ -1012,6 +1013,14 @@ export class InventoryPanel extends Panel {
                         <p class="form-error js-receive-error" role="alert" hidden></p>
                     </div>
                     <div class="pending-lists js-pending-lists"></div>
+                </section>
+                <section class="board-view" id="view-send" aria-labelledby="supply-title" hidden>
+                    <div class="receive-card">
+                        <h3>Enviar insumos a otro punto</h3>
+                        <p>Elige el punto y qué le mandas. Te sugerimos cuánto según lo que te sobra y lo que le falta; lo revisas antes de confirmar.</p>
+                        <button class="btn btn-primary receive-scan js-transfer" type="button">${icon('truck')} Nuevo envío</button>
+                    </div>
+                    <div class="pending-lists js-sent-lists"></div>
                 </section>
             </div>
             <div class="board-foot">
@@ -1041,17 +1050,9 @@ export class InventoryPanel extends Panel {
         this.el.querySelector('.js-help').addEventListener('click', () => this.#help())
         this.el.querySelector('.js-close').addEventListener('click', () => this.onClose())
         this.queueKey = null
-        this.el.querySelectorAll('.js-tab').forEach((t) => {
-            t.addEventListener('click', () => this.#showTab(t.dataset.tab))
-            // arrow keys move between the tabs, as in any tab bar
-            t.addEventListener('keydown', (e) => {
-                if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
-                const next = t.dataset.tab === 'stock' ? 'receive' : 'stock'
-                this.#showTab(next)
-                this.el.querySelector(`.js-tab[data-tab="${next}"]`).focus()
-            })
-        })
-        this.#showTab(this.tab ?? 'stock', { quiet: true })
+        this.el.querySelectorAll('.js-option').forEach((b) => b.addEventListener('click', () => this.#showTab(b.dataset.tab, { focus: true })))
+        this.el.querySelector('.js-back').addEventListener('click', () => this.#showTab('home', { focus: true }))
+        this.#showTab(this.tab ?? 'home', { quiet: true })
         const form = this.el.querySelector('.js-receive-form')
         form.addEventListener('submit', (e) => {
             e.preventDefault()
@@ -1109,9 +1110,23 @@ export class InventoryPanel extends Panel {
         this.audio.play('tap')
         this.dialog?.ask({
             icon: 'help',
-            title: this.tab === 'receive' ? 'Cómo recibir y entregar' : 'Cómo usar el inventario',
+            title: { home: 'Qué puedes hacer en el punto', receive: 'Cómo recibir y entregar', send: 'Cómo enviar a otro punto' }[this.tab] ?? 'Cómo usar el inventario',
             body:
-                this.tab === 'receive'
+                this.tab === 'home'
+                    ? helpList([
+                          '<b>Gestionar inventario</b>: cuenta lo que hay en el punto. Lo que quede en rojo es lo primero que ven los donantes.',
+                          '<b>Recibir donaciones</b>: escanea el QR del donante o escribe su código, recibe los traslados de otros puntos y marca lo que ya se entregó a las familias.',
+                          '<b>Enviar a otros puntos</b>: manda lo que te sobra a un punto al que le falta.',
+                          'Con la flecha de arriba a la izquierda vuelves a estas tres opciones.',
+                      ])
+                    : this.tab === 'send'
+                    ? helpList([
+                          'Toca <b>Nuevo envío</b>. Te proponemos el punto que más lo necesita; puedes elegir otro.',
+                          'Te sugerimos cuánto mandar de cada insumo según lo que te sobra y lo que le falta. Cambia los números si quieres.',
+                          'Revisa el resumen y toca <b>Confirmar envío</b>: sale de tu inventario y entra en el del otro punto cuando lo reciba.',
+                          'Abajo ves los traslados en camino. Si te equivocas, toca <b>Deshacer</b> en el aviso.',
+                      ])
+                    : this.tab === 'receive'
                     ? helpList([
                           'Cuando llegue un donante, toca <b>Escanear QR</b> y apunta a su código: el aporte queda recibido y se suma solo al inventario.',
                           'Si no trae el QR, escribe su código (empieza por <b>NX-</b>) y toca <b>Recibir</b>. Los traslados de otros puntos empiezan por <b>TR-</b>.',
@@ -1123,8 +1138,7 @@ export class InventoryPanel extends Panel {
                           'Cada tarjeta es un insumo. Usa <b>−</b> y <b>+</b> para contar unidades; con <b>Caja</b> (en el celular) o los botones <b>caja</b>, cuentas cajas completas.',
                           'Si ya sabes el número, <b>toca la cantidad y escríbela</b>.',
                           'Colores: <b class="t-critico">rojo</b> es crítico (menos del 30 %), <b class="t-estable">amarillo</b> estable y <b class="t-abastecido">verde</b> abastecido.',
-                          '<b>Enviar a otro punto</b> manda lo que te sobra a quien le falta: te sugerimos cuánto, lo revisas y confirmas. Sale de tu inventario al enviarlo.',
-                          'Para recibir donaciones o traslados, abre la pestaña <b>Recibir</b>.',
+                          'Para recibir donaciones o enviar a otro punto, vuelve a las opciones con la flecha de arriba.',
                           'Todo se guarda solo en la hoja de Google; abajo ves si ya quedó guardado. Si te equivocas, toca <b>Deshacer</b> en el aviso.',
                       ]),
             actions: [{ label: 'Entendido', value: true, kind: 'primary' }],
@@ -1202,25 +1216,36 @@ export class InventoryPanel extends Panel {
     }
 
     /**
-     * Two tabs, so neither job crowds the other: counting the stock (Inventario), and taking in
-     * what arrives (Recibir: donations and transfers, and handing them out to the families).
+     * One job at a time: the three options first (home), then counting the stock, taking in
+     * what arrives (donations and transfers, and handing them out to the families), or
+     * sending to another point. The arrow in the header goes back to the options.
      */
-    #showTab(tab, { quiet = false } = {}) {
+    #showTab(tab, { quiet = false, focus = false } = {}) {
+        const from = this.tab
         this.tab = tab
+        // the panel is as wide as the view needs: the options and the forms narrow, the stock wide
+        this.el.dataset.view = tab
         if (!quiet) this.audio.play('tap')
-        for (const t of this.el.querySelectorAll('.js-tab')) {
-            const on = t.dataset.tab === tab
-            t.setAttribute('aria-selected', String(on))
-            t.tabIndex = on ? 0 : -1
-        }
-        this.el.querySelector('#view-stock').hidden = tab !== 'stock'
-        this.el.querySelector('#view-receive').hidden = tab !== 'receive'
+        for (const v of ['home', 'stock', 'receive', 'send']) this.el.querySelector(`#view-${v}`).hidden = tab !== v
+        const home = tab === 'home'
+        this.el.querySelector('.js-back').hidden = home
+        this.el.querySelector('.js-head-mark').hidden = !home
         // units or boxes only matters while counting
         const toggle = this.el.querySelector('.step-toggle')
         if (toggle) toggle.hidden = tab !== 'stock'
         const title = this.el.querySelector('#supply-title')
-        if (title) title.innerHTML = tab === 'stock' ? 'Inventario<span class="board-title-more"> del punto</span>' : 'Recibir<span class="board-title-more"> en el punto</span>'
-        this.el.querySelector('.supply-body').scrollTop = 0
+        const [short, more] = POINT_TITLES[tab]
+        if (title) title.innerHTML = `${short}${more ? `<span class="board-title-more">${more}</span>` : ''}`
+        const body = this.el.querySelector('.supply-body')
+        body.scrollTop = 0
+        // the view slides in again, so the change of screen reads as one
+        body.classList.remove('step-enter')
+        void body.offsetWidth
+        body.classList.add('step-enter')
+        if (!focus) return
+        // keyboard and screen readers land on the new view, and back on the option they came from
+        if (home) this.el.querySelector(`.js-option[data-tab="${from}"]`)?.focus()
+        else title?.focus()
     }
 
     /* ---------------- donations and transfers waiting for this point ---------------- */
@@ -1234,7 +1259,7 @@ export class InventoryPanel extends Panel {
         const toReceive = [...(q.scheduled ?? []), ...(q.incoming ?? [])]
         const toDeliver = q.toDeliver ?? []
         const outgoing = q.outgoing ?? []
-        // the Recibir tab says how much waits there, so it is seen from the inventory too
+        // the Recibir option says how much waits there, so it is seen from the start
         const badge = this.el.querySelector('.js-receive-badge')
         const waiting = toReceive.length + toDeliver.length
         if (badge) {
@@ -1271,9 +1296,15 @@ export class InventoryPanel extends Panel {
                 'Por entregar a las familias',
                 toDeliver.map((d) => row('home', d, d.mode === 'money' ? 'Aporte en dinero · comprado por el equipo' : 'Recibido en el punto', 'deliver', 'Entregado')),
                 'Todo lo recibido ya se entregó.'
-            ) +
-            (outgoing.length ? list('Traslados enviados', outgoing.map((t) => row('truck', t, `En camino a ${name(t.to)}`)), '') : '')
+            )
         hydrateIcons(lists)
+        const sent = this.el.querySelector('.js-sent-lists')
+        sent.innerHTML = list(
+            'Traslados en camino',
+            outgoing.map((t) => row('truck', t, `En camino a ${name(t.to)}`)),
+            'No tienes traslados en camino. Cuando envíes uno, aparece aquí hasta que el otro punto lo reciba.'
+        )
+        hydrateIcons(sent)
     }
 
     /** A donation or a transfer arrived (typed, tapped or scanned): into the stock it goes. */
@@ -1376,166 +1407,16 @@ export class InventoryPanel extends Panel {
         this.store.take([])
     }
 
-    /**
-     * Send supplies to another point. Each point shows how many supplies it has in crítico,
-     * and the one where this point's spare stock does most good (its crítico supplies count
-     * three times) is picked first. For every supply the form suggests just enough to bring
-     * the other point up to abastecido, never more than this one can spare (it keeps at least
-     * half of its cap), and nothing for what is already abastecido there. It all leaves this
-     * stock now, and enters the other point's when that point receives it.
-     */
+    /** Send supplies to another point (see transferSheet.js). */
     #transferSheet() {
-        const board = session.stock
-        if (!this.store.ready || !board) return this.audio.play('error')
-        this.audio.play('tap')
-        const me = this.point.id
-        const others = COLLECTION_POINTS.filter((p) => p.id !== me)
-        const mine = (id) => this.store.get(id)
-        const spare = (id) => Math.max(0, mine(id) - Math.ceil(stockCap(id) * 0.5))
-        const need = (p, id) => board.need(p.id, id)
-        const toStocked = (p, id) => Math.max(0, Math.ceil(stockCap(id) * 0.75) - board.qty(p.id, id))
-        const suggest = (p, id) => (board.state(p.id, id).id === 'abastecido' ? 0 : Math.min(spare(id), toStocked(p, id)))
-        const critical = (p) => Object.keys(SUPPLIES).filter((id) => board.state(p.id, id).id === 'critico').length
-        const helps = (p) => Object.keys(SUPPLIES).reduce((n, id) => n + suggest(p, id) * (board.state(p.id, id).id === 'critico' ? 3 : 1), 0)
-        let dest = [...others].sort((a, b) => helps(b) - helps(a) || critical(b) - critical(a))[0]
-        const zoneName = (p) => ZONES.find((z) => z.id === p.zone)?.name ?? ''
-        const sheet = document.createElement('div')
-        sheet.className = 'xfer-sheet'
-        sheet.setAttribute('role', 'dialog')
-        sheet.setAttribute('aria-labelledby', 'xfer-title')
-        sheet.innerHTML = `
-            <div class="xfer-head">
-                <span class="track-mark">${icon('truck')}</span>
-                <div><h3 id="xfer-title">Enviar a otro punto</h3>
-                <p class="sub">Sale de tu inventario ahora y entra en el del otro punto cuando lo reciba.</p></div>
-                <button class="icon-btn js-xfer-close" type="button" aria-label="Cerrar" title="Cerrar">${icon('x')}</button>
-            </div>
-            <fieldset class="xfer-dest"><legend class="field-label">¿A qué punto?</legend>
-                ${others
-                    .map(
-                        (p) => `
-                    <label class="xfer-point">
-                        <input type="radio" name="dest" value="${p.id}" ${p.id === dest.id ? 'checked' : ''}>
-                        <span><b>${esc(zoneName(p))}</b><small>${esc(p.name.replace('Punto de acopio ', ''))}</small></span>
-                        <em class="${critical(p) ? 'is-critical' : ''}">${critical(p) ? `${critical(p)} ${critical(p) === 1 ? 'crítico' : 'críticos'}` : 'Sin críticos'}</em>
-                    </label>`
-                    )
-                    .join('')}
-            </fieldset>
-            <div class="xfer-items js-xfer-items"></div>
-            <p class="form-error js-xfer-error" role="alert" hidden></p>
-            <div class="xfer-foot">
-                <span class="js-xfer-total"></span>
-                <button class="btn btn-secondary js-xfer-close" type="button">Cancelar</button>
-                <button class="btn btn-primary js-xfer-send" type="button">${icon('truck')} Enviar</button>
-            </div>`
-        this.el.appendChild(sheet)
-        const qty = {}
-        const total = () => {
-            const n = Object.values(qty).reduce((a, b) => a + b, 0)
-            sheet.querySelector('.js-xfer-total').textContent = n ? `${n} ${n === 1 ? 'unidad' : 'unidades'} para ${zoneName(dest)}` : 'Elige qué enviar'
-            sheet.querySelector('.js-xfer-send').disabled = !n
-        }
-        const rows = () => {
-            const list = Object.values(SUPPLIES).filter((s) => mine(s.id) > 0)
-            for (const s of list) qty[s.id] = suggest(dest, s.id)
-            sheet.querySelector('.js-xfer-items').innerHTML = list.length
-                ? `<div class="xfer-row xfer-row-head"><span>Insumo</span><span>Tienes</span><span>Allá</span><span>Enviar</span></div>` +
-                  list
-                      .map((s) => {
-                          const st = board.state(dest.id, s.id)
-                          return `
-                    <div class="xfer-row">
-                        <span class="xfer-name">${esc(s.label)}</span>
-                        <span>${mine(s.id)}</span>
-                        <span><i class="stock-state" data-state="${st.id}">${st.label}</i>${need(dest, s.id) ? `<small>faltan ${need(dest, s.id)}</small>` : ''}</span>
-                        <input class="js-xfer-qty" type="number" inputmode="numeric" min="0" max="${mine(s.id)}" step="1" value="${qty[s.id]}" data-item="${s.id}" aria-label="Unidades de ${esc(s.label)} para enviar, de ${mine(s.id)}">
-                    </div>`
-                      })
-                      .join('')
-                : '<p class="pend-empty">Tu punto no tiene insumos para enviar.</p>'
-            sheet.querySelectorAll('.js-xfer-qty').forEach((input) =>
-                input.addEventListener('input', () => {
-                    const id = input.dataset.item
-                    const n = Math.max(0, Math.min(mine(id), Math.round(Number(input.value) || 0)))
-                    qty[id] = n
-                    total()
-                })
-            )
-            total()
-        }
-        rows()
-        hydrateIcons(sheet)
-        const close = () => {
-            sheet.remove()
-            this.el.querySelector('.js-transfer')?.focus()
-        }
-        sheet.querySelectorAll('.js-xfer-close').forEach((b) => b.addEventListener('click', close))
-        sheet.addEventListener('keydown', (e) => e.key === 'Escape' && close())
-        sheet.querySelectorAll('input[name="dest"]').forEach((r) =>
-            r.addEventListener('change', () => {
-                dest = others.find((p) => p.id === r.value)
-                rows()
-            })
-        )
-        sheet.querySelector('input[name="dest"]:checked')?.focus()
-        // "Enviar" first shows what will go where; only "Confirmar envío" sends it
-        const picking = [sheet.querySelector('.xfer-dest'), sheet.querySelector('.js-xfer-items'), sheet.querySelector('.xfer-foot')]
-        const review = document.createElement('div')
-        review.className = 'xfer-review'
-        review.hidden = true
-        sheet.querySelector('.js-xfer-error').before(review)
-        sheet.querySelector('.js-xfer-send').addEventListener('click', () => {
-            const items = Object.fromEntries(Object.entries(qty).filter(([, n]) => n > 0))
-            if (!Object.keys(items).length) return this.audio.play('error')
-            this.audio.play('tap')
-            review.innerHTML = `
-                <h4>Revisa el envío</h4>
-                <p>Para <b>${esc(zoneName(dest))}</b> · ${esc(dest.name)}</p>
-                <ul class="dialog-items">${Object.entries(items)
-                    .map(([id, n]) => `<li><b>${n}</b> × ${esc(SUPPLIES[id].label)} <small>(te quedan ${mine(id) - n})</small></li>`)
-                    .join('')}</ul>
-                <p class="xfer-note">${icon('info')} Sale de tu inventario ahora y entra en el de ${esc(zoneName(dest))} cuando lo reciban. Mientras siga en camino, puedes anularlo.</p>
-                <div class="xfer-foot">
-                    <button class="btn btn-secondary js-xfer-edit" type="button">${icon('chevron-left')} Cambiar</button>
-                    <button class="btn btn-primary js-xfer-confirm" type="button">${icon('truck')} Confirmar envío</button>
-                </div>`
-            hydrateIcons(review)
-            picking.forEach((el) => (el.hidden = true))
-            review.hidden = false
-            review.querySelector('.js-xfer-confirm').focus()
-            review.querySelector('.js-xfer-edit').addEventListener('click', () => {
-                review.hidden = true
-                picking.forEach((el) => (el.hidden = false))
-                sheet.querySelector('.js-xfer-send').focus()
-            })
-            review.querySelector('.js-xfer-confirm').addEventListener('click', async (e) => {
-                const busy = busyButton(e.currentTarget, 'Enviando…')
-                const out = await ledger.transfer(me, dest.id, items)
-                busy()
-                if (!out.ok) {
-                    this.audio.play('error')
-                    const err = sheet.querySelector('.js-xfer-error')
-                    err.textContent = out.error
-                    err.hidden = false
-                    return
-                }
-                close()
-                this.audio.play('confirm')
-                const tcode = out.transfer.code
-                this.toast?.show(`Traslado <b>${tcode}</b> en camino a ${esc(zoneName(dest))}.`, {
-                    duration: 7000,
-                    action: 'Deshacer',
-                    onAction: async () => {
-                        const back = await ledger.transferCancel(tcode, me)
-                        if (!back.ok) return this.toast.show(esc(back.error), { duration: 4500 })
-                        this.audio.play('remove')
-                        this.toast.show(`Se anuló <b>${tcode}</b>: los insumos volvieron a tu inventario.`, { duration: 3500 })
-                        if (back.rows) this.store.take(back.rows)
-                    },
-                })
-                if (out.rows) this.store.take(out.rows)
-            })
+        transferSheet({
+            host: this.el,
+            point: this.point,
+            store: this.store,
+            board: session.stock,
+            toast: this.toast,
+            audio: this.audio,
+            onClose: () => this.el.querySelector('.js-transfer')?.focus(),
         })
     }
 

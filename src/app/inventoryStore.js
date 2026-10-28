@@ -96,10 +96,13 @@ function clampStock(itemId, qty) {
     return Math.max(0, Math.min(stockCap(itemId), Math.round(n)))
 }
 
-/** Configured in .env as VITE_SHEETS_URL, or at runtime with ?hoja=<url> for a demo. */
+/**
+ * Configured in .env as VITE_SHEETS_URL, or at runtime with ?hoja=<url> for a demo;
+ * ?hoja=local keeps everything on this device, with no sheet at all.
+ */
 export function sheetsEndpoint() {
     const fromQuery = new URLSearchParams(location.search).get('hoja')
-    if (fromQuery) return fromQuery
+    if (fromQuery) return fromQuery === 'local' ? '' : fromQuery
     const fromEnv = import.meta.env?.VITE_SHEETS_URL
     return fromEnv && fromEnv !== 'undefined' ? fromEnv : ''
 }
