@@ -240,6 +240,7 @@ export class LiteApp {
         return `
             <section class="lite-hero">
                 <p class="theme-chip">${icon(t.icon)}<span>${esc(t.title)}</span></p>
+                <p class="lite-logo" aria-hidden="true">NE<span class="brand-x">X</span>OS</p>
                 <h1>Red de ayuda en tiempo real</h1>
                 <p class="lite-lead">${esc(t.lead)}</p>
                 <div class="lite-roles">
@@ -287,7 +288,7 @@ export class LiteApp {
                         .map(([cat, l]) => `<span class="lite-chip" data-level="${l}" style="background:${CATEGORIES[cat].tint};color:${CATEGORIES[cat].color}">${icon(CATEGORIES[cat].icon)} ${esc(CATEGORIES[cat].label)}</span>`)
                         .join('')}</p>
                     ${critical.length ? `<p class="lite-urgent">${icon('alert')} Urgente: ${critical.map((s) => esc(s.label)).join(', ')}</p>` : ''}
-                    <button class="btn btn-primary js-zone" type="button" data-zone="${z.id}">Donar en ${esc(z.name)} ${icon('chevron-right')}</button>
+                    <button class="btn btn-primary js-zone" type="button" data-zone="${z.id}" aria-label="Donar en ${esc(z.name)}">Donar aquí ${icon('chevron-right')}</button>
                 </article>`
             })
             .join('')
@@ -346,8 +347,8 @@ export class LiteApp {
                               const urgent = this.board.isCritical(this.zone.id, s.id)
                               return `
                     <div class="lite-row" data-item="${s.id}">
-                        <span class="lite-row-icon" style="color:${CATEGORIES[s.category].color}">${icon(CATEGORIES[s.category].icon)}</span>
-                        <span class="lite-row-text"><b>${esc(s.label)}</b><small>${esc(s.unit)} · ${money(s.value)} · faltan ${max}${urgent ? ' · <em>urgente</em>' : ''}</small></span>
+                        <span class="lite-row-icon" style="color:${CATEGORIES[s.category].color};background:${CATEGORIES[s.category].tint}">${icon(CATEGORIES[s.category].icon)}</span>
+                        <span class="lite-row-text"><b>${esc(s.label)}${urgent ? ' <em>Urgente</em>' : ''}</b><small>${esc(s.unit)} · ${money(s.value)} · faltan ${max}</small></span>
                         <span class="stepper" role="group" aria-label="Unidades de ${esc(s.label)}">
                             <button type="button" class="js-minus" aria-label="Quitar una unidad de ${esc(s.label)}" ${q <= 0 ? 'disabled' : ''}>${icon('minus')}</button>
                             <input class="js-qty" type="number" inputmode="numeric" min="0" max="${max}" value="${q}" aria-label="Unidades de ${esc(s.label)}, hasta ${max}">
@@ -410,8 +411,8 @@ export class LiteApp {
             <h1 class="lite-title">¿Cómo quieres aportar?</h1>
             <p class="lite-muted">${t.units} ${t.units === 1 ? 'unidad' : 'unidades'} · valor equivalente ${money(t.value)}</p>
             <div class="lite-choices">
-                <button class="lite-choice js-physical" type="button" data-autofocus>${icon('box')}<span><b>Llevarlo al punto</b><small>Eliges cuándo; te damos un código QR para mostrar allá.</small></span>${icon('chevron-right')}</button>
-                <button class="lite-choice js-money" type="button">${icon('card')}<span><b>Aportar en dinero</b><small>El equipo compra los insumos y los deja en el punto. (Demostración: no se cobra nada.)</small></span>${icon('chevron-right')}</button>
+                <button class="lite-choice js-physical" type="button" data-autofocus><span class="lite-choice-icon">${icon('box')}</span><span><b>Llevarlo al punto</b><small>Eliges cuándo; te damos un código QR para mostrar allá.</small></span>${icon('chevron-right')}</button>
+                <button class="lite-choice js-money" type="button"><span class="lite-choice-icon">${icon('card')}</span><span><b>Aportar en dinero</b><small>El equipo compra los insumos y los deja en el punto. (Demostración: no se cobra nada.)</small></span>${icon('chevron-right')}</button>
             </div>
             <div class="lite-actions">${this.#back('basket')}</div>`
     }

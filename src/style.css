@@ -2882,7 +2882,7 @@ canvas.items {
 .lite-choices { display: grid; gap: 10px; }
 .lite-choice { display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: var(--radius-md); border: 1px solid rgba(1, 30, 65, 0.12); background: #fff; font: inherit; text-align: left; cursor: pointer; color: var(--charcoal); }
 .lite-choice > [data-icon] { width: 28px; height: 28px; color: var(--navy); flex: none; }
-.lite-choice span { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.lite-choice > span:not(.lite-choice-icon):not([data-icon]) { flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .lite-choice b { font-size: var(--fs-md); color: var(--navy); }
 .lite-choice small { font-size: var(--fs-sm); color: #5F6368; }
 .lite-choice:hover { border-color: var(--navy); }
@@ -3145,14 +3145,16 @@ html.is-lite,
 .supply-panel .choice-text b { font-size: var(--fs-lg); color: var(--navy); }
 .supply-panel .choice.is-radio:has(input:checked) { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(1, 30, 65, 0.12); background: #fff; }
 /* 3 · when to bring it: one card per window, with a round mark like the transfer's points */
-.supply-panel .chips { gap: 8px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
-.supply-panel .chip span { position: relative; padding: 12px 14px 12px 42px; border: 2px solid transparent; border-radius: 14px; background: #fff; box-shadow: 0 1px 4px rgba(1, 30, 65, 0.08); }
-.supply-panel .chip span::before { content: ''; position: absolute; left: 14px; top: 14px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(1, 30, 65, 0.25); background: #fff; box-sizing: border-box; }
-.supply-panel .chip input:checked + span { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(1, 30, 65, 0.12); background: #fff; }
-.supply-panel .chip input:checked + span::before { border-color: var(--navy); background: radial-gradient(circle, var(--navy) 0 40%, #fff 46%); }
-.supply-panel .chip b { color: var(--navy); }
-.supply-panel .chip small { font-size: var(--fs-xs); }
-.supply-panel legend.field-label .optional { display: block; margin-top: 2px; font-size: var(--fs-xs); font-weight: 400; }
+:is(.supply-panel, .lite) .chips { gap: 8px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+:is(.supply-panel, .lite) .chip { display: flex; }
+:is(.supply-panel, .lite) .chip span { flex: 1; }
+:is(.supply-panel, .lite) .chip span { position: relative; padding: 12px 14px 12px 42px; border: 2px solid transparent; border-radius: 14px; background: #fff; box-shadow: 0 1px 4px rgba(1, 30, 65, 0.08); }
+:is(.supply-panel, .lite) .chip span::before { content: ''; position: absolute; left: 14px; top: 14px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(1, 30, 65, 0.25); background: #fff; box-sizing: border-box; }
+:is(.supply-panel, .lite) .chip input:checked + span { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(1, 30, 65, 0.12); background: #fff; }
+:is(.supply-panel, .lite) .chip input:checked + span::before { border-color: var(--navy); background: radial-gradient(circle, var(--navy) 0 40%, #fff 46%); }
+:is(.supply-panel, .lite) .chip b { color: var(--navy); }
+:is(.supply-panel, .lite) .chip small { font-size: var(--fs-xs); }
+:is(.supply-panel, .lite) legend.field-label .optional { display: block; margin-top: 2px; font-size: var(--fs-xs); font-weight: 400; }
 /* 4 · the summary: the basket and each fact as cards */
 .supply-panel .mini-list { padding: 8px 14px; border-radius: var(--radius-md); background: #fff; box-shadow: 0 1px 4px rgba(1, 30, 65, 0.08); }
 .supply-panel .info-block { padding: 12px 14px; border-radius: var(--radius-md); background: #fff; box-shadow: 0 1px 4px rgba(1, 30, 65, 0.08); }
@@ -3173,8 +3175,58 @@ html.is-lite,
     .supply-panel:not(.is-board) .supply-head h2 { font-size: var(--fs-md); }
     .supply-panel .choice { min-height: 72px; padding: 12px 14px; }
     .supply-panel .choice .choice-icon { width: 46px; height: 46px; }
-    .supply-panel .chips { grid-template-columns: 1fr; }
+    :is(.supply-panel, .lite) .chips { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
     .dn-card, .supply-panel .stepper button { transition: none; }
+}
+
+/* ================================================================
+   Light version, in the same look as the 3D panels (LiteApp)
+   ================================================================ */
+html.is-lite { background: #F3F5F8; }
+/* the bars run the whole width of the window, the content stays in its column */
+.lite-top { margin: 0 calc(50% - 50vw); padding: 10px max(16px, calc(50vw - 364px)); box-shadow: 0 1px 0 rgba(1, 30, 65, 0.06); border-bottom: 0; }
+.lite-sticky { margin: 0 calc(50% - 50vw); padding: 12px max(16px, calc(50vw - 364px)); box-shadow: 0 -4px 16px rgba(1, 30, 65, 0.06); border-top: 0; }
+.lite-body { gap: 12px; padding-top: 20px; }
+.lite-hero { padding: 24px 0 8px; }
+.lite-logo { margin: 14px 0 0; font-size: clamp(48px, 13vw, 76px); font-weight: 900; line-height: 1; letter-spacing: 0.02em; color: var(--navy); }
+.lite-hero h1 { margin-top: 12px; font-size: var(--fs-lg); }
+.lite-card { border: 0; box-shadow: 0 1px 4px rgba(1, 30, 65, 0.08); }
+.lite-title { font-size: var(--fs-xl); }
+/* zones: the card says it all, the button only acts */
+.lite-zone { gap: 10px; }
+.lite-zone-head h2 { font-size: var(--fs-lg); }
+.lite-zone .btn { justify-self: end; width: auto; min-height: 48px; padding: 0 20px; font-size: var(--fs-md); }
+.lite-zone .btn [data-icon] { width: 20px; height: 20px; }
+/* rows: the basket and the stock */
+.lite-list { gap: 8px; }
+.lite-row { gap: 12px; padding: 12px; border: 0; border-radius: var(--radius-md); box-shadow: 0 1px 4px rgba(1, 30, 65, 0.08); }
+.lite-row-icon { width: 42px; height: 42px; border-radius: 12px; background: #F3F5F8; }
+.lite-row-icon [data-icon] { width: 22px; height: 22px; }
+.lite-row-text b { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.lite-row-text em { padding: 1px 8px; border-radius: var(--radius-pill); background: var(--red); color: #fff; font-size: var(--fs-xs); font-weight: 700; font-style: normal; }
+.lite .stepper { gap: 6px; }
+.lite .stepper button { width: 44px; height: 44px; border: 0; border-radius: 12px; background: var(--navy); color: #fff; box-shadow: none; }
+.lite .stepper button:hover:not([disabled]) { background: #0A2E5C; }
+.lite .stepper button [data-icon] { width: 20px; height: 20px; }
+.lite .stepper input { width: 58px; height: 44px; min-height: 44px; border: 1.5px solid rgba(1, 30, 65, 0.16); border-radius: 12px; background: #fff; text-align: center; font: inherit; font-size: var(--fs-md); font-weight: 800; color: var(--navy); }
+.lite .stepper input { -moz-appearance: textfield; }
+.lite .stepper input::-webkit-outer-spin-button, .lite .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.lite .stepper input:focus { outline: none; border-color: var(--navy); box-shadow: 0 0 0 3px rgba(1, 30, 65, 0.12); }
+/* how to give: the same big buttons as everywhere */
+.lite-choice { gap: 16px; min-height: 84px; padding: 14px 16px; border: 2px solid transparent; box-shadow: 0 2px 10px rgba(1, 30, 65, 0.06); }
+.lite-choice:hover { border-color: rgba(1, 30, 65, 0.2); }
+.lite-choice-icon { width: 54px; height: 54px; flex: none; display: grid; place-items: center; border-radius: 16px; background: var(--navy); color: #fff; }
+.lite-choice-icon [data-icon] { width: 28px; height: 28px; }
+.lite-choice.js-money .lite-choice-icon { background: #2E7D5B; }
+.lite-choice > [data-icon] { width: 24px; height: 24px; color: #8A919C; }
+.lite-done { gap: 10px; padding: 24px 16px; }
+@media (max-width: 520px) {
+    .lite-zone .btn { justify-self: stretch; }
+    .lite-row { flex-wrap: nowrap; }
+    .lite-row .stepper button { width: 40px; height: 40px; }
+    .lite-row .stepper input { width: 50px; height: 40px; min-height: 40px; }
+    .lite-choice { min-height: 72px; padding: 12px 14px; }
+    .lite-choice-icon { width: 46px; height: 46px; }
 }
