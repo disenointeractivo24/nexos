@@ -3803,3 +3803,4 @@ html.is-lite { background: #F3F5F8; }
     .lite-roles .role-text strong { font-size: var(--fs-md); }
     .lite-roles .role-text span { font-size: var(--fs-xs); }
 }
+.board-head .js-close[hidden] { display: none; }

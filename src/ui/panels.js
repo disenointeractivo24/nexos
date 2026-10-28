@@ -1287,6 +1287,8 @@ export class InventoryPanel extends Panel {
         const home = tab === 'home'
         this.el.querySelector('.js-back').hidden = home
         this.el.querySelector('.js-head-mark').hidden = !home
+        // inside a section the arrow is the way back; a cross beside it closed the whole point by mistake
+        this.el.querySelector('.board-head .js-close').hidden = !home
         // units or boxes only matters while counting
         const toggle = this.el.querySelector('.step-toggle')
         if (toggle) toggle.hidden = tab !== 'stock'
