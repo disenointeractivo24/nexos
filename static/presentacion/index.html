@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEXOS · Presentación</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+    --navy: #011E41; --navy-2: #06284F; --deep: #000F24; --red: #F5333F; --red-press: #D92632;
+    --amber: #E39B1B; --green: #2E8B57; --light: #F2F4F7; --ink: #011E41; --muted: #5B6573;
+    --n: #7B52C7; --o: #0E8F9C; --c: #E0702A; --or: #D6457F; --s: #C99A1E;
+    --font: "Atkinson Hyperlegible Next", "Segoe UI", system-ui, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { background: #000A18; }
+body { font-family: var(--font); color: var(--ink); -webkit-font-smoothing: antialiased; }
+img { display: block; max-width: 100%; }
+.deck { width: min(1400px, 100vw); margin: 0 auto; }
+.mod { container-type: inline-size; position: relative; overflow: hidden; }
+.mod > .in { position: relative; width: 100%; height: 100%; padding: 7cqi 7cqi; }
+@media (min-width: 720px) { .mod { aspect-ratio: var(--ar); } }
+
+/* type */
+.k { font-size: max(12px, 1.05cqi); font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+.h { font-weight: 800; line-height: .92; letter-spacing: -.01em; }
+.p { font-size: max(15px, 1.45cqi); line-height: 1.5; }
+.s { font-size: max(13px, 1.1cqi); line-height: 1.45; }
+.dark { background: var(--navy); color: #fff; }
+.dark .p, .dark .s { color: rgba(255,255,255,.82); }
+.light { background: var(--light); }
+.light .p, .light .s { color: #3B4656; }
+.red { color: var(--red); }
+.num { position: absolute; top: 3.2cqi; right: 4cqi; font-size: max(12px, 1cqi); font-weight: 800; letter-spacing: .2em; opacity: .55; }
+.glow { position: absolute; border-radius: 50%; filter: blur(6cqi); pointer-events: none; }
+.cut { position: absolute; pointer-events: none; filter: drop-shadow(0 2.2cqi 2.4cqi rgba(0,10,30,.35)); }
+.outline { color: transparent; -webkit-text-stroke: .14cqi rgba(255,255,255,.35); }
+.outline-d { color: transparent; -webkit-text-stroke: .14cqi rgba(1,30,65,.25); }
+
+/* frames */
+.frame { background: #fff; border-radius: 1.4cqi; overflow: hidden; box-shadow: 0 2.4cqi 5cqi rgba(0,10,30,.35); }
+.frame .bar { height: 2.1cqi; background: #E9EDF2; display: flex; gap: .5cqi; align-items: center; padding: 0 1cqi; }
+.frame .bar i { width: .7cqi; height: .7cqi; border-radius: 50%; background: #C5CDD8; }
+.frame img { width: 100%; }
+.phone { background: #0A1424; border-radius: 3.4cqi; padding: .8cqi; box-shadow: 0 2.4cqi 5cqi rgba(0,10,30,.4); }
+.phone img { border-radius: 2.6cqi; width: 100%; }
+.pill { display: inline-flex; align-items: center; gap: .6cqi; padding: .55cqi 1.3cqi; border-radius: 99px; font-size: max(12px, 1.05cqi); font-weight: 800; }
+.chip-d { background: rgba(255,255,255,.1); color: #fff; }
+.chip-l { background: #fff; color: var(--navy); box-shadow: 0 .4cqi 1.4cqi rgba(1,30,65,.1); }
+.card { background: #fff; border-radius: 2cqi; padding: 2.2cqi; box-shadow: 0 1.2cqi 3.4cqi rgba(1,30,65,.12); }
+.dcard { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.14); border-radius: 2cqi; padding: 2.2cqi; backdrop-filter: blur(4px); }
+.big { font-size: 5.4cqi; font-weight: 800; line-height: 1; }
+.tag { display: inline-block; font-size: max(11px, .95cqi); font-weight: 800; padding: .3cqi 1cqi; border-radius: 99px; letter-spacing: .04em; }
+.t-before { background: #E3E7EC; color: #3F4654; }
+.t-after { background: #E7F1EB; color: #1E5B36; }
+.t-red { background: var(--red); color: #fff; }
+
+/* ---------- 1 hero ---------- */
+.m1 { --ar: 1400/1150; background: radial-gradient(120% 90% at 70% 100%, #0A3366 0%, var(--navy) 45%, var(--deep) 100%); color: #fff; }
+.m1 .city { position: absolute; right: -6cqi; bottom: -4cqi; width: 70cqi; -webkit-mask: radial-gradient(70% 62% at 55% 58%, #000 45%, transparent 75%); mask: radial-gradient(70% 62% at 55% 58%, #000 45%, transparent 75%); opacity: .95; }
+.m1 .word { position: absolute; left: 6cqi; top: 13cqi; font-size: 25cqi; font-weight: 800; line-height: .8; letter-spacing: -.02em; }
+.m1 .word span { color: var(--red); }
+.m1 .guide { left: 63cqi; top: 22cqi; width: 21cqi; z-index: 3; }
+.m1 .lead { position: absolute; left: 7cqi; top: 45cqi; width: 42cqi; }
+.m1 .lead .h { font-size: 4.4cqi; }
+.m1 .lead .p { margin-top: 1.6cqi; }
+.m1 .meta { position: absolute; left: 7cqi; bottom: 6cqi; display: flex; gap: 1cqi; flex-wrap: wrap; width: 50cqi; }
+.m1 .team { position: absolute; left: 7cqi; bottom: 11cqi; }
+.m1 .top { position: absolute; left: 7cqi; right: 7cqi; top: 4cqi; display: flex; justify-content: space-between; }
+.m1 .insumo1 { width: 7cqi; right: 8cqi; top: 10cqi; transform: rotate(14deg); }
+.m1 .insumo2 { width: 9cqi; right: 22cqi; top: 4cqi; transform: rotate(-12deg); }
+
+/* ---------- 2 reto ---------- */
+.m2 { --ar: 1400/900; }
+.m2 .q { font-size: 5.2cqi; max-width: 58cqi; margin-top: 2cqi; }
+.m2 .q em { font-style: normal; color: var(--red); }
+.m2 .stats { margin-top: 4cqi; display: grid; grid-template-columns: repeat(3, 17cqi); gap: 2cqi; }
+.m2 .stats .card b { display: block; font-size: 6cqi; line-height: 1; color: var(--navy); }
+.m2 .stats .card span { font-size: max(13px, 1.2cqi); color: var(--muted); font-weight: 700; }
+.m2 .bg { position: absolute; right: -4cqi; top: 4cqi; font-size: 34cqi; font-weight: 800; line-height: .8; }
+.m2 .c1 { width: 9cqi; right: 23cqi; top: 15cqi; transform: rotate(-8deg); }
+.m2 .c2 { width: 13cqi; right: 7cqi; top: 26cqi; transform: rotate(10deg); }
+.m2 .c3 { width: 12cqi; right: 26cqi; top: 39cqi; transform: rotate(-4deg); }
+.m2 .c4 { width: 11cqi; right: 10cqi; top: 47cqi; transform: rotate(6deg); }
+
+/* ---------- 3 donante ---------- */
+.m3 { --ar: 1400/1000; background: linear-gradient(180deg, var(--navy) 0%, #031A38 100%); color: #fff; }
+.m3 .title { font-size: 7.4cqi; }
+.m3 .steps { position: absolute; left: 7cqi; right: 7cqi; top: 26cqi; display: grid; grid-template-columns: repeat(5, 1fr); gap: 1.8cqi; }
+.m3 .st .n { font-size: 4.6cqi; font-weight: 800; color: var(--red); line-height: 1; }
+.m3 .st b { display: block; font-size: max(15px, 1.7cqi); margin: .6cqi 0 .3cqi; }
+.m3 .st .frame { margin-top: 1.2cqi; }
+.m3 .guide { width: 15cqi; right: 8cqi; bottom: -2cqi; }
+.m3 .foot { position: absolute; left: 7cqi; bottom: 7cqi; width: 46cqi; }
+.m3 .bubble { position: absolute; right: 24cqi; bottom: 12cqi; background: #fff; color: var(--navy); border-radius: 2cqi; padding: 1.4cqi 1.8cqi; width: 24cqi; font-size: max(13px, 1.25cqi); font-weight: 700; box-shadow: 0 1cqi 3cqi rgba(0,0,0,.3); }
+.m3 .bubble::after { content: ""; position: absolute; right: -1cqi; bottom: 2cqi; border: 1cqi solid transparent; border-left-color: #fff; }
+
+/* ---------- 4 punto ---------- */
+.m4 { --ar: 1400/1080; }
+.m4 .title { font-size: 7.4cqi; max-width: 60cqi; }
+.m4 .stand { width: 46cqi; right: -3cqi; top: 4cqi; }
+.m4 .opts { position: absolute; left: 7cqi; top: 33cqi; display: grid; gap: 1.6cqi; width: 30cqi; }
+.m4 .opt { display: grid; grid-template-columns: 6cqi 1fr; gap: 1.6cqi; align-items: center; }
+.m4 .ic { width: 6cqi; height: 6cqi; border-radius: 1.6cqi; display: grid; place-items: center; color: #fff; }
+.m4 .ic svg { width: 3cqi; height: 3cqi; }
+.m4 .opt b { font-size: max(16px, 1.9cqi); display: block; color: var(--navy); }
+.m4 .shot { position: absolute; right: 7cqi; bottom: 6cqi; width: 54cqi; }
+.m4 .phonebox { position: absolute; left: 7cqi; bottom: 6cqi; width: 30cqi; }
+.m4 .phonebox .p { margin-bottom: 1.2cqi; }
+
+/* ---------- 5 iteraciones ---------- */
+.m5 { --ar: 1400/1060; background: radial-gradient(90% 70% at 20% 0%, #0B356A 0%, var(--navy) 50%, var(--deep) 100%); color: #fff; }
+.m5 .title { font-size: 7.4cqi; }
+.m5 .vs { position: absolute; left: 7cqi; right: 7cqi; top: 22cqi; display: grid; grid-template-columns: 1fr 5cqi 1fr; align-items: center; gap: 1cqi; }
+.m5 .vs .arrow { font-size: 5cqi; color: var(--red); text-align: center; font-weight: 800; }
+.m5 .vs figcaption { margin-top: 1cqi; display: flex; gap: 1cqi; align-items: center; }
+.m5 .line { position: absolute; left: 7cqi; right: 7cqi; top: 64.4cqi; height: .3cqi; background: linear-gradient(90deg, rgba(255,255,255,.2), var(--red)); }
+.m5 .dots { position: absolute; left: 7cqi; right: 7cqi; top: 62cqi; display: grid; grid-template-columns: repeat(8, 1fr); }
+.m5 .dot { position: relative; }
+.m5 .dot i { display: block; width: 5cqi; height: 5cqi; border-radius: 50%; background: var(--navy-2); border: .3cqi solid rgba(255,255,255,.3); display: grid; place-items: center; font-style: normal; font-weight: 800; font-size: max(12px, 1.3cqi); }
+.m5 .dot.on i { background: var(--red); border-color: var(--red); }
+.m5 .dot b { display: block; margin-top: 1.2cqi; font-size: max(13px, 1.25cqi); }
+.m5 .dot span { display: block; font-size: max(11px, 1cqi); color: rgba(255,255,255,.6); margin-top: .3cqi; padding-right: 1cqi; }
+
+/* ---------- 6 prueba ---------- */
+.m6 { --ar: 1400/1320; }
+.m6 .title { font-size: 7.4cqi; }
+.m6 .facts { display: flex; gap: 1cqi; margin-top: 2cqi; flex-wrap: wrap; }
+.m6 .pair { position: absolute; left: 7cqi; right: 7cqi; display: grid; grid-template-columns: 1fr 1fr; gap: 2.4cqi; }
+.m6 .pair.a { top: 31cqi; }
+.m6 .pair.b { top: 62cqi; }
+.m6 .pair .frame { border-radius: 1.2cqi; }
+.m6 .lab { display: flex; gap: 1cqi; align-items: baseline; margin-bottom: 1cqi; }
+.m6 .lab b { font-size: max(15px, 1.6cqi); color: var(--navy); }
+.m6 .quote { position: absolute; right: 7cqi; top: 7cqi; width: 36cqi; font-size: 2.5cqi; font-weight: 800; color: var(--navy); line-height: 1.15; }
+.m6 .quote small { display: block; font-size: max(12px, 1.05cqi); font-weight: 500; color: var(--muted); margin-top: 1cqi; }
+.m6 .quote::before { content: "“"; display: block; font-size: 8cqi; line-height: .6; color: var(--red); }
+
+/* ---------- 7 IA ---------- */
+.m7 { --ar: 1400/1100; background: var(--deep); color: #fff; }
+.m7 .title { font-size: 7.4cqi; }
+.m7 .kpis { position: absolute; right: 7cqi; top: 8cqi; display: grid; grid-template-columns: repeat(3, auto); gap: 3cqi; text-align: right; }
+.m7 .kpis b { display: block; font-size: 4.4cqi; line-height: 1; }
+.m7 .kpis span { font-size: max(12px, 1.05cqi); color: rgba(255,255,255,.65); font-weight: 700; }
+.m7 .chats { position: absolute; left: 7cqi; right: 7cqi; top: 26cqi; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.4cqi; }
+.m7 .msg { background: var(--red); color: #fff; border-radius: 2cqi 2cqi 2cqi .4cqi; padding: 1.6cqi 1.8cqi; font-size: max(13px, 1.25cqi); line-height: 1.4; font-weight: 500; min-height: 13cqi; }
+.m7 .res .frame { height: 19cqi; }
+.m7 .res .frame img { height: 100%; object-fit: cover; object-position: top; }
+.m7 .msg small { display: block; margin-top: .8cqi; font-size: max(11px, .95cqi); opacity: .8; font-weight: 800; }
+.m7 .res { margin-top: 1.4cqi; }
+.m7 .res .s { margin-top: .8cqi; }
+.m7 .method { position: absolute; left: 7cqi; right: 7cqi; bottom: 5cqi; display: flex; gap: 1cqi; flex-wrap: wrap; align-items: center; }
+.m7 .method .ar { color: var(--red); font-weight: 800; font-size: 1.6cqi; }
+
+/* ---------- 8 three ---------- */
+.m8 { --ar: 1400/1180; background: radial-gradient(60% 60% at 62% 55%, #123F7A 0%, var(--navy) 55%, var(--deep) 100%); color: #fff; }
+.m8 .title { font-size: 7.4cqi; }
+.m8 .stage { position: absolute; left: 40cqi; top: 18cqi; width: 53cqi; height: 50cqi; }
+.m8 .house { width: 26cqi; left: 14cqi; top: 12cqi; }
+.m8 .guide { width: 9cqi; left: 7cqi; top: 27cqi; }
+.m8 .tree { width: 9cqi; left: 38cqi; top: 19cqi; }
+.m8 .ground { position: absolute; left: 0; right: 0; top: 32cqi; height: 12cqi; border-radius: 50%; background: radial-gradient(closest-side, rgba(255,255,255,.18), transparent); }
+.m8 .sun { position: absolute; left: 46cqi; top: 0; width: 6cqi; height: 6cqi; border-radius: 50%; background: #FFD79A; box-shadow: 0 0 4cqi 1cqi rgba(255,200,120,.6); }
+.m8 .lbl { position: absolute; font-size: max(12px, 1.15cqi); font-weight: 800; display: flex; align-items: center; gap: .8cqi; white-space: nowrap; }
+.m8 .lbl i { width: 1cqi; height: 1cqi; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 .5cqi rgba(245,51,63,.3); }
+.m8 .lbl span { color: rgba(255,255,255,.65); font-weight: 500; }
+.m8 .list { position: absolute; left: 7cqi; top: 27cqi; width: 28cqi; display: grid; gap: 1.6cqi; }
+.m8 .list b { display: block; font-size: max(14px, 1.45cqi); }
+.m8 .code { position: absolute; right: 7cqi; top: 70cqi; left: 40cqi; background: #000A18; border: 1px solid rgba(255,255,255,.12); border-radius: 1.4cqi; padding: 1.6cqi 2cqi; font: max(11px, 1.02cqi)/1.55 ui-monospace, Consolas, monospace; color: #CFE0F5; white-space: pre; overflow: hidden; }
+.m8 .code em { font-style: normal; color: #7E93AE; }
+.m8 .code b { color: #FF8A92; font-weight: 400; }
+
+/* ---------- 9 recursos ---------- */
+.m9 { --ar: 1400/1260; }
+.m9 .title { font-size: 7.4cqi; }
+.m9 .flow { position: absolute; left: 7cqi; right: 7cqi; top: 22cqi; display: grid; grid-template-columns: repeat(4, 1fr); gap: 2cqi; }
+.m9 .fs { position: relative; }
+.m9 .fs .img { height: 17cqi; border-radius: 1.6cqi; overflow: hidden; background: #fff; box-shadow: 0 1cqi 2.6cqi rgba(1,30,65,.12); display: grid; place-items: center; }
+.m9 .fs .img img { width: 100%; height: 100%; object-fit: cover; }
+.m9 .fs .img.contain img { object-fit: contain; padding: 1cqi; }
+.m9 .fs .n { font-size: max(12px, 1.05cqi); font-weight: 800; color: var(--red); margin-top: 1.2cqi; letter-spacing: .1em; }
+.m9 .fs b { display: block; font-size: max(15px, 1.6cqi); color: var(--navy); }
+.m9 .fs + .fs::before { content: "→"; position: absolute; left: -1.7cqi; top: 7cqi; font-weight: 800; color: var(--red); font-size: 1.8cqi; }
+.m9 .catalog { position: absolute; left: 0; right: 0; bottom: 0; height: 40cqi; background: linear-gradient(180deg, transparent, #E3E8EF); }
+.m9 .catalog .cut { filter: drop-shadow(0 1.4cqi 1.4cqi rgba(1,30,65,.22)); }
+.m9 .clabel { position: absolute; left: 7cqi; top: 56cqi; }
+
+/* ---------- 10 optimización ---------- */
+.m10 { --ar: 1400/1060; background: linear-gradient(135deg, var(--navy) 0%, var(--deep) 100%); color: #fff; }
+.m10 .title { font-size: 6.4cqi; max-width: 52cqi; }
+.m10 .row { position: absolute; left: 7cqi; top: 28cqi; display: grid; grid-template-columns: 1fr 1fr; gap: 3cqi; width: 52cqi; }
+.m10 .big { font-size: 6.4cqi; }
+.m10 .big small { font-size: 2.6cqi; }
+.m10 .bars { position: absolute; left: 7cqi; top: 47cqi; width: 52cqi; display: grid; gap: 1.6cqi; }
+.m10 .bar { display: grid; grid-template-columns: 13cqi 1fr 7cqi; align-items: center; gap: 1.4cqi; font-size: max(13px, 1.2cqi); font-weight: 700; }
+.m10 .bar i { display: block; height: 1.8cqi; border-radius: 99px; background: rgba(255,255,255,.18); }
+.m10 .bar i b { display: block; height: 100%; border-radius: 99px; background: var(--red); }
+.m10 .devices { position: absolute; right: 6cqi; top: 16cqi; width: 30cqi; }
+.m10 .devices .phone { width: 15cqi; position: absolute; }
+.m10 .tags { position: absolute; left: 7cqi; bottom: 5cqi; display: flex; flex-wrap: wrap; gap: 1cqi; width: 56cqi; }
+
+/* ---------- 11 esqueleto ---------- */
+.m11 { --ar: 1400/1020; }
+.m11 .title { font-size: 7.4cqi; }
+.m11 .conv { position: absolute; left: 7cqi; right: 7cqi; top: 22cqi; display: grid; grid-template-columns: repeat(5, 1fr); gap: 1.8cqi; }
+.m11 .cv { text-align: center; }
+.m11 .cv .disc { width: 9cqi; height: 9cqi; margin: 0 auto; border-radius: 50%; background: #fff; box-shadow: 0 1cqi 2.6cqi rgba(1,30,65,.12); display: grid; place-items: center; overflow: visible; }
+.m11 .cv .disc img { width: 8cqi; height: 8cqi; object-fit: contain; }
+.m11 .cv .disc svg { width: 4cqi; height: 4cqi; color: var(--navy); }
+.m11 .cv b { display: block; margin-top: 1.2cqi; font-size: max(14px, 1.45cqi); color: var(--navy); }
+.m11 .signals { position: absolute; left: 7cqi; top: 46cqi; width: 40cqi; display: grid; gap: 1.2cqi; }
+.m11 .sig { display: grid; grid-template-columns: 13cqi 1fr; align-items: center; gap: 1.6cqi; }
+.m11 .nav { position: absolute; right: 7cqi; top: 46cqi; width: 39cqi; }
+.m11 .navflow { display: flex; flex-direction: column; gap: .9cqi; margin-top: 1.2cqi; }
+.m11 .navflow div { display: flex; align-items: center; gap: 1cqi; }
+.m11 .navflow span { background: #fff; border-radius: 1cqi; padding: .7cqi 1.2cqi; font-weight: 800; font-size: max(12px, 1.2cqi); color: var(--navy); box-shadow: 0 .4cqi 1.2cqi rgba(1,30,65,.1); }
+.m11 .navflow span.on { background: var(--navy); color: #fff; }
+.m11 .navflow em { color: var(--red); font-style: normal; font-weight: 800; }
+
+/* ---------- 12 sistema visual ---------- */
+.m12 { --ar: 1400/1300; background: var(--navy); color: #fff; }
+.m12 .title { font-size: 7.4cqi; }
+.m12 .aa { position: absolute; right: 6cqi; top: 4cqi; font-size: 26cqi; font-weight: 800; line-height: .85; }
+.m12 .aa span { color: var(--red); }
+.m12 .font { position: absolute; right: 7cqi; top: 30cqi; text-align: right; width: 34cqi; }
+.m12 .sw { position: absolute; left: 7cqi; top: 26cqi; display: grid; grid-template-columns: repeat(3, 13cqi); gap: 1.6cqi; }
+.m12 .sw div { height: 13cqi; border-radius: 1.8cqi; padding: 1.2cqi; display: flex; flex-direction: column; justify-content: flex-end; font-size: max(11px, 1cqi); font-weight: 800; }
+.m12 .sw div small { font-weight: 500; opacity: .85; display: block; }
+.m12 .zones { position: absolute; right: 7cqi; top: 42cqi; display: flex; gap: 1cqi; align-items: center; }
+.m12 .zones i { width: 4cqi; height: 4cqi; border-radius: 50%; display: block; }
+.m12 .grid { position: absolute; left: 7cqi; right: 7cqi; bottom: 6cqi; display: grid; grid-template-columns: 1.5fr 1fr; gap: 2.4cqi; align-items: end; }
+.m12 .scale div { display: flex; align-items: baseline; gap: 1.4cqi; border-bottom: 1px solid rgba(255,255,255,.12); padding: .8cqi 0; }
+.m12 .scale small { width: 7cqi; color: rgba(255,255,255,.55); font-size: max(11px, .95cqi); font-weight: 700; }
+
+/* ---------- 13 cierre ---------- */
+.m13 { --ar: 1400/950; background: radial-gradient(80% 80% at 50% 110%, #0E3B73 0%, var(--navy) 50%, var(--deep) 100%); color: #fff; text-align: center; }
+.m13 .h { font-size: 7.2cqi; margin-top: 6cqi; }
+.m13 .p { max-width: 60cqi; margin: 2cqi auto 0; }
+.m13 .ppl { position: absolute; left: 0; right: 0; bottom: 0; height: 38cqi; }
+.m13 .links { position: absolute; left: 0; right: 0; top: 37cqi; display: flex; gap: 1.2cqi; justify-content: center; flex-wrap: wrap; }
+.m13 .links a { text-decoration: none; }
+.m13 .credit { position: absolute; left: 7cqi; right: 7cqi; top: 4cqi; display: flex; justify-content: space-between; font-size: max(11px, 1cqi); color: rgba(255,255,255,.6); z-index: 5; }
+
+/* stacked layout for narrow screens */
+@container (max-width: 719px) {
+    .mod > .in { padding: 48px 20px; }
+    .mod .in > *:not(.glow):not(.cut):not(.num):not(.city):not(.bg):not(.word):not(.catalog):not(.ppl):not(.aa) { position: relative !important; inset: auto !important; width: auto !important; margin-top: 22px; transform: none; }
+    .cut, .m2 .bg, .m12 .aa, .m9 .catalog, .m13 .ppl, .m8 .stage { display: none; }
+    .m1 .word { position: relative; left: 0; top: 0; font-size: 26cqi; }
+    .m1 .city { position: relative; right: auto; bottom: auto; width: 100%; margin-top: 20px; }
+    .m3 .steps, .m3 .steps.row2, .m5 .vs, .m6 .pair, .m7 .chats, .m9 .flow, .m11 .conv, .m12 .grid, .m10 .row, .m2 .stats { grid-template-columns: 1fr !important; padding-right: 0 !important; }
+    .m5 .dots { grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .m5 .line, .m3 .bubble { display: none; }
+    .m7 .kpis { text-align: left; }
+    .m12 .sw { grid-template-columns: repeat(2, 1fr); }
+    .m12 .sw div { height: 110px; }
+    .m8 .code { white-space: pre-wrap; }
+    .title, .m2 .q { font-size: 11cqi !important; }
+}
+/* export: one module per page */
+body.solo .mod { display: none; }
+body.solo .mod.on { display: block; }
+body.solo .deck { width: 1400px; }
+</style>
+</head>
+<body>
+<div class="deck">
+
+<!-- 01 HERO -->
+<section class="mod m1" id="m1">
+    <div class="glow" style="width:40cqi;height:40cqi;left:30cqi;top:-10cqi;background:rgba(245,51,63,.28)"></div>
+    <img class="city" src="../assets/ui/portada-ciudad.webp" alt="">
+    <div class="in">
+        <div class="top"><span class="k">Diseño interactivo · Web 3D</span><span class="k">Cali · 2026</span></div>
+        <div class="word">NE<span>X</span>OS</div>
+        <img class="cut guide" src="img/recortes/guia-saludo.webp" alt="El guía de NEXOS saludando">
+        <div class="lead">
+            <p class="h">Red de ayuda<br>en tiempo real</p>
+            <p class="p">Una ciudad 3D que muestra dónde hace falta ayuda después de una emergencia, y conecta a quienes quieren donar con los puntos de acopio de cada barrio.</p>
+        </div>
+        <p class="team s">Melissa Palacio Rincón · Juan Manuel Chamorro · Juan Camilo Bravo</p>
+        <div class="meta"><span class="pill chip-d">Three.js</span><span class="pill chip-d">Blender + Substance</span><span class="pill chip-d">Desarrollo con IA</span><span class="pill chip-d">Eye tracking</span></div>
+    </div>
+</section>
+
+<!-- 02 RETO -->
+<section class="mod m2 light" id="m2">
+    <div class="glow" style="width:36cqi;height:36cqi;right:2cqi;top:12cqi;background:rgba(14,143,156,.16)"></div>
+    <div class="bg outline-d">?</div>
+    <img class="cut c1" src="img/recortes/insumo-agua.webp" alt="">
+    <img class="cut c2" src="img/recortes/insumo-arroz.webp" alt="">
+    <img class="cut c3" src="img/recortes/insumo-medicinas.webp" alt="">
+    <img class="cut c4" src="img/recortes/insumo-cobija.webp" alt="">
+    <div class="in">
+        <span class="num">01 · EL RETO</span>
+        <p class="k red">El reto</p>
+        <p class="h q">Tras una emergencia, la ayuda llega, pero no siempre <em>a donde hace falta</em>.</p>
+        <p class="p" style="max-width:52cqi;margin-top:2.4cqi">Quien quiere donar no sabe qué necesita cada barrio, y los puntos de acopio no tienen cómo mostrarlo. NEXOS hace visible esa necesidad en un mapa que cualquiera entiende, incluso un adulto mayor sin ayuda.</p>
+        <div class="stats">
+            <div class="card"><b>2</b><span>roles: donante y punto de acopio</span></div>
+            <div class="card"><b>5</b><span>zonas de Cali, con su barrio y su punto</span></div>
+            <div class="card"><b>8</b><span>insumos básicos en tiempo real</span></div>
+        </div>
+    </div>
+</section>
+
+<!-- 03 DONANTE -->
+<section class="mod m3" id="m3">
+    <div class="glow" style="width:44cqi;height:30cqi;right:-6cqi;bottom:4cqi;background:rgba(245,51,63,.22)"></div>
+    <div class="in">
+        <span class="num">02 · DONAR</span>
+        <p class="k red">Quiero donar</p>
+        <p class="h title">De la ciudad<br>a tu barrio</p>
+        <div class="steps">
+            <div class="st"><span class="n">01</span><b>Elige una zona</b><p class="s">Cada zona muestra sus urgencias.</p><div class="frame"><img src="../documento/img/ciudad.jpg" alt="Ciudad"></div></div>
+            <div class="st"><span class="n">02</span><b>Mira qué falta</b><p class="s">Tres necesidades, en palabras.</p><div class="frame"><img src="../documento/img/zona.jpg" alt="Tarjeta de zona"></div></div>
+            <div class="st"><span class="n">03</span><b>Entra al barrio</b><p class="s">El guía te lleva al punto.</p><div class="frame"><img src="../documento/img/barrio.jpg" alt="Barrio"></div></div>
+            <div class="st"><span class="n">04</span><b>Arma tu cesta</b><p class="s">Por unidad o por caja.</p><div class="frame"><img src="../documento/img/donar.jpg" alt="Panel de donar"></div></div>
+            <div class="st"><span class="n">05</span><b>Recibe tu código</b><p class="s">Con QR y franja de entrega real.</p><div class="frame"><img src="../bitacora/img/claude-1034.png" alt="Confirmación con código"></div></div>
+        </div>
+        <p class="p foot">Un recorrido de cinco pasos, siempre acompañado por el guía. Nadie tiene que aprender a mover una cámara 3D.</p>
+        <div class="bubble">Hola, te ayudo a encontrar dónde apoyar. <span class="red">Selecciona una zona.</span></div>
+        <img class="cut guide" src="img/recortes/guia.webp" alt="">
+    </div>
+</section>
+
+<!-- 04 PUNTO -->
+<section class="mod m4 light" id="m4">
+    <div class="glow" style="width:46cqi;height:40cqi;right:-4cqi;top:0;background:rgba(224,112,42,.16)"></div>
+    <img class="cut stand" src="img/recortes/punto-de-acopio.webp" alt="Punto de acopio 3D">
+    <div class="in">
+        <span class="num">03 · PUNTO DE ACOPIO</span>
+        <p class="k red">Soy punto de acopio</p>
+        <p class="h title">Un inventario que todos ven</p>
+        <div class="opts">
+            <div class="opt"><span class="ic" style="background:var(--navy)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18l-2 12H5z"/><path d="M8 7l4-4 4 4"/></svg></span><div><b>Gestionar inventario</b><p class="s">Crítico, estable o abastecido, en una hoja de Google compartida.</p></div></div>
+            <div class="opt"><span class="ic" style="background:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v7h-7"/></svg></span><div><b>Recibir donaciones</b><p class="s">Escanea el QR del donante y se suma solo.</p></div></div>
+            <div class="opt"><span class="ic" style="background:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg></span><div><b>Enviar a otros puntos</b><p class="s">Lo que sobra va a quien le falta.</p></div></div>
+        </div>
+        <div class="shot frame"><div class="bar"><i></i><i></i><i></i></div><img src="../documento/img/inventario.jpg" alt="Inventario del punto"></div>
+    </div>
+</section>
+
+<!-- 05 ITERACIONES -->
+<section class="mod m5" id="m5">
+    <div class="in">
+        <span class="num">04 · ITERACIONES</span>
+        <p class="k red">Proceso</p>
+        <p class="h title">8 versiones en 29 días</p>
+        <div class="vs">
+            <figure><div class="frame"><img src="../bitacora/img/claude-0015.jpg" alt="Primera ciudad"></div><figcaption><span class="tag t-before">30 SEP · V1</span><span class="s">La primera Cali 3D</span></figcaption></figure>
+            <span class="arrow">→</span>
+            <figure><div class="frame"><img src="../documento/img/ciudad.jpg" alt="Ciudad final"></div><figcaption><span class="tag t-after">28 OCT · V8</span><span class="s">Zonas delimitadas, urgencias y clima real</span></figcaption></figure>
+        </div>
+        <div class="line"></div>
+        <div class="dots">
+            <div class="dot"><i>1</i><b>Prototipo</b><span>La ciudad como interfaz</span></div>
+            <div class="dot"><i>2</i><b>Escala y datos</b><span>Un insumo, un número</span></div>
+            <div class="dot"><i>3</i><b>Legibilidad</b><span>Del vidrio a paneles opacos</span></div>
+            <div class="dot"><i>4</i><b>Datos reales</b><span>Hoja de Google y modelos propios</span></div>
+            <div class="dot"><i>5</i><b>Rendimiento</b><span>−78 % de peso y versión ligera</span></div>
+            <div class="dot"><i>6</i><b>Celular</b><span>Lista de zonas táctil</span></div>
+            <div class="dot on"><i>7</i><b>Prueba</b><span>Usabilidad + eye tracking</span></div>
+            <div class="dot on"><i>8</i><b>Ajustes</b><span>Respuesta a cada hallazgo</span></div>
+        </div>
+    </div>
+</section>
+
+<!-- 06 PRUEBA -->
+<section class="mod m6 light" id="m6">
+    <div class="in">
+        <span class="num">05 · PRUEBA CON USUARIOS</span>
+        <p class="k red">Usabilidad + eye tracking</p>
+        <p class="h title">Lo que vimos<br>en sus ojos</p>
+        <div class="facts"><span class="pill chip-l">ISO 9241-11</span><span class="pill chip-l">Pensamiento en voz alta</span><span class="pill chip-l">3 tareas · 3 de 3 completadas</span></div>
+        <p class="quote">No vio las otras categorías de donación.<small>Hallazgo de prioridad media · 22 de octubre</small></p>
+        <div class="pair a">
+            <div><div class="lab"><span class="tag t-before">ANTES</span><b>La mirada se queda en la primera categoría</b></div><div class="frame"><img src="../documento/img/heat-2-donar.jpg" alt="Mapa de calor del panel de donar"></div></div>
+            <div><div class="lab"><span class="tag t-after">DESPUÉS</span><b>Cinco fichas del mismo peso visual</b></div><div class="frame"><img src="../documento/img/donar-vacio.jpg" alt="Categorías en fichas"></div></div>
+        </div>
+        <div class="pair b">
+            <div><div class="lab"><span class="tag t-before">ANTES</span><b>Inventario sin un recorrido claro</b></div><div class="frame"><img src="../documento/img/heat-3-inventario.jpg" alt="Mapa de calor del inventario"></div></div>
+            <div><div class="lab"><span class="tag t-after">DESPUÉS</span><b>Un menú con tres tareas, una por pantalla</b></div><div class="frame"><img src="../documento/img/punto-menu.jpg" alt="Menú del punto"></div></div>
+        </div>
+    </div>
+</section>
+
+<!-- 07 IA -->
+<section class="mod m7" id="m7">
+    <div class="glow" style="width:40cqi;height:30cqi;left:-8cqi;top:-6cqi;background:rgba(245,51,63,.2)"></div>
+    <div class="in">
+        <span class="num">06 · DESARROLLO CON IA</span>
+        <p class="k red">Claude Code</p>
+        <p class="h title">Diseñar<br>conversando</p>
+        <div class="kpis"><div><b>216</b><span>mensajes</span></div><div><b>1003</b><span>capturas de verificación</span></div><div><b>116</b><span>versiones publicadas</span></div></div>
+        <div class="chats">
+            <div><p class="msg">Necesito que en la parte del punto de acopio, dividamos las acciones… ahora tenemos todo junto y se ve demasiado apretado<small>11 OCT · con captura adjunta</small></p><div class="res"><div class="frame"><img src="../bitacora/img/claude-0687.jpg" alt="Resultado: pestañas"></div><p class="s">Inventario y recepción, en pestañas separadas.</p></div></div>
+            <div><p class="msg">calcules de verdad las franjas horarias… a veces me meto en la mañana y lo más cercano me dice que es al otro día<small>28 OCT</small></p><div class="res"><div class="frame"><img src="../bitacora/img/claude-0975.jpg" alt="Resultado: franjas"></div><p class="s">Franjas con la hora real de Cali: “Hoy, antes del cierre”.</p></div></div>
+            <div><p class="msg">me gusta este estilo en la parte de donación para las categorías, necesito que tomes inspiración y reformes<small>28 OCT · con 3 referencias</small></p><div class="res"><div class="frame"><img src="../documento/img/donar-vacio.jpg" alt="Resultado: fichas"></div><p class="s">Categorías en fichas de color.</p></div></div>
+        </div>
+        <div class="method"><span class="pill chip-d">Brief con rol, tono y restricciones</span><span class="ar">→</span><span class="pill chip-d">Capturas anotadas</span><span class="ar">→</span><span class="pill chip-d">Prueba en el navegador</span><span class="ar">→</span><span class="pill chip-d">Publicación</span></div>
+    </div>
+</section>
+
+<!-- 08 THREE -->
+<section class="mod m8" id="m8">
+    <div class="in">
+        <span class="num">07 · THREE.JS</span>
+        <p class="k red">Técnica</p>
+        <p class="h title">Una escena,<br>tres lugares</p>
+        <div class="list">
+            <div><b>Cámara guiada</b><p class="s">Baja entre nubes, se acerca a la zona y sigue al guía. Nadie tiene que aprender a moverla.</p></div>
+            <div><b>Luz de Cali en vivo</b><p class="s">El sol, el cielo y la lluvia siguen la hora y el clima reales.</p></div>
+            <div><b>Ciudad, barrio y punto</b><p class="s">Un solo renderizador; los lugares entran y salen como grupos.</p></div>
+        </div>
+        <div class="stage">
+            <div class="sun"></div>
+            <div class="ground"></div>
+            <img class="cut house" src="img/recortes/casa-teja.webp" alt="">
+            <img class="cut tree" src="img/recortes/arbol-2.webp" alt="">
+            <img class="cut guide" src="img/recortes/guia-34r.webp" alt="">
+            <span class="lbl" style="left:22cqi;top:1.5cqi"><i></i>DirectionalLight <span>sol con sombras</span></span>
+            <span class="lbl" style="left:0;top:8cqi"><i></i>HemisphereLight <span>cielo + rebote</span></span>
+            <span class="lbl" style="left:0;top:45cqi"><i></i>AnimationMixer <span>guía</span></span>
+            <span class="lbl" style="left:35cqi;top:35cqi"><i></i>InstancedMesh <span>miles de árboles</span></span>
+            <span class="lbl" style="left:22cqi;top:45cqi"><i></i>GLTFLoader + Draco <span>modelos propios</span></span>
+        </div>
+        <div class="code"><em>// la sombra de la ciudad se dibuja una sola vez</em>
+<b>setShadowsLive</b>(live) {
+  this.renderer.shadowMap.autoUpdate = live   <em>// ciudad: false · barrio: true</em>
+  this.renderer.shadowMap.needsUpdate = true
+}</div>
+    </div>
+</section>
+
+<!-- 09 RECURSOS -->
+<section class="mod m9 light" id="m9">
+    <div class="catalog">
+        <img class="cut" src="img/recortes/casa-dos-pisos.webp" style="width:15cqi;left:3cqi;bottom:5cqi" alt="">
+        <img class="cut" src="img/recortes/iglesia-san-antonio.webp" style="width:22cqi;left:15cqi;bottom:3cqi" alt="">
+        <img class="cut" src="img/recortes/npc-mayor.webp" style="width:6.6cqi;left:36cqi;bottom:4cqi" alt="">
+        <img class="cut" src="img/recortes/casa-estrato-4.webp" style="width:15cqi;left:42cqi;bottom:5cqi" alt="">
+        <img class="cut" src="img/recortes/torre-de-cali.webp" style="width:6.6cqi;left:57cqi;bottom:4cqi" alt="">
+        <img class="cut" src="img/recortes/npc-nino.webp" style="width:6cqi;left:64cqi;bottom:3cqi" alt="">
+        <img class="cut" src="img/recortes/casa-teja.webp" style="width:17cqi;left:70cqi;bottom:4cqi" alt="">
+        <img class="cut" src="img/recortes/hidrante.webp" style="width:4.4cqi;left:87cqi;bottom:4cqi" alt="">
+        <img class="cut" src="img/recortes/arbol-1.webp" style="width:9cqi;left:90cqi;bottom:6cqi" alt="">
+    </div>
+    <div class="in">
+        <span class="num">08 · RECURSOS</span>
+        <p class="k red">Hecho a mano</p>
+        <p class="h title">De Blender a la calle</p>
+        <div class="flow">
+            <div class="fs"><div class="img"><img src="../bitacora/img/tuya-0001.webp" alt="Keyframe de referencia"></div><p class="n">01</p><b>Referencia</b><p class="s">Keyframes del ambiente y casas caleñas.</p></div>
+            <div class="fs"><div class="img"><img src="../bitacora/img/tuya-0486.png" alt="Modelado en Blender"></div><p class="n">02</p><b>Modelado y rig</b><p class="s">Blender, en quads. Rig de títere para el guía.</p></div>
+            <div class="fs"><div class="img"><img src="../documento/img/tex-techo-basecolor.png" alt="Textura de Substance"></div><p class="n">03</p><b>Texturas</b><p class="s">Substance Painter: color, normal y rugosidad.</p></div>
+            <div class="fs"><div class="img contain" style="background:linear-gradient(#EAF0F6,#fff)"><img src="img/recortes/casa-techo-ondulado.webp" alt="Casa en la app"></div><p class="n">04</p><b>GLB en la app</b><p class="s">Un script los convierte, livianos y con texturas.</p></div>
+        </div>
+        <p class="clabel k" style="color:var(--muted)">7 casas · 8 edificios · 7 props · 3 árboles · 6 personajes · 8 insumos</p>
+    </div>
+</section>
+
+<!-- 10 OPTIMIZACIÓN -->
+<section class="mod m10" id="m10">
+    <div class="glow" style="width:40cqi;height:40cqi;right:-6cqi;top:4cqi;background:rgba(14,143,156,.22)"></div>
+    <div class="in">
+        <span class="num">09 · OPTIMIZACIÓN</span>
+        <p class="k red">Para cualquier celular</p>
+        <p class="h title">Liviana sin<br>perder la ciudad</p>
+        <div class="row">
+            <div><p class="big">−78<small>%</small></p><p class="s">de peso en las casas con texturas: de 16,2 a 3,6 MB.</p></div>
+            <div><p class="big">0,5<small> MB</small></p><p class="s">pesa la versión ligera, contra 18 MB de la versión 3D.</p></div>
+        </div>
+        <div class="bars">
+            <p class="s" style="display:flex;gap:2cqi"><span><b style="display:inline-block;width:1.2cqi;height:1.2cqi;border-radius:50%;background:rgba(255,255,255,.25);vertical-align:middle"></b> antes (MB)</span><span><b style="display:inline-block;width:1.2cqi;height:1.2cqi;border-radius:50%;background:var(--red);vertical-align:middle"></b> después</span></p>
+            <div class="bar"><span>casa-dos-pisos</span><i style="width:100%"><b style="width:19%"></b></i><span>6,5 → 1,3</span></div>
+            <div class="bar"><span>techo-ondulado</span><i style="width:85%"><b style="width:23%"></b></i><span>5,5 → 1,3</span></div>
+            <div class="bar"><span>casa-teja</span><i style="width:67%"><b style="width:24%"></b></i><span>4,3 → 1,1</span></div>
+        </div>
+        <div class="devices">
+            <div class="phone" style="left:0;top:6cqi;transform:rotate(-6deg)"><img src="../documento/img/movil-ciudad.jpg" alt="Versión 3D en celular"></div>
+            <div class="phone" style="left:14cqi;top:0;transform:rotate(5deg)"><img src="../bitacora/img/claude-1108.jpg" alt="Versión ligera"></div>
+        </div>
+        <div class="tags"><span class="pill chip-d">Sombras fijas en la ciudad</span><span class="pill chip-d">Resolución adaptable</span><span class="pill chip-d">Árboles lejanos simplificados</span><span class="pill chip-d">Sonido 100 % procedural</span><span class="pill chip-d">Ligera automática si la red es lenta</span></div>
+    </div>
+</section>
+
+<!-- 11 ESQUELETO -->
+<section class="mod m11 light" id="m11">
+    <div class="in">
+        <span class="num">10 · ESQUELETO</span>
+        <p class="k red">Convenciones</p>
+        <p class="h title">Cosas que ya conoces</p>
+        <div class="conv">
+            <div class="cv"><div class="disc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><path d="M9.5 10.5L12 8l2.5 2.5V13h-5z"/></svg></div><b>Pin del mapa</b><p class="s">Como en Google Maps</p></div>
+            <div class="cv"><div class="disc"><img src="img/recortes/guia.webp" alt=""></div><b>Rescatista</b><p class="s">Casco con cruz</p></div>
+            <div class="cv"><div class="disc"><img src="img/recortes/punto-de-acopio.webp" alt=""></div><b>Centro de acopio</b><p class="s">Mesa y estantería</p></div>
+            <div class="cv"><div class="disc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16l-1.5 10h-13z"/><path d="M8 9l4-5 4 5"/></svg></div><b>Cesta de apoyo</b><p class="s">Como un carrito</p></div>
+            <div class="cv"><div class="disc" style="gap:.4cqi;display:flex;justify-content:center"><i style="width:1.8cqi;height:1.8cqi;border-radius:50%;background:#E5333B;display:block"></i><i style="width:1.8cqi;height:1.8cqi;border-radius:50%;background:#E39B1B;display:block"></i><i style="width:1.8cqi;height:1.8cqi;border-radius:50%;background:#2E8B57;display:block"></i></div><b>Semáforo</b><p class="s">Crítico, estable, abastecido</p></div>
+        </div>
+        <div class="signals">
+            <p class="k" style="color:var(--muted)">Una señal, un significado</p>
+            <div class="sig"><span class="pill" style="background:var(--red);color:#fff;justify-content:center">Continuar ›</span><p class="s"><b style="color:var(--navy)">Rojo:</b> la acción del paso y lo crítico.</p></div>
+            <div class="sig"><span class="pill" style="background:var(--navy);color:#fff;justify-content:center">Agua</span><p class="s"><b style="color:var(--navy)">Azul noche:</b> lo elegido.</p></div>
+            <div class="sig"><span class="pill" style="background:#E7F1EB;color:#1E5B36;justify-content:center">✓ Guardado</span><p class="s"><b style="color:var(--navy)">Verde:</b> hecho, suficiente.</p></div>
+            <div class="sig"><span class="pill" style="background:#FCEBCB;color:#7A4B00;justify-content:center">●●● Alta</span><p class="s"><b style="color:var(--navy)">Ámbar:</b> importa, pero no es alarma.</p></div>
+        </div>
+        <div class="nav">
+            <p class="k" style="color:var(--muted)">Siempre sabes dónde estás</p>
+            <div class="navflow">
+                <div><span>Ciudad</span><em>→</em><span>Zona</span><em>→</em><span>Barrio</span></div>
+                <div><span>Punto</span><em>→</em><span>Cesta</span><em>→</em><span class="on">Código</span></div>
+            </div>
+            <p class="s" style="margin-top:1.6cqi">“Paso 3 de 5” arriba, el nombre del lugar en la barra y “‹ Volver” siempre a la mano.</p>
+        </div>
+    </div>
+</section>
+
+<!-- 12 SISTEMA VISUAL -->
+<section class="mod m12" id="m12">
+    <div class="glow" style="width:40cqi;height:36cqi;right:0;top:0;background:rgba(245,51,63,.18)"></div>
+    <div class="in">
+        <span class="num">11 · SUPERFICIE</span>
+        <div class="aa">A<span>a</span></div>
+        <p class="k red">Sistema visual</p>
+        <p class="h title">Calma en<br>la urgencia</p>
+        <div class="sw">
+            <div style="background:#011E41;border:1px solid rgba(255,255,255,.2)">Azul noche<small>#011E41 · confianza</small></div>
+            <div style="background:#F5333F">Rojo NEXOS<small>#F5333F · acción</small></div>
+            <div style="background:#fff;color:#011E41">Blanco<small>#FFFFFF · paneles</small></div>
+            <div style="background:#E39B1B;color:#011E41">Ámbar<small>#E39B1B · necesidad</small></div>
+            <div style="background:#2E8B57">Verde<small>#1E5B36 · listo</small></div>
+            <div style="background:#EDEDED;color:#011E41">Gris claro<small>#EDEDED · apoyo</small></div>
+        </div>
+        <div class="zones"><span class="k" style="margin-right:1cqi;opacity:.7">Zonas</span><i style="background:var(--n)"></i><i style="background:var(--o)"></i><i style="background:var(--c)"></i><i style="background:var(--or)"></i><i style="background:var(--s)"></i></div>
+        <div class="font"><p class="p" style="color:#fff;font-weight:800;font-size:max(16px,2cqi)">Atkinson Hyperlegible Next</p><p class="s">Diseñada para baja visión: no confunde I, l y 1, ni O y 0. Texto base de 18 px.</p></div>
+        <div class="grid">
+            <div class="frame"><img src="../documento/img/grid-donar.jpg" alt="Retícula del panel de donar"></div>
+            <div class="scale">
+                <div><small>34 px</small><span style="font-size:2.6cqi;font-weight:800">Zona Norte</span></div>
+                <div><small>22 px</small><span style="font-size:1.8cqi;font-weight:700">¿Qué quieres donar?</span></div>
+                <div><small>18 px</small><span style="font-size:1.4cqi">Toca un suministro para agregarlo.</span></div>
+                <div><small>13 px</small><span style="font-size:1.05cqi;font-weight:800;letter-spacing:.08em">LO QUE MÁS SE NECESITA</span></div>
+                <p class="s" style="margin-top:1.4cqi">Retícula medida sobre la app: 5 columnas de 111 px en el panel de donar.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 13 CIERRE -->
+<section class="mod m13" id="m13">
+    <div class="ppl">
+        <img class="cut" src="img/recortes/casa-estrato-2.webp" style="width:22cqi;left:4cqi;bottom:2cqi" alt="">
+        <img class="cut" src="img/recortes/npc-joven.webp" style="width:7cqi;left:25cqi;bottom:3cqi" alt="">
+        <img class="cut" src="img/recortes/guia-saludo.webp" style="width:15cqi;left:42.5cqi;bottom:2cqi;z-index:2" alt="">
+        <img class="cut" src="img/recortes/npc-mayor.webp" style="width:7cqi;left:61cqi;bottom:3cqi" alt="">
+        <img class="cut" src="img/recortes/casa-dos-pisos.webp" style="width:16cqi;left:72cqi;bottom:2cqi" alt="">
+        <img class="cut" src="img/recortes/arbol-3.webp" style="width:11cqi;left:87cqi;bottom:4cqi" alt="">
+    </div>
+    <div class="in">
+        <p class="k red">NEXOS</p>
+        <p class="h">Siempre hay alguien<br>cerca para ayudar.</p>
+        <p class="p">Una ciudad que muestra lo que falta, un punto de acopio que lo cuenta y una persona que decide ayudar.</p>
+        <div class="links"><a class="pill chip-d" href="../">Abrir NEXOS ↗</a><a class="pill chip-d" href="../documento/">Documento completo</a><a class="pill chip-d" href="../bitacora/">Bitácora</a></div>
+    </div>
+    <div class="credit"><span>Melissa Palacio Rincón · Juan Manuel Chamorro · Juan Camilo Bravo</span><span>Diseño interactivo · 2026</span></div>
+</section>
+
+</div>
+<script>
+// ?solo=m3 shows one module alone, for exporting it as an image
+const solo = new URLSearchParams(location.search).get('solo')
+if (solo) { document.body.classList.add('solo'); document.getElementById(solo)?.classList.add('on') }
+</script>
+</body>
+</html>
