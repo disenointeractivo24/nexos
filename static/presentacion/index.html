@@ -253,6 +253,10 @@ img { display: block; max-width: 100%; }
 .m13 .links a { text-decoration: none; }
 .m13 .credit { position: absolute; left: 7cqi; right: 7cqi; top: 4cqi; display: flex; justify-content: space-between; font-size: max(11px, 1cqi); color: rgba(255,255,255,.6); z-index: 5; }
 
+/* decorative layers never catch the pointer; links sit above them */
+.ppl, .catalog, .tape, .slab, .ghost, .city, .glow { pointer-events: none; }
+.m13 .links { z-index: 7; }
+.m13 .links a { pointer-events: auto; }
 /* export: one module per page */
 body.solo .mod { display: none; }
 body.solo .mod.on { display: block; }
