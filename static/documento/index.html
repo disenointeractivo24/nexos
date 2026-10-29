@@ -1,0 +1,1021 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEXOS · Documento de proyecto</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+    --navy: #011E41; --red: #F5333F; --red-press: #D92632; --charcoal: #323232; --light: #EDEDED; --white: #fff;
+    --amber: #E39B1B; --amber-ink: #7A4B00; --amber-soft: #FCEBCB;
+    --crit-ink: #A3262F; --crit-soft: #FDE3E5; --ok-ink: #1E5B36; --ok-soft: #E7F1EB;
+    --ink: #2A3442; --muted: #5B6573; --bg: #F3F5F8; --card: #fff; --line: rgba(1,30,65,.12);
+    --radius-lg: 24px; --radius-md: 18px; --radius-sm: 12px;
+    --font: "Atkinson Hyperlegible Next", "Segoe UI", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.6 var(--font); }
+img { max-width: 100%; display: block; }
+a { color: var(--red-press); }
+code { font: 14px/1.4 ui-monospace, Consolas, monospace; background: rgba(1,30,65,.06); padding: 1px 5px; border-radius: 5px; color: var(--navy); }
+pre { margin: 10px 0; padding: 14px 16px; background: #0B1B30; color: #E4ECF6; border-radius: var(--radius-sm); overflow-x: auto; font: 13px/1.55 ui-monospace, Consolas, monospace; }
+pre code { background: none; padding: 0; color: inherit; }
+.layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); max-width: 1360px; margin: 0 auto; }
+nav.toc { position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto; padding: 28px 18px 40px 24px; font-size: 14px; }
+nav.toc b { display: block; color: var(--navy); font-size: 13px; letter-spacing: .06em; text-transform: uppercase; margin: 18px 0 6px; }
+nav.toc a { display: block; padding: 4px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; }
+nav.toc a:hover { background: rgba(1,30,65,.07); }
+nav.toc a span { float: right; color: var(--muted); font-size: 12px; }
+main { padding: 28px 32px 100px; min-width: 0; }
+.cover { background: var(--navy); color: #fff; border-radius: var(--radius-lg); padding: 44px 40px; position: relative; overflow: hidden; }
+.cover h1 { margin: 0; font-size: clamp(40px, 7vw, 76px); line-height: 1; font-weight: 800; letter-spacing: .01em; }
+.cover h1 i { font-style: normal; color: var(--red); }
+.cover .sub { margin: 14px 0 0; font-size: 21px; font-weight: 700; }
+.cover p { max-width: 66ch; color: rgba(255,255,255,.86); }
+.cover a { color: #fff; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 999px; background: rgba(255,255,255,.12); color: #fff; font-size: 14px; font-weight: 700; text-decoration: none; }
+.chip:hover { background: var(--red); }
+section.part { margin-top: 56px; scroll-margin-top: 16px; }
+.part > header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; border-bottom: 3px solid var(--navy); padding-bottom: 8px; margin-bottom: 18px; }
+.part > header h2 { margin: 0; font-size: 30px; color: var(--navy); line-height: 1.2; }
+.part > header .weight { font-size: 14px; font-weight: 800; color: #fff; background: var(--red); padding: 2px 10px; border-radius: 999px; }
+.part > header .crit { width: 100%; font-size: 14px; color: var(--muted); }
+h3 { color: var(--navy); font-size: 22px; margin: 34px 0 10px; scroll-margin-top: 16px; }
+h4 { color: var(--navy); font-size: 18px; margin: 22px 0 6px; }
+p { margin: 8px 0 12px; }
+.lead { font-size: 19px; color: var(--navy); }
+.card { background: var(--card); border-radius: var(--radius-md); box-shadow: 0 2px 10px rgba(1,30,65,.07); padding: 18px 20px; margin: 14px 0; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+figure { margin: 12px 0; background: var(--card); border-radius: var(--radius-md); overflow: hidden; box-shadow: 0 2px 10px rgba(1,30,65,.07); }
+figure img { width: 100%; background: #E6EAF0; }
+figure.phone img { max-height: 620px; width: auto; margin: 0 auto; }
+figcaption { padding: 10px 14px 12px; font-size: 14px; color: var(--muted); }
+figcaption b { color: var(--navy); }
+.tag { display: inline-block; font-size: 12px; font-weight: 800; padding: 1px 8px; border-radius: 999px; vertical-align: middle; }
+.tag.before { background: #E9EBEF; color: #3F4654; }
+.tag.after { background: var(--ok-soft); color: var(--ok-ink); }
+.tag.find { background: var(--amber-soft); color: var(--amber-ink); }
+.tag.crit { background: var(--crit-soft); color: var(--crit-ink); }
+table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: var(--radius-sm); overflow: hidden; box-shadow: 0 1px 6px rgba(1,30,65,.06); margin: 12px 0; font-size: 15px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: var(--navy); color: #fff; font-weight: 700; font-size: 14px; }
+tr:last-child td { border-bottom: 0; }
+.scroll { overflow-x: auto; }
+.note { border-left: 4px solid var(--amber); background: var(--amber-soft); color: #4A3200; padding: 12px 16px; border-radius: 0 12px 12px 0; margin: 14px 0; font-size: 15px; }
+.note.ok { border-color: #2E8B57; background: var(--ok-soft); color: #173D27; }
+.note.red { border-color: var(--red); background: var(--crit-soft); color: #5C1218; }
+.quote { background: #fff; border-left: 4px solid var(--red); padding: 12px 16px; border-radius: 0 12px 12px 0; font-size: 16px; color: var(--navy); margin: 10px 0; white-space: pre-wrap; }
+.quote small { display: block; margin-top: 6px; color: var(--muted); font-size: 13px; }
+.timeline { position: relative; margin: 18px 0; padding-left: 28px; }
+.timeline::before { content: ""; position: absolute; left: 9px; top: 6px; bottom: 6px; width: 3px; background: linear-gradient(var(--line), var(--red)); border-radius: 3px; }
+.it { position: relative; margin-bottom: 28px; }
+.it::before { content: ""; position: absolute; left: -26px; top: 6px; width: 15px; height: 15px; border-radius: 50%; background: var(--navy); border: 3px solid var(--bg); }
+.it h4 { margin: 0 0 4px; font-size: 20px; }
+.it .when { font-size: 13px; font-weight: 800; color: var(--red-press); letter-spacing: .04em; text-transform: uppercase; }
+.it dl { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 4px 14px; margin: 10px 0; font-size: 15px; }
+.it dt { font-weight: 800; color: var(--navy); }
+.it dd { margin: 0; }
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin: 12px 0; }
+.sw { background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 1px 6px rgba(1,30,65,.08); font-size: 13px; }
+.sw i { display: block; height: 64px; }
+.sw div { padding: 8px 10px; }
+.sw b { display: block; color: var(--navy); font-size: 14px; }
+.sw code { font-size: 12px; }
+.type-row { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 14px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.type-row small { color: var(--muted); font-size: 13px; }
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; }
+.flow span { background: #fff; border: 2px solid var(--navy); color: var(--navy); border-radius: 12px; padding: 6px 12px; font-weight: 700; font-size: 14px; }
+.flow span.hot { background: var(--navy); color: #fff; }
+.flow em { font-style: normal; color: var(--red); font-weight: 800; }
+.dd { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 12px 0; }
+.dd > div { background: #fff; border-radius: 16px; padding: 14px; box-shadow: 0 1px 6px rgba(1,30,65,.08); }
+.dd .lab { font-weight: 800; font-size: 13px; margin-bottom: 10px; display: flex; gap: 6px; align-items: center; }
+.dd .yes .lab { color: var(--ok-ink); }
+.dd .no .lab { color: var(--crit-ink); }
+.dd .demo { background: #E9EEF3; border-radius: 12px; padding: 14px; min-height: 70px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.dd p { font-size: 14px; margin: 10px 0 0; color: var(--muted); }
+.b { font: 700 16px var(--font); border: 0; border-radius: 14px; padding: 12px 18px; cursor: default; }
+.b.red { background: var(--red); color: #fff; box-shadow: 0 6px 16px rgba(245,51,63,.3); }
+.b.navy { background: var(--navy); color: #fff; }
+.b.ghost { background: #fff; color: var(--navy); border: 1.5px solid var(--line); }
+.b.dis { background: #DDE2E8; color: #7A8492; }
+.pill { font: 700 13px var(--font); padding: 3px 10px; border-radius: 999px; }
+.pill.crit { background: var(--crit-soft); color: var(--crit-ink); }
+.pill.est { background: var(--amber-soft); color: var(--amber-ink); }
+.pill.ok { background: var(--ok-soft); color: var(--ok-ink); }
+.matrix td:first-child { font-weight: 700; color: var(--navy); }
+.matrix td:nth-child(2) { white-space: nowrap; }
+.kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 14px 0; }
+.kpi div { background: #fff; border-radius: 16px; padding: 14px 16px; box-shadow: 0 1px 6px rgba(1,30,65,.08); }
+.kpi b { display: block; font-size: 28px; color: var(--navy); line-height: 1.1; }
+.kpi span { font-size: 13px; color: var(--muted); }
+.heat { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: start; margin: 18px 0; }
+.menu-toggle { display: none; }
+@media (max-width: 980px) {
+    .layout { grid-template-columns: 1fr; }
+    nav.toc { position: static; height: auto; padding: 16px; display: none; }
+    nav.toc.open { display: block; }
+    .menu-toggle { display: block; position: sticky; top: 0; z-index: 5; margin: 0; width: 100%; padding: 12px 16px; border: 0; background: var(--navy); color: #fff; font: 700 15px var(--font); text-align: left; }
+    main { padding: 16px 16px 80px; }
+    section.part, h3 { scroll-margin-top: 60px; }
+    .grid3, .grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .heat { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+    .grid2, .grid3, .grid4, .dd { grid-template-columns: 1fr; }
+    .cover { padding: 28px 20px; }
+    .it dl { grid-template-columns: 1fr; }
+    .type-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<button class="menu-toggle" type="button" onclick="document.querySelector('nav.toc').classList.toggle('open')">☰ Contenido del documento</button>
+<div class="layout">
+<nav class="toc" aria-label="Contenido">
+    <b>Inicio</b>
+    <a href="#inicio">Portada y cómo leerlo</a>
+    <a href="#matriz">Mapa de la rúbrica</a>
+    <b>Componente proyectual</b>
+    <a href="#iteraciones">Iteraciones <span>15 %</span></a>
+    <b>Componente técnico</b>
+    <a href="#ia">Desarrollo con IA <span>10 %</span></a>
+    <a href="#threejs">Three.js <span>10 %</span></a>
+    <a href="#recursos">Producción de recursos <span>10 %</span></a>
+    <a href="#optimizacion">Optimización <span>5 %</span></a>
+    <b>Esqueleto</b>
+    <a href="#convenciones">Convenciones y metáforas <span>5 %</span></a>
+    <a href="#consistencia">Consistencia <span>5 %</span></a>
+    <a href="#componentes">Elementos de la interfaz <span>5 %</span></a>
+    <a href="#navegacion">Navegación <span>5 %</span></a>
+    <a href="#informacion">Diseño de información <span>5 %</span></a>
+    <b>Superficie</b>
+    <a href="#ocular">Seguimiento ocular <span>4 %</span></a>
+    <a href="#contraste">Contraste y uniformidad <span>3 %</span></a>
+    <a href="#reticula">Retícula y diagramación <span>4 %</span></a>
+    <a href="#coherencia">Consistencia interna <span>3 %</span></a>
+    <a href="#color">Color <span>3 %</span></a>
+    <a href="#tipografia">Tipografía <span>3 %</span></a>
+    <a href="#estilo">Guía de estilo <span>5 %</span></a>
+    <b>Anexos</b>
+    <a href="../bitacora/index.html">Bitácora completa</a>
+    <a href="../bitacora/evolucion.html">Evolución en imágenes</a>
+    <a href="../">Abrir NEXOS</a>
+</nav>
+<main>
+
+<!-- ============================================================ PORTADA -->
+<section id="inicio">
+    <div class="cover">
+        <h1>NE<i>X</i>OS</h1>
+        <p class="sub">Red de ayuda en tiempo real · Documento de proyecto</p>
+        <p>NEXOS conecta a quienes quieren donar con los puntos de acopio de Cali después de una emergencia. Una ciudad 3D muestra dónde se necesita ayuda: el donante baja de la ciudad a la zona, al barrio y al punto de acopio, y arma una cesta. El encargado del punto lleva su inventario, recibe los aportes y traslada lo que sobra a otros puntos.</p>
+        <p>Este documento reúne la evidencia de cada criterio de la rúbrica. Todas las capturas son de la app real: las de esta página se tomaron el 28 de octubre de 2026 sobre la versión publicada, y las del proceso salen de la bitácora (más de 1000 capturas tomadas durante el desarrollo).</p>
+        <p><b>Equipo:</b> Melissa Palacio Rincón, Juan Manuel Chamorro y Juan Camilo Bravo.</p>
+        <div class="chips">
+            <a class="chip" href="../">Abrir NEXOS ↗</a>
+            <a class="chip" href="../?ligero=1">Versión ligera ↗</a>
+            <a class="chip" href="../bitacora/index.html">Bitácora completa</a>
+            <a class="chip" href="../bitacora/evolucion.html">Evolución en imágenes</a>
+        </div>
+    </div>
+
+    <h3 id="matriz">Mapa de la rúbrica</h3>
+    <p>Cada fila lleva a la sección donde está su evidencia.</p>
+    <div class="scroll"><table class="matrix">
+        <tr><th>Criterio</th><th>Peso</th><th>Evidencia en este documento</th></tr>
+        <tr><td><a href="#iteraciones">Iteraciones del proyecto</a></td><td>15 %</td><td>Línea de tiempo de 8 versiones; cada una con qué cambió, por qué (hallazgo, heurística, restricción técnica o de contenido) y cómo llevó a la siguiente.</td></tr>
+        <tr><td><a href="#ia">Proceso asistido por IA</a></td><td>10 %</td><td>Herramientas, estructura de los prompts, insumos entregados, 3 prompts reales con su resultado y 3 malentendidos corregidos.</td></tr>
+        <tr><td><a href="#threejs">Dominio de Three.js</a></td><td>10 %</td><td>Escena, cámara, renderizador, luces, sombras, materiales, geometrías, carga, animación, controles, pantalla completa, niebla y partículas, con el código real.</td></tr>
+        <tr><td><a href="#recursos">Producción de recursos</a></td><td>10 %</td><td>Proceso por tipo de recurso (referencia → modelado → material → exportación) y tabla de origen y licencia.</td></tr>
+        <tr><td><a href="#optimizacion">Plataformas objetivo</a></td><td>5 %</td><td>Plataformas, decisiones y métricas de peso antes y después; versión ligera; método de medición de FPS.</td></tr>
+        <tr><td><a href="#convenciones">Convenciones y metáforas</a></td><td>5 %</td><td>Referente real ↔ solución en la interfaz, y por qué el público la reconoce.</td></tr>
+        <tr><td><a href="#consistencia">Consistencia</a></td><td>5 %</td><td>Sistema acción ↔ señal visual, con capturas.</td></tr>
+        <tr><td><a href="#componentes">Elementos de la interfaz</a></td><td>5 %</td><td>Inventario de componentes con función, estados y ubicación.</td></tr>
+        <tr><td><a href="#navegacion">Navegación</a></td><td>5 %</td><td>Mapa de la experiencia de los dos roles, navegación global y local, cámara 3D y orientación.</td></tr>
+        <tr><td><a href="#informacion">Diseño de información</a></td><td>5 %</td><td>Jerarquía, agrupación, dosificación, iconografía y procedencia del contenido.</td></tr>
+        <tr><td><a href="#ocular">Seguimiento ocular</a></td><td>4 %</td><td>4 mapas de calor de la prueba del 22 de octubre, lectura de cada uno y el ajuste que se hizo.</td></tr>
+        <tr><td><a href="#contraste">Contraste y uniformidad</a></td><td>3 %</td><td>Usos del contraste con ejemplos y verificación WCAG de 16 combinaciones de texto.</td></tr>
+        <tr><td><a href="#reticula">Retícula y diagramación</a></td><td>4 %</td><td>Retícula medida y superpuesta en computador y celular, y su relación con la escena 3D.</td></tr>
+        <tr><td><a href="#coherencia">Consistencia interna</a></td><td>3 %</td><td>Comparación de pantallas y escenas: estilo 3D, interfaz, tono del texto y animación.</td></tr>
+        <tr><td><a href="#color">Color</a></td><td>3 %</td><td>Paleta en HEX con el rol de cada color, en la interfaz y en la escena 3D.</td></tr>
+        <tr><td><a href="#tipografia">Tipografía</a></td><td>3 %</td><td>Familia, escala, pesos y usos, y legibilidad en computador y celular.</td></tr>
+        <tr><td><a href="#estilo">Guía de estilo</a></td><td>5 %</td><td>Compendio de tokens, componentes, estilo 3D, animación y ejemplos de uso correcto e incorrecto.</td></tr>
+    </table></div>
+</section>
+
+<!-- ============================================================ ITERACIONES -->
+<section class="part" id="iteraciones">
+    <header><h2>Iteraciones del proyecto</h2><span class="weight">15 %</span><span class="crit">Planeación · Para cada versión: qué cambió, por qué y cómo esa decisión llevó a la siguiente.</span></header>
+    <p class="lead">NEXOS pasó por 8 versiones entre el 30 de septiembre y el 28 de octubre de 2026 (116 versiones guardadas en GitHub). Las razones de cada cambio vienen de cuatro fuentes: la prueba de usabilidad con eye tracking, heurísticas de usabilidad, restricciones técnicas y restricciones de contenido.</p>
+    <p>La secuencia completa, apartado por apartado, está en <a href="../bitacora/evolucion.html">Evolución en imágenes</a> (134 capturas).</p>
+
+    <div class="timeline">
+        <div class="it">
+            <span class="when">V1 · 30 de septiembre</span>
+            <h4>Primer prototipo: la ciudad como interfaz</h4>
+            <div class="grid3">
+                <figure><img src="../bitacora/img/tuya-0001.webp" alt="Keyframe de referencia del barrio" loading="lazy"><figcaption><b>Keyframe</b> que el equipo entregó como referencia visual.</figcaption></figure>
+                <figure><img src="../bitacora/img/claude-0015.jpg" alt="Primera ciudad 3D" loading="lazy"><figcaption><b>Resultado:</b> la primera Cali 3D, con cinco zonas.</figcaption></figure>
+                <figure><img src="../bitacora/img/claude-0037.jpg" alt="Primer panel de suministros" loading="lazy"><figcaption><b>Resultado:</b> el primer panel de suministros, de vidrio.</figcaption></figure>
+            </div>
+            <dl>
+                <dt>Qué cambió</dt><dd>Se construyó el recorrido completo: bajada entre nubes, ciudad con cinco zonas, barrio, guía que camina hasta la casa, panel de suministros, cesta y confirmación.</dd>
+                <dt>Por qué</dt><dd><span class="tag find">Contenido</span> El brief pedía que la ciudad 3D fuera la interfaz principal ("no un tablero lleno de gráficos") y que un adulto mayor pudiera usarla sin ayuda.</dd>
+                <dt>Llevó a</dt><dd>Al recorrerlo aparecieron errores de escala y de lectura: el guía tapaba la ciudad y los íconos no seguían a la cámara. De ahí salió V2.</dd>
+            </dl>
+        </div>
+
+        <div class="it">
+            <span class="when">V2 · 1 y 2 de octubre</span>
+            <h4>Corregir escala, íconos y datos</h4>
+            <div class="grid3">
+                <figure><img src="../bitacora/img/tuya-0134.webp" alt="Captura anotada del guía demasiado grande" loading="lazy"><figcaption><b>Hallazgo del equipo:</b> el guía demasiado grande, con la cabeza cortada.</figcaption></figure>
+                <figure><img src="../bitacora/img/claude-0159.jpg" alt="Ciudad corregida" loading="lazy"><figcaption><b>Resultado:</b> ciudad con íconos de necesidad junto a cada zona.</figcaption></figure>
+                <figure><img src="../bitacora/img/claude-0122.jpg" alt="Primer punto de acopio 3D" loading="lazy"><figcaption><b>Resultado:</b> primer punto de acopio en 3D, con la mesa donde se dejan las cajas.</figcaption></figure>
+            </div>
+            <dl>
+                <dt>Qué cambió</dt><dd>El guía se redujo. Los íconos se proyectan cada cuadro con la cámara. Cada insumo quedó en una sola categoría y su "+" se limita a lo que el barrio necesita. Las cajas se van acumulando sobre la mesa a medida que llegan.</dd>
+                <dt>Por qué</dt><dd><span class="tag find">Heurística</span> Visibilidad del estado del sistema y prevención de errores: un mismo insumo mostraba cantidades distintas en dos pestañas. <span class="tag find">Prueba interna</span> Recorrido del equipo con capturas anotadas.</dd>
+                <dt>Llevó a</dt><dd>Con el flujo estable, el problema pasó a ser la legibilidad: el vidrio decorativo de los paneles competía con la escena 3D.</dd>
+            </dl>
+        </div>
+
+        <div class="it">
+            <span class="when">V3 · 3 de octubre</span>
+            <h4>Rediseño "Navy inmersivo"</h4>
+            <div class="grid2">
+                <figure><img src="../bitacora/img/claude-0188.jpg" alt="Portada navy" loading="lazy"><figcaption><b>Resultado:</b> portada con los dos roles como botones grandes.</figcaption></figure>
+                <figure><img src="../bitacora/img/claude-0192.jpg" alt="Mapa con panel navy" loading="lazy"><figcaption><b>Resultado:</b> mapa con la tarjeta de zona azul oscura.</figcaption></figure>
+            </div>
+            <dl>
+                <dt>Qué cambió</dt><dd>Los paneles pasaron de vidrio con brillo y halo a una superficie casi sólida con sombra azul marino. Todo lo tocable responde al presionar, y el efecto al pasar el mouse solo existe donde hay mouse. Las necesidades se escriben en palabras ("Alta", "Media"), no en porcentajes.</dd>
+                <dt>Por qué</dt><dd><span class="tag find">Heurística</span> Diseño estético y minimalista, y legibilidad sobre un fondo 3D en movimiento. <span class="tag find">Contenido</span> Un porcentaje exige interpretar; una palabra no.</dd>
+                <dt>Llevó a</dt><dd>La interfaz ya era legible, pero los datos eran inventados y cada navegador tenía los suyos. V4 los volvió reales.</dd>
+            </dl>
+        </div>
+
+        <div class="it">
+            <span class="when">V4 · 7 y 8 de octubre</span>
+            <h4>Modelos propios, inventario real y clima de Cali</h4>
+            <div class="grid3">
+                <figure><img src="../bitacora/img/tuya-0262.webp" alt="Captura anotada del inventario viejo" loading="lazy"><figcaption><b>Hallazgo:</b> "todo debe caber en la parte de abajo, no quiero huecos".</figcaption></figure>
+                <figure><img src="../bitacora/img/claude-0275.jpg" alt="Inventario con punto de acopio 3D" loading="lazy"><figcaption><b>Resultado:</b> estantería 3D en vista frontal, con el inventario en vivo encima del tablero.</figcaption></figure>
+                <figure><img src="../bitacora/img/claude-0371.jpg" alt="Mapa con zona activa" loading="lazy"><figcaption><b>Resultado:</b> la zona del punto resaltada y las demás en sombra.</figcaption></figure>
+            </div>
+            <dl>
+                <dt>Qué cambió</dt><dd>Entraron las casas modeladas por el equipo (Blender + Substance). El inventario se lee y se escribe en una hoja de Google, y el punto de acopio 3D muestra las cajas que de verdad hay. La luz, el cielo y el clima siguen la hora real de Cali.</dd>
+                <dt>Por qué</dt><dd><span class="tag find">Restricción técnica</span> Dos voluntarios en dos dispositivos deben ver los mismos números, y el navegador no puede guardar credenciales de Google; por eso se usa Apps Script. <span class="tag find">Contenido</span> El encargado del punto solo debe ver su zona.</dd>
+                <dt>Llevó a</dt><dd>Las casas con texturas pesaban hasta 6,5 MB cada una y el mapa se volvió lento en celular.</dd>
+            </dl>
+        </div>
+
+        <div class="it">
+            <span class="when">V5 · 10 y 11 de octubre</span>
+            <h4>Rendimiento, versión ligera y pestañas separadas</h4>
+            <div class="grid3">
+                <figure><img src="../bitacora/img/claude-0671.jpg" alt="Mapa optimizado" loading="lazy"><figcaption><b>Resultado:</b> mapa con edificios propios y carga más liviana.</figcaption></figure>
+                <figure><img src="../bitacora/img/tuya-0683.png" alt="Captura del panel apretado" loading="lazy"><figcaption><b>Hallazgo:</b> el panel del punto "se ve demasiado apretado".</figcaption></figure>
+                <figure><img src="../bitacora/img/claude-0687.jpg" alt="Pestañas Inventario y Recibir" loading="lazy"><figcaption><b>Resultado:</b> pestañas "Inventario" y "Recibir".</figcaption></figure>
+            </div>
+            <dl>
+                <dt>Qué cambió</dt><dd>Las tres casas más pesadas bajaron de 16,2 MB a 3,6 MB. La ciudad dibuja su sombra una sola vez, la resolución se adapta al equipo y se añadió una versión ligera sin 3D. El panel del punto se dividió en dos pestañas. Se aplicaron heurísticas de deshacer, confirmar, ayuda y estados.</dd>
+                <dt>Por qué</dt><dd><span class="tag find">Restricción técnica</span> Celulares y equipos sin tarjeta gráfica. <span class="tag find">Heurística</span> Control y libertad del usuario (deshacer), y ayuda y documentación (botón "?").</dd>
+                <dt>Llevó a</dt><dd>En celular, los íconos sobre cada zona tapaban la ciudad y eran difíciles de tocar.</dd>
+            </dl>
+        </div>
+
+        <div class="it">
+            <span class="when">V6 · 12 y 13 de octubre</span>
+            <h4>Celular, zonas delimitadas y carga continua</h4>
+            <div class="grid3">
+                <figure><img src="../bitacora/img/tuya-0798.png" alt="Pedido de lista de zonas en celular" loading="lazy"><figcaption><b>Hallazgo:</b> los íconos sobre cada zona "son invasivos, no se aprecia la ciudad".</figcaption></figure>
+                <figure><img src="../bitacora/img/claude-0801.jpg" alt="Zonas delimitadas" loading="lazy"><figcaption><b>Resultado:</b> zonas delimitadas con su color.</figcaption></figure>
+                <figure><img src="../bitacora/img/claude-0842.jpg" alt="Mapa con modelos nuevos" loading="lazy"><figcaption><b>Resultado:</b> mapa con modelos nuevos y terreno hasta el horizonte.</figcaption></figure>
+            </div>
+            <dl>
+                <dt>Qué cambió</dt><dd>En celular aparece una lista de zonas en lugar de los marcadores. Cada zona tiene borde y color propios. La bajada entre nubes sigue mientras el barrio carga, sin detenerse, y la pantalla de carga muestra al guía.</dd>
+                <dt>Por qué</dt><dd><span class="tag find">Heurística</span> Reconocer antes que recordar, y área táctil mínima de 44–56 px. <span class="tag find">Restricción técnica</span> La carga en red lenta no debe sentirse como un error.</dd>
+                <dt>Llevó a</dt><dd>Con el prototipo completo en las dos plataformas, el equipo hizo la prueba de usabilidad con eye tracking.</dd>
+            </dl>
+        </div>
+
+        <div class="it">
+            <span class="when">V7 · 22 de octubre</span>
+            <h4>Prueba de usabilidad y eye tracking</h4>
+            <div class="grid4">
+                <figure><img src="img/heat-1-mapa.jpg" alt="Mapa de calor de la ciudad" loading="lazy"><figcaption>Mapa</figcaption></figure>
+                <figure><img src="img/heat-2-donar.jpg" alt="Mapa de calor de donar" loading="lazy"><figcaption>Donar</figcaption></figure>
+                <figure><img src="img/heat-3-inventario.jpg" alt="Mapa de calor del inventario" loading="lazy"><figcaption>Inventario</figcaption></figure>
+                <figure><img src="img/heat-4-recibir.jpg" alt="Mapa de calor de recibir" loading="lazy"><figcaption>Recibir</figcaption></figure>
+            </div>
+            <dl>
+                <dt>Método</dt><dd>ISO 9241-11 (efectividad, eficiencia y satisfacción), pensamiento en voz alta y eye tracking. Participante de 19 años. Tres tareas: donar a la zona norte y agendar la entrega más cercana, dejar en cero el inventario del punto centro, y recibir la donación con su código en el punto norte.</dd>
+                <dt>Hallazgos</dt><dd>Completó las tres tareas sin ayuda, y donar le resultó intuitivo. <span class="tag crit">Prioridad alta</span> Mejorar la orientación y la organización visual del inventario. <span class="tag find">Prioridad media</span> Dar más protagonismo a las demás categorías de donación: no vio "Medicinas" ni "Aseo". También sugirió un botón para dejar un insumo en cero.</dd>
+                <dt>Llevó a</dt><dd>V8 responde a cada hallazgo. La lectura de cada mapa de calor está en <a href="#ocular">Seguimiento ocular</a>.</dd>
+            </dl>
+        </div>
+
+        <div class="it">
+            <span class="when">V8 · 27 y 28 de octubre</span>
+            <h4>Respuesta a la prueba y unificación visual</h4>
+            <div class="grid3">
+                <figure><img src="img/punto-menu.jpg" alt="Menú del punto con tres opciones" loading="lazy"><figcaption><b>Orientación:</b> el punto abre con tres opciones claras.</figcaption></figure>
+                <figure><img src="img/donar.jpg" alt="Categorías en fichas" loading="lazy"><figcaption><b>Categorías:</b> fichas grandes con ícono de color y punto de urgencia.</figcaption></figure>
+                <figure><img src="img/inventario.jpg" alt="Inventario con filtros" loading="lazy"><figcaption><b>Inventario:</b> filtros con conteo y estado en cada tarjeta.</figcaption></figure>
+            </div>
+            <dl>
+                <dt>Qué cambió</dt><dd>El punto de acopio abre con un menú de tres acciones: gestionar inventario, recibir donaciones y enviar a otros puntos. Las categorías de donación son fichas grandes. El inventario tiene filtros (Todos, Críticos, Estables, Abastecidos). Las franjas de entrega se calculan con la hora real de Cali ("Hoy, antes del cierre"). Hay una portada nueva con el render de la ciudad, y la versión ligera tiene el mismo diseño.</dd>
+                <dt>Por qué</dt><dd><span class="tag find">Hallazgo de la prueba</span> Orientación del inventario y protagonismo de las categorías. <span class="tag find">Hallazgo del equipo</span> La entrega más cercana salía para el día siguiente aunque el punto seguía abierto.</dd>
+                <dt>Pendiente</dt><dd>El botón para dejar un insumo en cero no se implementó. Hoy se llega a cero con "− caja", que resta una caja completa por toque, o escribiendo el número en el campo.</dd>
+            </dl>
+        </div>
+    </div>
+</section>
+
+<!-- ============================================================ IA -->
+<section class="part" id="ia">
+    <header><h2>Proceso de desarrollo asistido por IA</h2><span class="weight">10 %</span><span class="crit">Implementación con IA · Herramientas, estructura de los prompts, insumos, ejemplos reales y corrección de malentendidos.</span></header>
+
+    <h3>Herramientas</h3>
+    <div class="scroll"><table>
+        <tr><th>Herramienta</th><th>Para qué se usó</th></tr>
+        <tr><td><b>Claude Code</b> (modelo Claude Opus, en la app de escritorio)</td><td>Escribir y modificar todo el código (Three.js, interfaz, versión ligera, Apps Script de la hoja). También los scripts de Blender que convierten los modelos y la verificación en el navegador: después de cada cambio, Claude abría la app, la recorría y tomaba capturas (1003 en total).</td></tr>
+        <tr><td><b>IA generativa de imágenes</b></td><td>Keyframes de referencia del ambiente buscado (barrio, panel de suministros, mapa), entregados con el primer prompt.</td></tr>
+        <tr><td><b>Blender 5 y Substance Painter</b> (sin IA)</td><td>Modelado, rig, UV, bakes y texturas, hechos por el equipo.</td></tr>
+        <tr><td><b>GitHub y GitHub Pages</b></td><td>Control de versiones (116 versiones) y publicación automática en cada cambio.</td></tr>
+    </table></div>
+
+    <h3>Cómo se estructuraron los prompts</h3>
+    <p>El proyecto empezó con un prompt largo y estructurado, y siguió con prompts cortos de iteración que casi siempre llevaban una captura anotada.</p>
+    <div class="grid2">
+        <div class="card">
+            <h4>1. Prompt base (30 de septiembre)</h4>
+            <p>Escrito en inglés, con secciones separadas:</p>
+            <ul>
+                <li><b>Rol y producto:</b> "You are going to design and implement an interactive web experience called NEXOS".</li>
+                <li><b>Contexto:</b> plataforma humanitaria para emergencias en Cali.</li>
+                <li><b>Tono:</b> calmado, confiable, accesible, guiado y humano, "without becoming playful or childish".</li>
+                <li><b>Restricciones:</b> "This is NOT a videogame"; "Do not redesign this as a traditional dashboard"; "The 3D environment is the main interface".</li>
+                <li><b>Usuario:</b> un adulto mayor debe poder usarlo sin ayuda.</li>
+                <li><b>Formato de salida:</b> escenas en orden (ciudad → zona → barrio → punto → cesta) y su comportamiento.</li>
+            </ul>
+        </div>
+        <div class="card">
+            <h4>2. Prompts de iteración</h4>
+            <p>En español, con una estructura repetida:</p>
+            <ul>
+                <li><b>Dónde:</b> "en la parte del punto de acopio…", "en la versión ligera…".</li>
+                <li><b>Qué está mal y por qué:</b> "se ve demasiado apretado", "no se aprecia la ciudad".</li>
+                <li><b>Qué se espera:</b> "que una cosa sea actualizar inventario y otra pestaña recibir".</li>
+                <li><b>Evidencia visual:</b> una captura con círculos o marcas en rojo.</li>
+                <li><b>Alcance:</b> "haz lo mismo con…" para extender una solución aprobada a otra pantalla, lo que mantiene la consistencia.</li>
+            </ul>
+        </div>
+    </div>
+
+    <h3>Insumos que se le entregaron a la IA</h3>
+    <div class="grid4">
+        <figure><img src="../bitacora/img/tuya-0003.webp" alt="Keyframe del mapa" loading="lazy"><figcaption><b>Keyframes</b> del ambiente (3 imágenes).</figcaption></figure>
+        <figure><img src="../bitacora/img/tuya-0137.webp" alt="Captura anotada en rojo" loading="lazy"><figcaption><b>Capturas anotadas</b> con lo que había que cambiar.</figcaption></figure>
+        <figure><img src="../bitacora/img/tuya-0530.png" alt="Modelo con zonas marcadas para huesos" loading="lazy"><figcaption><b>Modelos de Blender</b> con las zonas del rig marcadas.</figcaption></figure>
+        <figure><img src="../bitacora/img/tuya-0764.png" alt="Mapa de zonas anotado" loading="lazy"><figcaption><b>Mapa de Cali anotado</b> para ubicar estadio, torre y zonas.</figcaption></figure>
+        <figure><img src="../bitacora/img/tuya-0579.png" alt="Referencia de la cara" loading="lazy"><figcaption><b>Referencia de expresiones</b> para la cara del guía.</figcaption></figure>
+        <figure><img src="../bitacora/img/tuya-0647.webp" alt="Referencia de NPC" loading="lazy"><figcaption><b>Referencia de personajes</b> para los vecinos.</figcaption></figure>
+        <figure><img src="../bitacora/img/tuya-0293.png" alt="Hoja de cálculo" loading="lazy"><figcaption><b>Hoja de cálculo</b> del inventario a organizar.</figcaption></figure>
+        <figure><img src="../bitacora/img/tuya-1090.png" alt="Referencia de estilo de categorías" loading="lazy"><figcaption><b>Referencias de estilo</b> de interfaz para las categorías.</figcaption></figure>
+    </div>
+    <p>También se le entregaron los archivos GLB y FBX con sus texturas de Substance, un mapa de vías de OpenStreetMap en SVG, la zonificación del MIO y el informe de usabilidad.</p>
+
+    <h3>Tres prompts reales y su resultado</h3>
+
+    <h4>Ejemplo 1 · Dividir las acciones del punto de acopio (11 de octubre, mensaje #109)</h4>
+    <div class="quote">Necesito que en la parte del punto de acopio, dividamos las acciones, que una cosa sea actualizar inventario y otra pestaña que sea recibir la donacion porque ahora tenemos todo junto y se ve demasiado apretado todo<small>Prompt exacto, con una captura del panel adjunta.</small></div>
+    <div class="grid2">
+        <figure><img src="../bitacora/img/tuya-0683.png" alt="Antes: panel apretado" loading="lazy"><figcaption><span class="tag before">Antes</span> Inventario y recepción en el mismo panel.</figcaption></figure>
+        <figure><img src="../bitacora/img/claude-0687.jpg" alt="Después: pestañas" loading="lazy"><figcaption><span class="tag after">Resultado</span> Dos pestañas, con un contador rojo de pendientes en "Recibir".</figcaption></figure>
+    </div>
+
+    <h4>Ejemplo 2 · Franjas de entrega reales (28 de octubre, mensaje #179)</h4>
+    <div class="quote">necesito que en la parte de donaciones, calcules de verdad las franjas horarias en las que la persona ingresa, si hay forma de por ejemplo enviar hoy antes de que cierren o cosas asi, se pueda, ya que a veces me meto en la mañana y lo mas cercano me dice que es al otro dia en la mañana, sabiendo que puedo ir en la tarde<small>Prompt exacto.</small></div>
+    <p><b>Resultado:</b> <code>deliveryWindows(point, now)</code> en <code>src/data/delivery.js</code> calcula las franjas con la hora de Cali (America/Bogota) y el horario de apertura y cierre de cada punto. Deja 30 minutos para llegar y exige al menos 30 minutos de estadía. Ofrece "Hoy, esta mañana", "Hoy en la tarde" o "Hoy, antes del cierre" mientras alcance, y si no, el día siguiente.</p>
+    <figure><img src="../bitacora/img/claude-0975.jpg" alt="Datos de entrega con franjas" loading="lazy"><figcaption><span class="tag after">Resultado</span> Datos para la entrega con las franjas de hoy.</figcaption></figure>
+
+    <h4>Ejemplo 3 · Categorías inspiradas en una referencia (28 de octubre, mensaje #205)</h4>
+    <div class="quote">me gusta este estilo en la parte de donación para las categorias, necesito que tomes inspiración y reformes<small>Prompt exacto, con tres imágenes de referencia.</small></div>
+    <div class="grid3">
+        <figure><img src="../bitacora/img/tuya-1090.png" alt="Referencia" loading="lazy"><figcaption><span class="tag before">Referencia</span></figcaption></figure>
+        <figure><img src="img/heat-2-donar.jpg" alt="Antes" loading="lazy"><figcaption><span class="tag before">Antes</span> Íconos pequeños sin fondo.</figcaption></figure>
+        <figure><img src="img/donar-vacio.jpg" alt="Después" loading="lazy"><figcaption><span class="tag after">Resultado</span> Fichas de 111 px, con el ícono en un círculo de su color.</figcaption></figure>
+    </div>
+    <p>Este prompt coincidió con el hallazgo de prioridad media de la prueba: dar más protagonismo a las categorías.</p>
+
+    <h3>Malentendidos de la IA y cómo se corrigieron</h3>
+    <div class="scroll"><table>
+        <tr><th>Qué pasó</th><th>Cómo se notó</th><th>Cómo se corrigió</th></tr>
+        <tr><td><b>Rig del guía.</b> La IA lo construyó con huesos que deformaban la malla: los brazos se doblaban como una mano y aparecían líneas.</td><td>Capturas de Blender del equipo (#57, #63): "nooo todo esta completamente mal, deja de lado ese rig y empieza de nuevo, con el modelo que te di".</td><td>Se reformuló la restricción: "un rig muy simple… brazos pegados al cuerpo que se muevan como una pieza". Se cambió a un rig de títere, donde cada pieza es rígida y cuelga de una articulación (<code>tools/exportar_guia.py</code>), sin tocar la malla.</td></tr>
+        <tr><td><b>Texturas giradas.</b> Los bakes de Substance se veían rotados en la app.</td><td>"es como si me hubieses dado mal los modelos, porque yo hice los bakes pero ahi se ve como si estuviese girada la textura" (#83).</td><td>Se identificó que las UV del archivo entregado no coincidían con las del bake. El equipo reexportó los GLB con sus UV y el script <code>fbx_to_glb.py</code> pega cada textura a su material por nombre.</td></tr>
+        <tr><td><b>Calles sobre las casas.</b> Las vías abstraídas de OpenStreetMap atravesaban parques y manzanas.</td><td>Captura anotada (#49): "las carreteras no pasen por encima ni de parques, ni de casas".</td><td>Las manzanas se generan alrededor de las vías, y no al revés.</td></tr>
+    </table></div>
+    <div class="note ok">El método de verificación también evitó errores. Cada cambio se probaba en el navegador antes de publicarse, y nunca se escribió en la hoja de Google real durante las pruebas: se usó una hoja local (<code>?hoja=local</code>). La conversación completa, con los prompts exactos y las capturas, está en la <a href="../bitacora/index.html">bitácora</a>.</div>
+</section>
+
+<!-- ============================================================ THREE.JS -->
+<section class="part" id="threejs">
+    <header><h2>Dominio de la librería Three.js</h2><span class="weight">10 %</span><span class="crit">Componentes principales y la estrategia de cada uno en el código. Three.js r174, GSAP 3 y Vite, sin framework.</span></header>
+    <p>La app tiene un solo renderizador (<code>src/three/Stage.js</code>). La ciudad, el barrio y el punto de acopio son grupos que entran y salen de la misma escena, y una cámara con su controlador (<code>CameraRig.js</code>) viaja entre ellos.</p>
+    <div class="scroll"><table>
+        <tr><th>Componente</th><th>Estrategia aplicada</th><th>Archivo</th></tr>
+        <tr><td><b>Escena</b></td><td>Una <code>THREE.Scene</code> con niebla lineal (<code>Fog</code>) que se acerca con la lluvia, y un cielo propio: una esfera con <code>ShaderMaterial</code> que mezcla un color de cenit y uno de horizonte, con brillo del sol y estrellas.</td><td>Stage.js</td></tr>
+        <tr><td><b>Cámara</b></td><td><code>PerspectiveCamera(38°)</code>. Un ángulo cerrado aplana la perspectiva y hace que la ciudad se lea como un mapa. Los planos cercano y lejano cambian por lugar (<code>setClip</code>) para no perder precisión de profundidad. <code>viewOffset</code> corre el centro de la imagen para que lo importante no quede detrás de un panel.</td><td>Stage.js, CameraRig.js</td></tr>
+        <tr><td><b>Renderizador</b></td><td><code>WebGLRenderer</code> en sRGB con <code>NeutralToneMapping</code>. La resolución se limita a 1,5× y baja sola si el equipo no alcanza 28 cuadros por segundo. La escena se dibuja en un objetivo con multisample para que el antialias no se pague dos veces.</td><td>Stage.js</td></tr>
+        <tr><td><b>Luces</b></td><td><code>HemisphereLight</code> (cielo frío y rebote cálido del suelo), un sol <code>DirectionalLight</code> cálido que proyecta sombras y una luz de relleno opuesta. La luz sigue la hora real de Cali y el clima, con transiciones de GSAP (<code>applyMood</code>).</td><td>Stage.js, caliSky.js</td></tr>
+        <tr><td><b>Sombras</b></td><td>Mapa de 2048 px con <code>PCFShadowMap</code> y bordes suaves. La cámara de sombra se ajusta al área visible (<code>setShadowFrame</code>). En la ciudad la sombra se dibuja una vez y se conserva (<code>autoUpdate = false</code>); en el barrio se dibuja cada cuadro porque hay cosas que se mueven.</td><td>Stage.js</td></tr>
+        <tr><td><b>Materiales</b></td><td><code>MeshStandardMaterial</code> mate (<code>roughness</code> 1 en árboles), con reflejos suaves de un entorno <code>PMREMGenerator</code> + <code>RoomEnvironment</code> al 32 %. <code>stylize()</code> da a los modelos luz por bandas (dos o tres tonos). <code>MeshBasicMaterial</code> se usa para lo que no recibe luz.</td><td>stylize.js, materials.js</td></tr>
+        <tr><td><b>Geometrías</b></td><td>Primitivas (<code>BoxGeometry</code>, <code>CylinderGeometry</code>, <code>RoundedBoxGeometry</code>, <code>ExtrudeGeometry</code> desde <code>Shape</code>) para el mapa y los insumos. <code>InstancedMesh</code> (17 usos) dibuja miles de árboles y casas del mapa en una sola llamada.</td><td>CityOverview.js, procedural/</td></tr>
+        <tr><td><b>Carga de modelos</b></td><td><code>GLTFLoader</code> con <code>DRACOLoader</code> y <code>MeshoptDecoder</code> para GLB comprimidos. Si un modelo falla, se usa el procedural de respaldo.</td><td>AssetLoader.js</td></tr>
+        <tr><td><b>Animación</b></td><td><code>AnimationMixer</code> para las acciones del guía (<code>idle</code>, <code>walk</code>) y GSAP para la cámara y los gestos. GSAP corre en el mismo reloj que el renderizador (<code>gsap.ticker</code>), así que la interfaz y el 3D no se desfasan.</td><td>GuideCharacter.js, Stage.js</td></tr>
+        <tr><td><b>Controles</b></td><td><code>OrbitControls</code> limitado en la ciudad: ángulos, distancia mínima y máxima, y amortiguación. <code>Raycaster</code> para tocar zonas, casas y el puesto. La rueda solo hace zoom cuando el puntero está sobre el mapa, y el pellizco usa los mismos límites.</td><td>App.js</td></tr>
+        <tr><td><b>Pantalla completa y tamaño</b></td><td>El lienzo ocupa toda la ventana y se recalcula con <code>resize</code> y <code>ResizeObserver</code> (aspecto, matriz de proyección y resolución). No hay un botón de la API Fullscreen: la app ya ocupa la ventana completa.</td><td>Stage.js</td></tr>
+        <tr><td><b>Partículas y efectos</b></td><td><code>Points</code> para la lluvia y las estrellas, <code>Sprite</code> para halos, <code>CanvasTexture</code> para los íconos sobre el mapa, y un destello de rayo en el posproceso.</td><td>CloudLayer.js, Stage.js</td></tr>
+    </table></div>
+
+    <h4>Código real: luces y sombras</h4>
+<pre><code>this.hemi = new THREE.HemisphereLight('#E6EFF7', '#D9BC94', 1.25)   // cielo frío, rebote cálido
+this.sun = new THREE.DirectionalLight('#FFE2BC', 3.0)                // sol de media mañana
+this.sun.castShadow = true
+this.sun.shadow.mapSize.set(2048, 2048)
+this.sun.shadow.radius = 4                                            // bordes suaves
+this.fill = new THREE.DirectionalLight('#FFEFDC', 0.45)              // relleno: nada queda negro</code></pre>
+
+    <h4>Código real: órbita limitada sobre el mapa</h4>
+<pre><code>const o = (this.orbit = new OrbitControls(this.stage.camera, this.stage.canvas))
+o.enableDamping = true
+o.minAzimuthAngle = sph.theta - 0.6      // se puede girar hacia los cerros del oeste…
+o.maxAzimuthAngle = sph.theta + 0.9
+o.maxPolarAngle = Math.min(1.36, sph.phi + 0.5)   // …pero nunca ver debajo del suelo
+o.minDistance = sph.radius * 0.6
+o.maxDistance = sph.radius * 1.2</code></pre>
+
+    <h4>Código real: sombras fijas en la ciudad</h4>
+<pre><code>setShadowsLive(live) {
+    this.renderer.shadowMap.autoUpdate = live   // ciudad: false · barrio: true
+    this.renderer.shadowMap.needsUpdate = true
+}</code></pre>
+</section>
+
+<!-- ============================================================ RECURSOS -->
+<section class="part" id="recursos">
+    <header><h2>Producción de recursos</h2><span class="weight">10 %</span><span class="crit">Creación de assets · Proceso por tipo de recurso, herramientas, decisiones, y origen y licencia de lo que no se hizo desde cero.</span></header>
+
+    <h3>Casas (Blender → Substance Painter → GLB)</h3>
+    <div class="grid4">
+        <figure><img src="../bitacora/img/tuya-0001.webp" alt="Referencia" loading="lazy"><figcaption><b>1. Referencia:</b> keyframe con casas caleñas de teja.</figcaption></figure>
+        <figure><img src="img/tex-techo-basecolor.png" alt="BaseColor del techo" loading="lazy"><figcaption><b>2. Material:</b> BaseColor del techo, pintado en Substance.</figcaption></figure>
+        <figure><img src="img/tex-techo-normal.png" alt="Normal del techo" loading="lazy"><figcaption><b>3. Mapa normal</b> del techo, del bake.</figcaption></figure>
+        <figure><img src="img/barrio.jpg" alt="Casas en el barrio" loading="lazy"><figcaption><b>4. En la app:</b> casas de distintos estratos en el barrio.</figcaption></figure>
+    </div>
+    <ol>
+        <li><b>Modelado</b> en Blender por el equipo: 7 casas (teja, techo ondulado, dos pisos y estratos 2 a 5). La puerta de cada una se mide para que tenga 2,1 m en la escena.</li>
+        <li><b>UV, bake y texturizado</b> en Substance Painter. Se exportan BaseColor, Normal y Roughness por material. Se descartan Height (glTF no lo usa), y Metallic y Emissive cuando están totalmente en negro.</li>
+        <li><b>Conversión</b> con <code>tools/fbx_to_glb.py</code>, un script de Blender que se ejecuta sin abrir la interfaz. Pega cada textura a su material por nombre, une las piezas que comparten material y escribe el GLB con las texturas adentro.</li>
+        <li><b>Registro</b> en <code>src/data/assets.js</code>: el lado de la puerta, la escala y el nombre del material de las ventanas, para que se enciendan de noche.</li>
+        <li><b>Versión para el mapa:</b> <code>tools/casas_mapa.py</code> genera una copia más liviana de cada casa para verla desde lejos (de 152 KB a 135 KB en la casa de dos pisos, por ejemplo).</li>
+    </ol>
+
+    <h3>El guía (personaje)</h3>
+    <div class="grid4">
+        <figure><img src="../bitacora/img/tuya-0003.webp" alt="Guía en el keyframe" loading="lazy"><figcaption><b>1. Referencia:</b> el guía con casco de rescatista en el keyframe.</figcaption></figure>
+        <figure><img src="../bitacora/img/tuya-0486.png" alt="Modelo en Blender" loading="lazy"><figcaption><b>2. Modelado</b> en Blender (equipo).</figcaption></figure>
+        <figure><img src="../bitacora/img/tuya-0530.png" alt="Zonas del rig" loading="lazy"><figcaption><b>3. Rig:</b> el equipo marcó dónde van las articulaciones.</figcaption></figure>
+        <figure><img src="img/ciudad.jpg" alt="Guía en la app" loading="lazy"><figcaption><b>4. En la app:</b> textura de Substance, cara dibujada y gestos.</figcaption></figure>
+    </div>
+    <p><b>Decisiones:</b> el rig es de títere, con piezas rígidas colgadas de seis articulaciones (cuerpo, cabeza, brazos y piernas), porque los huesos deformaban la malla. Solo se usa el BaseColor, con superficie mate, para que se vea tal como está pintado. La cara se dibuja en tiempo real (<code>guideFace.js</code>) para poder animar las expresiones. La cruz del casco viene pintada en la textura.</p>
+
+    <h3>Vecinos, edificios, props y árboles</h3>
+    <div class="grid4">
+        <figure><img src="../bitacora/img/tuya-0647.webp" alt="Referencia NPC" loading="lazy"><figcaption><b>Vecinos · referencia</b></figcaption></figure>
+        <figure><img src="img/npc-adulto.png" alt="NPC adulto" loading="lazy"><figcaption><b>Vecinos · modelo:</b> el mismo cuerpo y rig del guía, con ropa, pelo y orejas.</figcaption></figure>
+        <figure><img src="../bitacora/img/tuya-0638.webp" alt="Referencia del estadio" loading="lazy"><figcaption><b>Estadio · referencia</b> de ubicación en el mapa.</figcaption></figure>
+        <figure><img src="img/fbx-vista-previa.png" alt="Modelos exportados" loading="lazy"><figcaption><b>Modelos procedurales</b> exportados a FBX en quads para retexturizarlos.</figcaption></figure>
+    </div>
+    <ul>
+        <li><b>Edificios</b> (Torre de Cali, estadio, La Ermita, iglesia de San Antonio, punto de acopio y tres edificios genéricos) y <b>props</b> (basurero, caja eléctrica, cono, hidrante, parada de bus, poste y teléfono): modelados y texturizados por el equipo en Blender y Substance. Se exportan con <code>tools/exportar_props.py</code>, que los asienta en el suelo.</li>
+        <li><b>Árboles:</b> tres modelos del equipo, cada uno con una versión "lejos" más simple para la ciudad (nivel de detalle).</li>
+        <li><b>Insumos, vegetación base y elementos del mapa:</b> generados por código (<code>src/three/procedural/</code>). Luego se exportaron a FBX en quads, sin triángulos ni n-gonos (<code>modelos_fbx/informe.txt</code>), para que el equipo pudiera retexturizarlos.</li>
+    </ul>
+
+    <h3>Mapa, interfaz y sonido</h3>
+    <ul>
+        <li><b>Mapa de Cali:</b> las vías vienen de OpenStreetMap (<code>fuentes_3d/mapa_cali/Map_of_Cali.svg</code>) y se abstraen a avenidas y manzanas por zona. Las cinco zonas siguen la zonificación del MIO.</li>
+        <li><b>Íconos:</b> un set propio de trazo redondeado en SVG (<code>src/ui/icons.js</code>), con 54 íconos, uno por cada insumo (arroz, lata, leche, cobija, kit…).</li>
+        <li><b>Portada:</b> un render de la propia ciudad 3D, exportado a WebP de 1158 × 1320 px.</li>
+        <li><b>Sonido:</b> 100 % procedural con Web Audio (pad ambiental, melodía, pájaros en el barrio y sonidos de los botones). No hay archivos de audio.</li>
+    </ul>
+
+    <h3>Origen y licencia</h3>
+    <div class="scroll"><table>
+        <tr><th>Recurso</th><th>Origen</th><th>Licencia o crédito</th></tr>
+        <tr><td>Casas, guía, vecinos, edificios, props, árboles y terrenos</td><td>Equipo NEXOS (Blender + Substance Painter)</td><td>Propios</td></tr>
+        <tr><td>Insumos y elementos procedurales del mapa, íconos SVG, sonido</td><td>Generados por código con Claude Code, a partir de las indicaciones del equipo</td><td>Propios del proyecto</td></tr>
+        <tr><td>Vías de Cali y Yumbo</td><td>OpenStreetMap</td><td>ODbL · © colaboradores de OpenStreetMap</td></tr>
+        <tr><td>Zonificación de referencia</td><td>Zonificación del SITM-MIO (Metrocali)</td><td>Referencia para trazar las zonas; no se publica el archivo</td></tr>
+        <tr><td>Keyframes de referencia</td><td>Generados con IA por el equipo</td><td>Solo referencia; no forman parte del producto</td></tr>
+        <tr><td>Tipografía Atkinson Hyperlegible Next</td><td>Braille Institute, vía Google Fonts</td><td>SIL Open Font License 1.1</td></tr>
+        <tr><td>Three.js · GSAP · Vite</td><td>Librerías</td><td>MIT · licencia estándar de GSAP (gratuita) · MIT</td></tr>
+    </table></div>
+</section>
+
+<!-- ============================================================ OPTIMIZACIÓN -->
+<section class="part" id="optimizacion">
+    <header><h2>Decisiones para las plataformas objetivo</h2><span class="weight">5 %</span><span class="crit">Optimización · Plataformas, decisiones y métricas antes y después.</span></header>
+
+    <h3>Plataformas definidas</h3>
+    <div class="scroll"><table>
+        <tr><th>Plataforma</th><th>Por qué</th><th>Qué recibe</th></tr>
+        <tr><td><b>Computador</b> (Chrome, Edge, Firefox y Safari)</td><td>El encargado del punto de acopio trabaja en un equipo fijo, y el donante que planea con calma también usa computador.</td><td>La experiencia 3D completa, con sombras de 2048 px y resolución hasta 1,5×.</td></tr>
+        <tr><td><b>Celular</b> (iPhone y Android)</td><td>En una emergencia, la mayoría de las personas solo tiene el celular a mano.</td><td>3D con sombras de 1024 px, lista de zonas en vez de marcadores y paneles de una columna.</td></tr>
+        <tr><td><b>Versión ligera</b> (cualquier dispositivo)</td><td>Celulares con poca memoria, datos móviles caros, conexión lenta o equipos sin tarjeta gráfica.</td><td>Las mismas tareas en listas, sin 3D. Se abre sola cuando el navegador indica ahorro de datos, red muy lenta, poca memoria o 3D sin tarjeta gráfica. También se puede elegir a mano.</td></tr>
+    </table></div>
+
+    <h3>Métricas</h3>
+    <div class="kpi">
+        <div><b>16,2 → 3,6 MB</b><span>Las tres casas más pesadas, antes y después (11 oct)</span></div>
+        <div><b>27,7 → 19,6 MB</b><span>Todos los recursos 3D el 11 de octubre, antes y después de optimizar</span></div>
+        <div><b>18,1 MB</b><span>Lo que descarga hoy la versión 3D (42 modelos GLB)</span></div>
+        <div><b>0,5 MB</b><span>Lo que descarga la versión ligera (0,14 MB de recursos + 0,36 MB de código)</span></div>
+    </div>
+    <div class="scroll"><table>
+        <tr><th>Modelo</th><th>Antes (8 oct)</th><th>Después (11 oct)</th><th>Reducción</th></tr>
+        <tr><td>casa-dos-pisos.glb</td><td>6,46 MB</td><td>1,25 MB</td><td>−81 %</td></tr>
+        <tr><td>casa-techo-ondulado.glb</td><td>5,48 MB</td><td>1,27 MB</td><td>−77 %</td></tr>
+        <tr><td>casa-teja.glb</td><td>4,30 MB</td><td>1,05 MB</td><td>−76 %</td></tr>
+        <tr><td>Casas del mapa (7 modelos)</td><td>0,94 MB</td><td>0,80 MB</td><td>−15 %</td></tr>
+    </table></div>
+    <p>Pesos tomados del historial de GitHub. La descarga actual se midió en el sitio publicado el 28 de octubre de 2026.</p>
+
+    <h3>Decisiones de optimización</h3>
+    <div class="scroll"><table>
+        <tr><th>Decisión</th><th>Efecto</th></tr>
+        <tr><td>Texturas reducidas y mallas unidas por material (<code>fbx_to_glb.py</code>)</td><td>Menos peso de descarga y menos llamadas de dibujo por casa.</td></tr>
+        <tr><td>Soporte de compresión Draco y Meshopt en el cargador</td><td>Permite publicar GLB comprimidos sin cambiar el código.</td></tr>
+        <tr><td>Nivel de detalle: árboles "lejos" y casas "mapa"</td><td>La ciudad usa versiones simples; el barrio, las detalladas.</td></tr>
+        <tr><td><code>InstancedMesh</code> para árboles y casas repetidas</td><td>Miles de objetos en pocas llamadas de dibujo.</td></tr>
+        <tr><td>Sombra de la ciudad dibujada una sola vez</td><td>Ahorra una pasada completa de la escena en cada cuadro.</td></tr>
+        <tr><td>Resolución adaptable: tope de 1,5× y bajada sola hasta 0,6× si el promedio supera 1/28 s por cuadro</td><td>Mantiene la fluidez en equipos modestos.</td></tr>
+        <tr><td>Sin antialias en el lienzo; multisample en el objetivo</td><td>El antialias no se paga dos veces.</td></tr>
+        <tr><td>Sin desenfoque de fondo en los paneles; íconos en un lienzo a su medida</td><td>Menos trabajo de composición en todos los navegadores.</td></tr>
+        <tr><td>Carga progresiva: la bajada entre nubes sigue mientras el barrio carga en paralelo</td><td>La espera no se siente como un error.</td></tr>
+        <tr><td>Sonido procedural y tipografía con <code>display=swap</code></td><td>Cero megas de audio; el texto aparece aunque la fuente no haya llegado.</td></tr>
+    </table></div>
+
+    <h3>Fluidez (FPS)</h3>
+    <div class="note">Los FPS no se pudieron medir desde el entorno donde se armó este documento, porque el navegador de prueba no dibuja cuadros cuando está en segundo plano. Para la demostración en clase, mídanlos así: en Chrome, <b>F12 → ⋮ → More tools → Rendering → Frame rendering stats</b>, y recorran la ciudad, el barrio y el punto de acopio en cada dispositivo. Anoten los resultados en esta tabla.</div>
+    <div class="scroll"><table>
+        <tr><th>Dispositivo</th><th>Ciudad</th><th>Barrio</th><th>Punto de acopio</th><th>Versión ligera</th></tr>
+        <tr><td>Computador del equipo</td><td>— fps</td><td>— fps</td><td>— fps</td><td>no aplica</td></tr>
+        <tr><td>Celular del equipo</td><td>— fps</td><td>— fps</td><td>— fps</td><td>no aplica</td></tr>
+    </table></div>
+</section>
+
+<!-- ============================================================ ESQUELETO -->
+<section class="part" id="convenciones">
+    <header><h2>Convenciones y metáforas</h2><span class="weight">5 %</span><span class="crit">Esqueleto · Qué convenciones del mundo real se adaptaron y por qué el público las reconoce.</span></header>
+    <div class="scroll"><table>
+        <tr><th>Referente real</th><th>Adaptación en NEXOS</th><th>Por qué el público lo reconoce</th></tr>
+        <tr><td><b>Mapa de la ciudad</b> con barrios</td><td>Una Cali 3D con cerros, río, Cristo Rey, la Torre de Cali y el estadio. Se baja de la ciudad a la zona y al barrio.</td><td>Los caleños se orientan por esos hitos, y bajar desde arriba es igual a hacer zoom en un mapa del celular.</td></tr>
+        <tr><td><b>Pin de ubicación</b></td><td>Cada zona se marca con una casa en su color y el número de urgencias.</td><td>Es el marcador que usan Google Maps y Waze.</td></tr>
+        <tr><td><b>Centro de acopio</b> real, con carpa, mesa y estantería</td><td>Un puesto 3D con su letrero. Lo que el donante elige aparece en cajas sobre la mesa, y las cajas de la estantería muestran el inventario real.</td><td>Así se ven los centros de acopio en las noticias después de un desastre.</td></tr>
+        <tr><td><b>Canasta del mercado</b></td><td>La "cesta de apoyo", con su ícono de canasta, total y valor equivalente.</td><td>Funciona como el carrito de una tienda en línea.</td></tr>
+        <tr><td><b>Caja de cartón</b> de donación (40 × 30 × 30 cm)</td><td>Se puede contar por unidad o por caja ("14 por caja", "+1 caja"), con la barra de cuánto llena.</td><td>Así se empacan y cuentan las donaciones de verdad.</td></tr>
+        <tr><td><b>Rescatista con casco</b></td><td>El guía con casco naranja, cruz y morral.</td><td>Es la figura de la Defensa Civil y la Cruz Roja: alguien que ayuda.</td></tr>
+        <tr><td><b>Semáforo</b></td><td>Estados del inventario: Crítico en rojo, Estable en ámbar y Abastecido en verde.</td><td>Rojo es peligro y verde es bien, sin necesidad de aprenderlo.</td></tr>
+        <tr><td><b>Guía de envío</b> con código</td><td>Cada aporte tiene un código (NX-…) y un QR que el punto escanea o escribe.</td><td>Es igual que rastrear un paquete o mostrar un tiquete.</td></tr>
+        <tr><td><b>Pasos de un trámite</b></td><td>La barra "Ciudad → Barrio → Aporte → Método → Confirmación" con "Paso 3 de 5".</td><td>Es igual que pagar en una tienda en línea.</td></tr>
+        <tr><td><b>Clima del noticiero</b></td><td>Hora, temperatura y clima reales de Cali en la barra superior. La escena se oscurece de noche y llueve si llueve.</td><td>Hace sentir que la app está en tiempo real.</td></tr>
+    </table></div>
+    <div class="grid3">
+        <figure><img src="img/zona.jpg" alt="Pin de zona" loading="lazy"><figcaption><b>Pin y tarjeta de zona</b> sobre el mapa.</figcaption></figure>
+        <figure><img src="img/donar.jpg" alt="Centro de acopio y cesta" loading="lazy"><figcaption><b>Centro de acopio</b> con la cesta y la caja sobre la mesa.</figcaption></figure>
+        <figure><img src="img/punto-menu.jpg" alt="Estantería con inventario" loading="lazy"><figcaption><b>Estantería</b> con el inventario real.</figcaption></figure>
+    </div>
+</section>
+
+<section class="part" id="consistencia">
+    <header><h2>Consistencia</h2><span class="weight">5 %</span><span class="crit">Esqueleto · Qué acciones se asociaron a un mismo tratamiento visual para que el usuario lo aprenda una vez.</span></header>
+    <div class="scroll"><table>
+        <tr><th>Acción o significado</th><th>Señal visual (siempre la misma)</th><th>Dónde se ve</th></tr>
+        <tr><td>Acción principal del paso</td><td>Botón <b>rojo</b> <code>#F5333F</code> con texto blanco y flecha. Hay uno solo por pantalla.</td><td>Ir al barrio, Continuar, Ingresar, Escanear QR</td></tr>
+        <tr><td>Lo elegido o actual</td><td>Fondo <b>azul oscuro</b> <code>#011E41</code> con texto blanco</td><td>Categoría elegida, filtro activo, Unidad o Caja, paso actual</td></tr>
+        <tr><td>Crítico o urgente</td><td>Rojo: punto rojo, etiqueta "Crítico" y borde rojo en la tarjeta</td><td>Categorías, tarjetas de inventario, lista de zonas, resumen inferior</td></tr>
+        <tr><td>Necesidad alta pero no alarma</td><td><b>Ámbar</b> <code>#E39B1B</code></td><td>Barras de necesidad, "Estable"</td></tr>
+        <tr><td>Suficiente o hecho</td><td><b>Verde</b> <code>#1E5B36</code> sobre <code>#E7F1EB</code></td><td>"Abastecido", "Guardado en este dispositivo", "Entregado"</td></tr>
+        <tr><td>Volver un nivel</td><td>Flecha "‹" arriba: a la derecha en la barra ("Volver al mapa" o "Volver al barrio") y en el círculo azul de los paneles</td><td>Barrio, punto, subvistas del inventario</td></tr>
+        <tr><td>Cerrar</td><td>"×" en un círculo azul, arriba a la derecha del panel</td><td>Tarjeta de zona, panel de donar, menú del punto</td></tr>
+        <tr><td>Ayuda</td><td>"?" en un círculo con borde, junto al cerrar</td><td>Todos los paneles</td></tr>
+        <tr><td>Sumar o restar</td><td>"−" y "+" en cuadros azules de 44 px; "−1 caja" y "+1 caja" en blanco debajo</td><td>Donar, inventario, traslados, versión ligera</td></tr>
+        <tr><td>Tocable</td><td>Al presionar se encoge levemente (escala 0,97). El efecto al pasar el mouse solo existe con mouse.</td><td>Toda la interfaz</td></tr>
+        <tr><td>No disponible</td><td>Gris al 35 % y cursor de prohibido</td><td>"−" en 0, "Continuar" con la cesta vacía</td></tr>
+    </table></div>
+    <div class="grid3">
+        <figure><img src="img/donar-vacio.jpg" alt="Continuar deshabilitado" loading="lazy"><figcaption><b>No disponible:</b> "Continuar" en gris con la cesta vacía; el "−" apagado.</figcaption></figure>
+        <figure><img src="img/donar.jpg" alt="Continuar activo" loading="lazy"><figcaption><b>Acción principal:</b> "Continuar" se vuelve rojo al agregar algo.</figcaption></figure>
+        <figure><img src="img/inventario.jpg" alt="Estados del inventario" loading="lazy"><figcaption><b>Estados:</b> Crítico, Estable y Abastecido, con el mismo color en filtros, etiquetas y barras.</figcaption></figure>
+    </div>
+</section>
+
+<section class="part" id="componentes">
+    <header><h2>Elementos de la interfaz</h2><span class="weight">5 %</span><span class="crit">Esqueleto · Inventario de componentes: función, estados y criterio de ubicación.</span></header>
+    <div class="scroll"><table>
+        <tr><th>Componente</th><th>Función</th><th>Estados</th><th>Ubicación y por qué</th></tr>
+        <tr><td><b>Barra superior</b></td><td>Marca, lugar actual, hora y clima, sonido y salir</td><td>Normal; el lugar cambia (Mapa de ayuda, Barrio La Flora)</td><td>Arriba a la izquierda, a 24 px del borde: es lo primero que se lee.</td></tr>
+        <tr><td><b>Progreso</b></td><td>Dónde estoy en el recorrido</td><td>Paso hecho (azul), actual (rojo y nombre), pendiente (gris)</td><td>Bajo la barra superior, siempre visible.</td></tr>
+        <tr><td><b>Botón principal</b></td><td>Avanzar al siguiente paso</td><td>Normal rojo, hover más oscuro, activo encogido, deshabilitado gris</td><td>Abajo a la derecha del panel, al final de la lectura.</td></tr>
+        <tr><td><b>Botón secundario</b></td><td>Volver o una alternativa</td><td>Blanco con borde, hover gris claro</td><td>A la izquierda del principal.</td></tr>
+        <tr><td><b>Botón de ícono</b> (‹ × ? sonido salir)</td><td>Acciones de navegación</td><td>Normal, hover, activo; salir en rojo</td><td>Arriba a la derecha del panel o de la barra.</td></tr>
+        <tr><td><b>Ficha de categoría</b></td><td>Elegir el tipo de ayuda</td><td>Normal blanca, elegida azul, con urgencia (punto rojo)</td><td>Fila superior del panel de donar: es la primera decisión.</td></tr>
+        <tr><td><b>Contador − / +</b></td><td>Cantidad por unidad</td><td>Normal, deshabilitado en 0 o en el máximo, campo editable</td><td>A la derecha de cada insumo.</td></tr>
+        <tr><td><b>−1 caja / +1 caja</b></td><td>Cantidad por caja completa</td><td>Normal, deshabilitado</td><td>Bajo el contador.</td></tr>
+        <tr><td><b>Tarjeta de insumo</b></td><td>Un insumo con su imagen, precio y necesidad</td><td>Normal; con cantidad (borde verde); urgente o crítico (borde rojo)</td><td>En la cuadrícula del panel.</td></tr>
+        <tr><td><b>Etiqueta de estado</b></td><td>Crítico, Estable o Abastecido</td><td>Tres colores fijos</td><td>Sobre la barra de nivel de cada tarjeta.</td></tr>
+        <tr><td><b>Filtro con conteo</b></td><td>Ver solo un estado</td><td>Normal, activo (azul), con su número</td><td>Arriba del tablero de inventario.</td></tr>
+        <tr><td><b>Tarjeta de zona</b></td><td>Resumen de la zona y botón al barrio</td><td>Abierta o cerrada</td><td>A la derecha en computador, abajo en celular, sin tapar la zona.</td></tr>
+        <tr><td><b>Lista de zonas</b> (celular)</td><td>Elegir zona sin tocar el 3D</td><td>Normal, presionada</td><td>Izquierda, bajo el progreso.</td></tr>
+        <tr><td><b>Marcador 3D</b></td><td>Zona o punto de acopio sobre el mapa</td><td>Normal, con urgencias, oculto si un panel lo tapa</td><td>Anclado al objeto 3D.</td></tr>
+        <tr><td><b>Burbuja del guía</b></td><td>Instrucción del paso</td><td>Aparece y cambia de texto en cada paso</td><td>Abajo a la izquierda, junto al guía.</td></tr>
+        <tr><td><b>Campo de texto</b></td><td>Código, clave, código de aporte</td><td>Vacío, con foco (borde azul), con error (rojo y mensaje)</td><td>En el ingreso y en recibir.</td></tr>
+        <tr><td><b>Aviso de guardado</b></td><td>Confirmar dónde quedó el cambio</td><td>Guardado en la hoja, guardado en el dispositivo, sin conexión</td><td>Abajo a la izquierda del tablero.</td></tr>
+        <tr><td><b>Toast</b></td><td>Confirmación breve ("Agregado", "Deshacer")</td><td>Aparece y se va solo</td><td>Centrado abajo.</td></tr>
+    </table></div>
+    <div class="grid3">
+        <figure><img src="img/ingreso.jpg" alt="Ingreso" loading="lazy"><figcaption><b>Campos y botones</b> del ingreso.</figcaption></figure>
+        <figure><img src="img/recibir.jpg" alt="Recibir" loading="lazy"><figcaption><b>Recibir:</b> botón QR, campo, listas y aviso de guardado.</figcaption></figure>
+        <figure class="phone"><img src="img/movil-ciudad.jpg" alt="Lista de zonas en celular" loading="lazy"><figcaption><b>Lista de zonas</b> en celular.</figcaption></figure>
+    </div>
+</section>
+
+<section class="part" id="navegacion">
+    <header><h2>Navegación</h2><span class="weight">5 %</span><span class="crit">Esqueleto · Mapa de la experiencia, navegación global y local, cámara 3D y cómo se sabe dónde se está y cómo volver.</span></header>
+
+    <h3>Mapa de la experiencia</h3>
+    <div class="card">
+        <h4>Portada</h4>
+        <div class="flow"><span class="hot">Portada</span><em>→</em><span>Quiero donar</span><span>Soy punto de acopio</span><span>Sigue tu aporte</span><span>Versión ligera</span></div>
+        <h4>Donante</h4>
+        <div class="flow"><span>Ciudad</span><em>→</em><span>Tarjeta de zona</span><em>→</em><span>Barrio</span><em>→</em><span>Punto de acopio</span><em>→</em><span>Cesta</span><em>→</em><span>Método (entregar o aportar dinero)</span><em>→</em><span>Datos y franja</span><em>→</em><span class="hot">Confirmación con código y QR</span></div>
+        <h4>Punto de acopio</h4>
+        <div class="flow"><span>Ingreso (código + clave)</span><em>→</em><span>Ciudad (solo su zona)</span><em>→</em><span>Punto de acopio</span><em>→</em><span class="hot">Menú: Inventario · Recibir · Enviar</span></div>
+        <div class="flow"><span>Enviar</span><em>→</em><span>Destino</span><em>→</em><span>Cantidades (sugeridas)</span><em>→</em><span>Revisión</span><em>→</em><span class="hot">Traslado con código TR-…</span></div>
+        <h4>Seguimiento</h4>
+        <div class="flow"><span>Código NX-…</span><em>→</em><span class="hot">Estado del aporte paso a paso</span></div>
+    </div>
+
+    <h3>Estrategias</h3>
+    <div class="scroll"><table>
+        <tr><th>Estrategia</th><th>Cómo funciona</th></tr>
+        <tr><td><b>Navegación global</b></td><td>La barra superior está en todas las escenas: el logo, el nombre del lugar, el sonido y salir. Salir siempre lleva a la portada.</td></tr>
+        <tr><td><b>Navegación local</b></td><td>Cada panel tiene "‹" para volver a su nivel anterior y "×" para cerrar. Dentro del punto, las subvistas (Inventario, Recibir, Enviar) vuelven al menú con "‹".</td></tr>
+        <tr><td><b>Orientación</b></td><td>La barra de progreso dice el paso ("Paso 3 de 5"), la barra superior el lugar ("Barrio La Flora") y el título del panel lo que se hace ("¿Qué quieres donar?").</td></tr>
+        <tr><td><b>Cámara 3D guiada</b></td><td>No hay que manejar la cámara: la app baja entre nubes, se acerca a la zona elegida y el guía camina hasta el punto (tocar para ir). En la ciudad se puede girar un poco, con límites, y "Centrar mapa" la devuelve a su lugar.</td></tr>
+        <tr><td><b>Retorno siempre posible</b></td><td>"Volver al mapa" y "Volver al barrio" están siempre arriba a la derecha. La cesta se conserva al volver, y los cambios del inventario se pueden deshacer.</td></tr>
+        <tr><td><b>Rol con alcance limitado</b></td><td>El punto de acopio solo puede abrir su zona. Si toca otra, la app le explica que no es la suya.</td></tr>
+    </table></div>
+    <div class="grid3">
+        <figure><img src="img/ciudad.jpg" alt="Ciudad" loading="lazy"><figcaption><b>Paso 1 de 5:</b> la ciudad, con la instrucción del guía.</figcaption></figure>
+        <figure><img src="img/barrio.jpg" alt="Barrio" loading="lazy"><figcaption><b>Paso 2 de 5:</b> el barrio, con "Volver al mapa" y el punto señalado.</figcaption></figure>
+        <figure><img src="img/ciudad-acopio.jpg" alt="Zona del punto" loading="lazy"><figcaption><b>Punto de acopio:</b> solo su zona está activa.</figcaption></figure>
+    </div>
+</section>
+
+<section class="part" id="informacion">
+    <header><h2>Diseño de información</h2><span class="weight">5 %</span><span class="crit">Esqueleto · Cómo se organiza y dosifica el contenido según la tarea.</span></header>
+    <div class="scroll"><table>
+        <tr><th>Estrategia</th><th>Ejemplo concreto</th></tr>
+        <tr><td><b>Jerarquía</b></td><td>La tarjeta de zona va del nombre (28 px) a la emergencia, el nivel de necesidad, lo que más se necesita y el punto de acopio, y termina en el botón. El ojo baja en orden de decisión.</td></tr>
+        <tr><td><b>Dosificación</b></td><td>La tarjeta de zona muestra solo las 3 necesidades principales, en palabras ("Alta", "Media"). El guía da una sola instrucción por paso. El detalle (dirección y horario) va al final, en letra pequeña.</td></tr>
+        <tr><td><b>Agrupación</b></td><td>Donar agrupa los insumos por 5 categorías. El inventario los agrupa por estado con filtros. Recibir separa "Por recibir" de "Por entregar a las familias".</td></tr>
+        <tr><td><b>Visualización</b></td><td>Barras de nivel en cada insumo, tres guiones de necesidad (●●● Alta), la estantería 3D con cajas reales, y cuánto llena la cesta de una caja.</td></tr>
+        <tr><td><b>Iconografía</b></td><td>Un ícono propio por categoría y por insumo, siempre en el círculo del color de su categoría. El punto rojo indica urgencia.</td></tr>
+        <tr><td><b>Lenguaje</b></td><td>Se habla de tú, con frases cortas y verbos de acción: "Toca un suministro para agregarlo", "Entra al barrio para ver dónde llega tu ayuda".</td></tr>
+    </table></div>
+    <h4>Procedencia del contenido</h4>
+    <ul>
+        <li><b>Lugares reales:</b> barrios, puntos de acopio y direcciones de Cali (Parque La Flora, Capilla de San Antonio y Parroquia la Virgen Peregrina, entre otros), con su horario de atención.</li>
+        <li><b>Hora y clima:</b> la hora de Colombia y la salida y puesta del sol de Cali, calculadas cada día.</li>
+        <li><b>Vías:</b> OpenStreetMap.</li>
+        <li><b>Inventario:</b> la hoja de Google del punto, actualizada por los encargados.</li>
+        <li><b>Valores de referencia:</b> los precios de los insumos (por ejemplo, arroz de 1 kg a $4.800) son valores aproximados de mercado para el prototipo. No vienen de una fuente oficial.</li>
+    </ul>
+    <div class="grid2">
+        <figure><img src="img/zona.jpg" alt="Tarjeta de zona" loading="lazy"><figcaption><b>Jerarquía y dosificación</b> en la tarjeta de zona.</figcaption></figure>
+        <figure><img src="img/recibir.jpg" alt="Recibir agrupado" loading="lazy"><figcaption><b>Agrupación:</b> por recibir y por entregar, con un mensaje cuando la lista está vacía.</figcaption></figure>
+    </div>
+</section>
+
+<!-- ============================================================ SUPERFICIE -->
+<section class="part" id="ocular">
+    <header><h2>Seguimiento ocular</h2><span class="weight">4 %</span><span class="crit">Superficie · Recursos de composición para guiar la mirada, y cómo el eye tracking los confirmó o los cambió.</span></header>
+    <p>Prueba del 22 de octubre de 2026 con un participante de 19 años, sobre la versión publicada en ese momento. En cada mapa de calor, el rojo indica más tiempo de fijación y el verde menos. Al lado de cada uno está la pantalla después del ajuste.</p>
+
+    <h4>Recursos de composición que se usan</h4>
+    <ul>
+        <li><b>Escala:</b> el guía y los títulos grandes atraen primero; el botón principal es el elemento más grande de su panel.</li>
+        <li><b>Contraste de color:</b> el rojo se reserva para la acción y lo urgente, así que la mirada va ahí.</li>
+        <li><b>Dirección:</b> el guía está abajo a la izquierda y su burbuja apunta hacia el mapa; el recorrido de lectura termina abajo a la derecha, en el botón.</li>
+        <li><b>Luz en la escena 3D:</b> la zona elegida conserva su color y luz, y las demás se oscurecen.</li>
+        <li><b>Movimiento:</b> la cámara se acerca a lo elegido y las urgencias laten suavemente.</li>
+    </ul>
+
+    <div class="heat">
+        <figure><img src="img/heat-1-mapa.jpg" alt="Mapa de calor en la ciudad" loading="lazy"><figcaption><span class="tag before">22 oct · 154 s</span> Ciudad</figcaption></figure>
+        <div>
+            <h4>1 · Ciudad</h4>
+            <p><b>Lectura:</b> la fijación más fuerte cae sobre la cara y el casco del guía, abajo a la izquierda. La burbuja y los marcadores de las zonas reciben poca atención. El guía, grande y de alto contraste, le robaba la mirada a la ciudad, que es donde está la tarea.</p>
+            <p><b>Ajuste:</b> los marcadores pasaron a ser etiquetas con nombre y número de urgencias ("Norte · 2 urgentes"), y la frase de acción de la burbuja va en negrita ("Selecciona una zona de la ciudad").</p>
+            <figure><img src="img/ciudad.jpg" alt="Ciudad después" loading="lazy"><figcaption><span class="tag after">28 oct</span> Marcadores con nombre y urgencias.</figcaption></figure>
+        </div>
+    </div>
+
+    <div class="heat">
+        <figure><img src="img/heat-2-donar.jpg" alt="Mapa de calor en donar" loading="lazy"><figcaption><span class="tag before">22 oct · 75 s</span> Panel de donar</figcaption></figure>
+        <div>
+            <h4>2 · Panel de donar</h4>
+            <p><b>Lectura:</b> el calor se concentra en la primera categoría (Medicinas) y su insumo. Agua, Refugio, Alimentos e Higiene casi no se miran. Esto coincide con el informe: el participante no notó las demás categorías. Los íconos eran pequeños, sin fondo y del mismo peso que el texto.</p>
+            <p><b>Ajuste:</b> las categorías ahora son fichas de 111 × 84 px. El ícono va en un círculo de su color, la elegida es azul oscura y las urgentes llevan un punto rojo. Se quitó la línea repetida "Medicinas · 1 insumo".</p>
+            <figure><img src="img/donar-vacio.jpg" alt="Donar después" loading="lazy"><figcaption><span class="tag after">28 oct</span> Cinco fichas del mismo peso visual.</figcaption></figure>
+        </div>
+    </div>
+
+    <div class="heat">
+        <figure><img src="img/heat-3-inventario.jpg" alt="Mapa de calor del inventario" loading="lazy"><figcaption><span class="tag before">22 oct · 107 s</span> Inventario</figcaption></figure>
+        <div>
+            <h4>3 · Inventario</h4>
+            <p><b>Lectura:</b> la mirada salta entre la pestaña "Recibir 6", con su contador rojo, la primera tarjeta y la última (Cobija), sin un recorrido claro. El resumen de críticos de abajo casi no se mira. Esto coincide con el hallazgo de prioridad alta: orientación y organización del inventario.</p>
+            <p><b>Ajuste:</b> el punto abre con un menú de tres acciones, así que cada tarea tiene su propia pantalla. Arriba del tablero hay filtros con conteo (Todos 8, Críticos 2…), y las tarjetas críticas tienen borde rojo.</p>
+            <figure><img src="img/inventario.jpg" alt="Inventario después" loading="lazy"><figcaption><span class="tag after">28 oct</span> Filtros arriba, críticos resaltados.</figcaption></figure>
+        </div>
+    </div>
+
+    <div class="heat">
+        <figure><img src="img/heat-4-recibir.jpg" alt="Mapa de calor en recibir" loading="lazy"><figcaption><span class="tag before">22 oct · 51 s</span> Recibir</figcaption></figure>
+        <div>
+            <h4>4 · Recibir</h4>
+            <p><b>Lectura:</b> las fijaciones están en el título y en el botón "Recibir", al final del campo. El botón "Escanear QR" recibe poca atención y el recorrido es corto: es la tarea más clara, tal como lo dice el informe.</p>
+            <p><b>Ajuste:</b> se mantuvo la estructura y se reforzaron las dos formas de recibir, lado a lado: "Escanear QR" como botón rojo grande y "¿No trae QR? Escribe el código". Debajo van las listas "Por recibir" y "Por entregar a las familias".</p>
+            <figure><img src="img/recibir.jpg" alt="Recibir después" loading="lazy"><figcaption><span class="tag after">28 oct</span> Dos formas de recibir, lado a lado.</figcaption></figure>
+        </div>
+    </div>
+    <div class="note"><b>Observación sin resolver:</b> en los mapas 3 y 4 el botón rojo de salir, en la barra superior, también recibe fijaciones. Compite con la acción principal porque usa el mismo rojo. Una mejora posible es pasarlo a azul oscuro con borde.</div>
+</section>
+
+<section class="part" id="contraste">
+    <header><h2>Contraste y uniformidad</h2><span class="weight">3 %</span><span class="crit">Superficie · Para qué se usó el contraste y la uniformidad, con verificación WCAG de los textos.</span></header>
+    <div class="grid2">
+        <div class="card">
+            <h4>Contraste para…</h4>
+            <ul>
+                <li><b>Destacar:</b> el único botón rojo del paso sobre un panel blanco.</li>
+                <li><b>Separar:</b> los paneles blancos opacos sobre la escena 3D de color.</li>
+                <li><b>Jerarquizar:</b> título azul oscuro en 800 y subtítulo gris en 400.</li>
+                <li><b>Enfocar en 3D:</b> la zona activa a todo color y las demás oscurecidas.</li>
+            </ul>
+        </div>
+        <div class="card">
+            <h4>Uniformidad para…</h4>
+            <ul>
+                <li><b>Agrupar:</b> todas las tarjetas de insumo con el mismo tamaño y orden.</li>
+                <li><b>Calmar:</b> un solo radio por nivel (24, 18 y 12 px), una sola sombra azul y una sola curva de animación.</li>
+                <li><b>Igualar:</b> las 5 fichas de categoría con el mismo peso, para que ninguna se pierda (hallazgo de la prueba).</li>
+            </ul>
+        </div>
+    </div>
+    <h4>Verificación de contraste de texto (WCAG 2.1)</h4>
+    <p>Calculado con la fórmula de luminancia relativa de WCAG. AA exige 4,5:1 para texto normal y 3:1 para texto grande (desde 24 px, o 18,7 px en negrita).</p>
+    <div class="scroll"><table>
+        <tr><th>Muestra</th><th>Texto / fondo</th><th>Contraste</th><th>Resultado</th></tr>
+        <tr><td><span style="color:#011E41;font-weight:700">Texto principal</span></td><td><code>#011E41</code> / <code>#FFFFFF</code></td><td>16,62:1</td><td><span class="pill ok">AAA</span></td></tr>
+        <tr><td><span style="background:#011E41;color:#fff;padding:2px 8px;border-radius:6px">Elegido</span></td><td><code>#FFFFFF</code> / <code>#011E41</code></td><td>16,62:1</td><td><span class="pill ok">AAA</span></td></tr>
+        <tr><td><span style="background:#EDEDED;color:#323232;padding:2px 8px;border-radius:6px">Carbón</span></td><td><code>#323232</code> / <code>#EDEDED</code></td><td>10,95:1</td><td><span class="pill ok">AAA</span></td></tr>
+        <tr><td><span style="background:#E7F1EB;color:#1E5B36;padding:2px 8px;border-radius:6px">Abastecido</span></td><td><code>#1E5B36</code> / <code>#E7F1EB</code></td><td>6,98:1</td><td><span class="pill ok">AA</span></td></tr>
+        <tr><td><span style="background:#FCEBCB;color:#7A4B00;padding:2px 8px;border-radius:6px">Estable</span></td><td><code>#7A4B00</code> / <code>#FCEBCB</code></td><td>6,31:1</td><td><span class="pill ok">AA</span></td></tr>
+        <tr><td><span style="background:#FDE3E5;color:#A3262F;padding:2px 8px;border-radius:6px">Crítico</span></td><td><code>#A3262F</code> / <code>#FDE3E5</code></td><td>6,01:1</td><td><span class="pill ok">AA</span></td></tr>
+        <tr><td><span style="color:#6E4BB0">Medicinas</span></td><td><code>#6E4BB0</code> / <code>#ECE6F7</code></td><td>5,23:1</td><td><span class="pill ok">AA</span></td></tr>
+        <tr><td><span style="color:#5B6170">Refugio</span></td><td><code>#5B6170</code> / <code>#E9EBEF</code></td><td>5,19:1</td><td><span class="pill ok">AA</span></td></tr>
+        <tr><td><span style="background:#D92632;color:#fff;padding:2px 8px;border-radius:6px">Rojo presionado</span></td><td><code>#FFFFFF</code> / <code>#D92632</code></td><td>4,91:1</td><td><span class="pill ok">AA</span></td></tr>
+        <tr><td><span style="color:#6B7280">Texto secundario</span></td><td><code>#6B7280</code> / <code>#FFFFFF</code></td><td>4,83:1</td><td><span class="pill ok">AA</span></td></tr>
+        <tr><td><span style="color:#2F69A3">Agua</span></td><td><code>#2F69A3</code> / <code>#E2ECF7</code></td><td>4,79:1</td><td><span class="pill ok">AA</span></td></tr>
+        <tr><td><span style="color:#9A5B1E">Alimentos</span></td><td><code>#9A5B1E</code> / <code>#F5E7DA</code></td><td>4,45:1</td><td><span class="pill est">AA grande · ícono</span></td></tr>
+        <tr><td><span style="color:#1F7A86">Higiene</span></td><td><code>#1F7A86</code> / <code>#DDF0F2</code></td><td>4,26:1</td><td><span class="pill est">AA grande · ícono</span></td></tr>
+        <tr><td><span style="background:#F5333F;color:#fff;padding:2px 8px;border-radius:6px">Botón principal</span></td><td><code>#FFFFFF</code> / <code>#F5333F</code></td><td>3,87:1</td><td><span class="pill est">AA grande</span></td></tr>
+        <tr><td><span style="color:#F5333F;font-weight:700">8 insumos críticos</span></td><td><code>#F5333F</code> / <code>#FFFFFF</code></td><td>3,87:1</td><td><span class="pill est">AA grande</span></td></tr>
+        <tr><td><span style="color:#E39B1B">Ámbar puro</span></td><td><code>#E39B1B</code> / <code>#FFFFFF</code></td><td>2,34:1</td><td><span class="pill crit">Solo gráficos</span></td></tr>
+    </table></div>
+    <div class="note"><b>Excepciones encontradas.</b> El rojo de marca <code>#F5333F</code> con texto blanco da 3,87:1: cumple para texto grande y para componentes (3:1), pero no para texto normal. Los botones usan texto de 18 px en negrita, justo por debajo del umbral de texto grande (18,7 px). El ámbar puro solo se usa en barras y puntos, nunca para texto: el texto ámbar usa <code>#7A4B00</code>. Para cumplir AA en todos los textos, el fondo de los botones con texto podría pasar a <code>#D92632</code> (4,91:1), el rojo que ya se usa al presionar.</div>
+</section>
+
+<section class="part" id="reticula">
+    <header><h2>Retícula y diagramación</h2><span class="weight">4 %</span><span class="crit">Superficie · Retícula de la capa 2D medida sobre la app real, en computador y celular, y su relación con la escena 3D.</span></header>
+    <p>Las retículas se midieron con las cajas reales de cada elemento y se superpusieron sobre la app publicada: 1440 × 900 px en computador y 390 × 844 px en celular (iPhone 14). El rojo marca márgenes y filas, y el azul las columnas.</p>
+
+    <h3>Computador · 1440 × 900</h3>
+    <div class="grid2">
+        <figure><img src="img/grid-portada.jpg" alt="Retícula de la portada" loading="lazy"><figcaption><b>Portada:</b> margen de 112 px, columna de contenido de 640 px dividida en 2 columnas de 313 px con medianil de 14 px, y la mitad derecha (649 px) para el render 3D.</figcaption></figure>
+        <figure><img src="img/grid-zona.jpg" alt="Retícula de la ciudad" loading="lazy"><figcaption><b>Ciudad:</b> margen de 24 px. Fila superior de 68 px (barra de 736 px), columna derecha de 400 px para la tarjeta de zona y esquina inferior izquierda para el guía. El centro queda libre para el mapa.</figcaption></figure>
+        <figure><img src="img/grid-donar.jpg" alt="Retícula del panel de donar" loading="lazy"><figcaption><b>Donar:</b> panel de 640 px a la izquierda, con 19 px de relleno y 5 columnas de 111 px separadas por 8 px, donde van las fichas de categoría. La mitad derecha queda para el punto de acopio 3D.</figcaption></figure>
+        <figure><img src="img/grid-inventario.jpg" alt="Retícula del inventario" loading="lazy"><figcaption><b>Inventario:</b> tablero de 1392 px abajo, con 6 columnas de 218 px separadas por 10 px, una por tarjeta. La mitad superior muestra la estantería 3D.</figcaption></figure>
+    </div>
+
+    <h3>Celular · 390 × 844</h3>
+    <div class="grid3">
+        <figure class="phone"><img src="img/grid-movil-portada.jpg" alt="Retícula de la portada en celular" loading="lazy"><figcaption><b>Portada:</b> 1 columna de 358 px con márgenes de 16 px y botones de 80 px de alto.</figcaption></figure>
+        <figure class="phone"><img src="img/grid-movil-ciudad.jpg" alt="Retícula de la ciudad en celular" loading="lazy"><figcaption><b>Ciudad:</b> márgenes de 12 px, barra de 62 px, lista de zonas de 197 px a la izquierda y el guía abajo. La ciudad queda a la derecha.</figcaption></figure>
+        <figure class="phone"><img src="img/grid-movil-donar.jpg" alt="Retícula de donar en celular" loading="lazy"><figcaption><b>Donar:</b> panel de 366 px abajo, con 5 columnas de 65 px. El punto de acopio 3D queda arriba.</figcaption></figure>
+    </div>
+
+    <h3>Relación con la escena 3D</h3>
+    <ul>
+        <li><b>Zona libre:</b> los paneles se apoyan en un borde (izquierda, derecha o abajo) y dejan libre el resto, donde la cámara encuadra lo importante.</li>
+        <li><b>Desplazamiento del centro de la cámara:</b> cuando abre un panel, <code>viewOffset</code> corre el centro de la imagen hacia la zona libre. Por eso el punto de acopio aparece a la derecha del panel de donar, y la estantería sobre el tablero del inventario.</li>
+        <li><b>Celular:</b> el 3D va arriba y el panel abajo, porque el pulgar alcanza la parte inferior de la pantalla.</li>
+    </ul>
+</section>
+
+<section class="part" id="coherencia">
+    <header><h2>Consistencia interna</h2><span class="weight">3 %</span><span class="crit">Superficie · Coherencia entre pantallas y escenas: estilo 3D, interfaz, tono del texto y animación.</span></header>
+    <div class="grid4">
+        <figure><img src="img/ciudad.jpg" alt="Ciudad" loading="lazy"><figcaption>Ciudad</figcaption></figure>
+        <figure><img src="img/zona.jpg" alt="Zona" loading="lazy"><figcaption>Zona</figcaption></figure>
+        <figure><img src="img/barrio.jpg" alt="Barrio" loading="lazy"><figcaption>Barrio</figcaption></figure>
+        <figure><img src="img/donar.jpg" alt="Donar" loading="lazy"><figcaption>Donar</figcaption></figure>
+        <figure><img src="img/ingreso.jpg" alt="Ingreso" loading="lazy"><figcaption>Ingreso</figcaption></figure>
+        <figure><img src="img/punto-menu.jpg" alt="Menú del punto" loading="lazy"><figcaption>Menú del punto</figcaption></figure>
+        <figure><img src="img/inventario.jpg" alt="Inventario" loading="lazy"><figcaption>Inventario</figcaption></figure>
+        <figure><img src="img/recibir.jpg" alt="Recibir" loading="lazy"><figcaption>Recibir</figcaption></figure>
+    </div>
+    <div class="scroll"><table>
+        <tr><th>Qué se mantiene igual</th><th>Cómo</th><th>Propósito</th></tr>
+        <tr><td><b>Estilo 3D</b></td><td>Formas simples, superficies mates, luz por bandas, colores terrosos y verdes suaves, y la misma luz del sol en todas las escenas.</td><td>Que la ciudad, el barrio y el punto se sientan como un solo lugar.</td></tr>
+        <tr><td><b>Interfaz</b></td><td>Paneles blancos con radio de 24 px y sombra azul, la misma barra superior, los mismos botones y la misma fuente.</td><td>Que cada pantalla nueva ya se sepa usar.</td></tr>
+        <tr><td><b>Versión ligera</b></td><td>Las mismas fichas, colores, iconos y textos que la 3D (desde el 12 y 28 de octubre).</td><td>Que cambiar de versión no sea aprender otra app.</td></tr>
+        <tr><td><b>Tono del texto</b></td><td>Se habla de tú, en frases cortas, con un verbo de acción por instrucción, y sin tecnicismos ni porcentajes.</td><td>Calma y claridad en una emergencia.</td></tr>
+        <tr><td><b>Animación</b></td><td>Una curva (<code>cubic-bezier(0.33, 0, 0.2, 1)</code>) y una duración base (420 ms). Al presionar, escala 0,97. La cámara usa transiciones suaves de GSAP.</td><td>Movimiento tranquilo y predecible.</td></tr>
+    </table></div>
+</section>
+
+<section class="part" id="color">
+    <header><h2>Color</h2><span class="weight">3 %</span><span class="crit">Superficie · Paleta en HEX, rol de cada color y su propósito, en la interfaz y en la escena 3D.</span></header>
+    <h4>Marca</h4>
+    <div class="swatches">
+        <div class="sw"><i style="background:#011E41"></i><div><b>Azul noche</b><code>#011E41</code><br>Texto, lo elegido, confianza.</div></div>
+        <div class="sw"><i style="background:#F5333F"></i><div><b>Rojo NEXOS</b><code>#F5333F</code><br>Acción principal y lo crítico. Nada más.</div></div>
+        <div class="sw"><i style="background:#D92632"></i><div><b>Rojo presionado</b><code>#D92632</code><br>Estado activo del botón.</div></div>
+        <div class="sw"><i style="background:#323232"></i><div><b>Carbón</b><code>#323232</code><br>Texto neutro.</div></div>
+        <div class="sw"><i style="background:#EDEDED"></i><div><b>Gris claro</b><code>#EDEDED</code><br>Fondos de apoyo.</div></div>
+        <div class="sw"><i style="background:#FFFFFF;border-bottom:1px solid #eee"></i><div><b>Blanco</b><code>#FFFFFF</code><br>Paneles sobre el 3D.</div></div>
+    </div>
+    <h4>Estados</h4>
+    <div class="swatches">
+        <div class="sw"><i style="background:#FDE3E5"></i><div><b>Crítico</b><code>#A3262F / #FDE3E5</code><br>Por debajo del 30 %.</div></div>
+        <div class="sw"><i style="background:#E39B1B"></i><div><b>Ámbar</b><code>#E39B1B</code><br>Necesidad alta, no alarma. Texto: <code>#7A4B00</code>.</div></div>
+        <div class="sw"><i style="background:#FCEBCB"></i><div><b>Estable</b><code>#7A4B00 / #FCEBCB</code><br>Entre 30 % y 75 %.</div></div>
+        <div class="sw"><i style="background:#E7F1EB"></i><div><b>Abastecido</b><code>#1E5B36 / #E7F1EB</code><br>75 % o más; guardado; entregado.</div></div>
+    </div>
+    <h4>Categorías de ayuda (tinta / fondo)</h4>
+    <div class="swatches">
+        <div class="sw"><i style="background:linear-gradient(90deg,#9A5B1E 50%,#F5E7DA 50%)"></i><div><b>Alimentos</b><code>#9A5B1E / #F5E7DA</code></div></div>
+        <div class="sw"><i style="background:linear-gradient(90deg,#2F69A3 50%,#E2ECF7 50%)"></i><div><b>Agua</b><code>#2F69A3 / #E2ECF7</code></div></div>
+        <div class="sw"><i style="background:linear-gradient(90deg,#6E4BB0 50%,#ECE6F7 50%)"></i><div><b>Medicinas</b><code>#6E4BB0 / #ECE6F7</code></div></div>
+        <div class="sw"><i style="background:linear-gradient(90deg,#1F7A86 50%,#DDF0F2 50%)"></i><div><b>Higiene</b><code>#1F7A86 / #DDF0F2</code></div></div>
+        <div class="sw"><i style="background:linear-gradient(90deg,#5B6170 50%,#E9EBEF 50%)"></i><div><b>Refugio</b><code>#5B6170 / #E9EBEF</code></div></div>
+    </div>
+    <h4>Zonas de la ciudad (círculo sólido)</h4>
+    <div class="swatches">
+        <div class="sw"><i style="background:#7B52C7"></i><div><b>Norte</b><code>#7B52C7</code></div></div>
+        <div class="sw"><i style="background:#0E8F9C"></i><div><b>Oeste</b><code>#0E8F9C</code></div></div>
+        <div class="sw"><i style="background:#E0702A"></i><div><b>Centro</b><code>#E0702A</code></div></div>
+        <div class="sw"><i style="background:#D6457F"></i><div><b>Oriente</b><code>#D6457F</code></div></div>
+        <div class="sw"><i style="background:#C99A1E"></i><div><b>Sur</b><code>#C99A1E</code></div></div>
+    </div>
+    <h4>Escena 3D (día despejado)</h4>
+    <div class="swatches">
+        <div class="sw"><i style="background:linear-gradient(#A9C6DA,#E9EFF2)"></i><div><b>Cielo</b><code>#A9C6DA → #E9EFF2</code></div></div>
+        <div class="sw"><i style="background:#A7B98C"></i><div><b>Pasto</b><code>#A7B98C</code></div></div>
+        <div class="sw"><i style="background:#E4DDD0"></i><div><b>Urbano</b><code>#E4DDD0</code></div></div>
+        <div class="sw"><i style="background:#6F8E64"></i><div><b>Cerros</b><code>#6F8E64</code></div></div>
+        <div class="sw"><i style="background:#8EB2C0"></i><div><b>Río</b><code>#8EB2C0</code></div></div>
+        <div class="sw"><i style="background:#D9D3C8"></i><div><b>Vías</b><code>#D9D3C8</code></div></div>
+    </div>
+    <div class="note ok"><b>Reglas del sistema.</b> Ninguna categoría ni zona toma un color que ya significa algo: rojo (acción y crítico), azul noche (elegido), verde (suficiente) o ámbar (necesidad alta). Las categorías son fichas claras con ícono oscuro; las zonas, círculos sólidos. La forma también las diferencia. La escena usa colores apagados para que la interfaz y las zonas resalten sobre ella.</div>
+</section>
+
+<section class="part" id="tipografia">
+    <header><h2>Tipografía</h2><span class="weight">3 %</span><span class="crit">Superficie · Familia, escala, pesos y usos, y legibilidad en computador y celular.</span></header>
+    <div class="card">
+        <p style="font-size:44px;font-weight:800;color:var(--navy);margin:0;line-height:1.1">Atkinson Hyperlegible Next</p>
+        <p style="margin:6px 0 0">Del Braille Institute, diseñada para personas con baja visión. Diferencia las letras que se confunden (I, l, 1; O y 0; b, d, p, q) y tiene aberturas amplias. Se eligió porque el público incluye adultos mayores y personas bajo estrés. Pesos usados: 400, 500, 600, 700 y 800.</p>
+        <p style="font-size:30px;margin:10px 0 0;color:var(--navy)">Il1 O0 bdpq · 0123456789 · ¿Qué quieres donar?</p>
+    </div>
+    <h4>Escala (texto base de 18 px)</h4>
+    <div class="card">
+        <div class="type-row"><small>Logo · 156 px · 800</small><span style="font-size:56px;font-weight:800;color:var(--navy);line-height:1">NE<span style="color:var(--red)">X</span>OS</span></div>
+        <div class="type-row"><small>2XL · 34 px · 800</small><span style="font-size:34px;font-weight:800;color:var(--navy)">Zona Norte</span></div>
+        <div class="type-row"><small>XL · 28 px · 800</small><span style="font-size:28px;font-weight:800;color:var(--navy)">Inventario del punto</span></div>
+        <div class="type-row"><small>LG · 22 px · 700</small><span style="font-size:22px;font-weight:700;color:var(--navy)">¿Qué quieres donar?</span></div>
+        <div class="type-row"><small>MD · 18 px · 400–700</small><span style="font-size:18px">Toca un suministro para agregarlo. <b>Continuar</b></span></div>
+        <div class="type-row"><small>SM · 15 px · 400</small><span style="font-size:15px;color:var(--muted)">Punto de acopio Parque La Flora · Zona Norte</span></div>
+        <div class="type-row"><small>XS · 13 px · 700</small><span style="font-size:13px;font-weight:700;color:var(--muted);letter-spacing:.04em">LO QUE MÁS SE NECESITA</span></div>
+    </div>
+    <h4>Legibilidad</h4>
+    <ul>
+        <li>El texto base es de 18 px, mayor que los 16 px habituales. Nada lleva menos de 13 px, y esa medida se usa solo para etiquetas en negrita.</li>
+        <li>En celular la escala se mantiene, y los nombres largos se recortan con "…" en lugar de achicar la letra. La excepción son las fichas de categoría, que bajan de tamaño para que "Medicinas" quepa entera.</li>
+        <li>El interlineado de los párrafos es de 1,4 a 1,6, y los números usan cifras tabulares en el inventario para que se alineen.</li>
+    </ul>
+    <div class="grid2">
+        <figure><img src="img/inventario.jpg" alt="Tipografía en computador" loading="lazy"><figcaption><b>Computador:</b> números grandes en 800 y etiquetas en 13 px.</figcaption></figure>
+        <figure class="phone"><img src="img/movil-zona.jpg" alt="Tipografía en celular" loading="lazy"><figcaption><b>Celular:</b> la misma escala en la tarjeta de zona.</figcaption></figure>
+    </div>
+</section>
+
+<section class="part" id="estilo">
+    <header><h2>Guía de estilo</h2><span class="weight">5 %</span><span class="crit">Superficie · Compendio para extender NEXOS sin perder coherencia, con ejemplos de uso correcto e incorrecto.</span></header>
+
+    <h3>1. Tokens</h3>
+    <div class="scroll"><table>
+        <tr><th>Token</th><th>Valor</th><th>Uso</th></tr>
+        <tr><td><code>--navy</code> · <code>--red</code> · <code>--red-press</code></td><td>#011E41 · #F5333F · #D92632</td><td>Ver <a href="#color">Color</a>.</td></tr>
+        <tr><td><code>--font</code></td><td>Atkinson Hyperlegible Next</td><td>Toda la interfaz.</td></tr>
+        <tr><td><code>--fs-xs … --fs-2xl</code></td><td>13 · 15 · 18 · 22 · 28 · 34 px</td><td>Ver <a href="#tipografia">Tipografía</a>.</td></tr>
+        <tr><td><code>--radius-lg / md / sm / pill</code></td><td>24 · 18 · 12 · 999 px</td><td>Paneles · tarjetas · botones y campos · etiquetas.</td></tr>
+        <tr><td><code>--shadow-soft</code></td><td>0 12px 32px rgba(1,30,65,.14)</td><td>Paneles sobre el 3D.</td></tr>
+        <tr><td><code>--gutter</code></td><td>24 px (12 px en celular)</td><td>Margen de la capa 2D.</td></tr>
+        <tr><td><code>--tap</code></td><td>56 px</td><td>Alto mínimo de lo tocable principal (44 px en botones de ícono).</td></tr>
+        <tr><td><code>--ease-calm</code> · <code>--dur</code></td><td>cubic-bezier(0.33, 0, 0.2, 1) · 420 ms</td><td>Toda transición de la interfaz.</td></tr>
+    </table></div>
+
+    <h3>2. Componentes con sus estados</h3>
+    <div class="card">
+        <div class="flow" style="gap:12px">
+            <button class="b red" type="button">Continuar ›</button>
+            <button class="b red" type="button" style="background:#D92632;transform:scale(.97)">Presionado</button>
+            <button class="b dis" type="button">Deshabilitado</button>
+            <button class="b navy" type="button">Elegido</button>
+            <button class="b ghost" type="button">‹ Volver</button>
+        </div>
+        <div class="flow" style="gap:10px;margin-top:12px">
+            <span class="pill crit">Crítico</span><span class="pill est">Estable</span><span class="pill ok">Abastecido</span>
+            <span class="pill" style="background:#011E41;color:#fff">Todos 8</span><span class="pill" style="background:#fff;color:#011E41;border:1px solid var(--line)">● Críticos 2</span>
+        </div>
+        <p style="font-size:14px;color:var(--muted)">El inventario completo de componentes, con su función y ubicación, está en <a href="#componentes">Elementos de la interfaz</a>.</p>
+    </div>
+
+    <h3>3. Estilo 3D e ilustración</h3>
+    <ul>
+        <li>Formas simples de pocos polígonos, en quads y sin n-gonos. Las puertas miden 2,1 m para que todo tenga la misma escala.</li>
+        <li>Texturas de Substance: solo BaseColor, Normal y Roughness, con superficie mate (en los árboles, roughness 1).</li>
+        <li>Luz por bandas de dos o tres tonos y sombras suaves de color azulado, nunca negras.</li>
+        <li>Colores apagados en el entorno; el color saturado se reserva para las zonas y la interfaz.</li>
+        <li>Personajes con el cuerpo del guía: cabeza grande, sin dedos, cara dibujada.</li>
+    </ul>
+
+    <h3>4. Animación</h3>
+    <ul>
+        <li>Interfaz: <code>--ease-calm</code> y 420 ms. Al presionar, escala 0,97. Nada rebota.</li>
+        <li>Cámara: transiciones largas y suaves de GSAP. La bajada entre nubes no se detiene mientras carga.</li>
+        <li>Urgencias: un latido suave, sin parpadeo rápido.</li>
+        <li>Respetar <code>prefers-reduced-motion</code>.</li>
+    </ul>
+
+    <h3>5. Uso correcto e incorrecto</h3>
+    <div class="dd">
+        <div class="yes"><div class="lab">✓ Correcto</div><div class="demo"><button class="b ghost" type="button">‹ Volver</button><button class="b red" type="button">Continuar ›</button></div><p>Un solo botón rojo por paso, el de avanzar.</p></div>
+        <div class="no"><div class="lab">✕ Incorrecto</div><div class="demo"><button class="b red" type="button">Volver</button><button class="b red" type="button">Continuar</button></div><p>Dos rojos compiten y el usuario no sabe cuál es la acción.</p></div>
+        <div class="yes"><div class="lab">✓ Correcto</div><div class="demo"><span style="font-weight:700;color:var(--navy)">Medicinas</span><span style="color:#E39B1B;letter-spacing:2px">●●●</span><span style="font-weight:700;color:#7A4B00">Alta</span></div><p>La necesidad en palabras, con un indicador simple.</p></div>
+        <div class="no"><div class="lab">✕ Incorrecto</div><div class="demo"><span style="font-weight:700;color:var(--navy)">Medicinas</span><span>73,4 %</span></div><p>Un porcentaje exige interpretar y no dice si es grave.</p></div>
+        <div class="yes"><div class="lab">✓ Correcto</div><div class="demo" style="background:linear-gradient(135deg,#8DAA74,#E4DDD0)"><span style="background:#fff;border-radius:16px;padding:10px 14px;font-weight:700;color:var(--navy);box-shadow:0 8px 20px rgba(1,30,65,.18)">Panel opaco legible</span></div><p>Panel blanco casi sólido sobre la escena 3D.</p></div>
+        <div class="no"><div class="lab">✕ Incorrecto</div><div class="demo" style="background:linear-gradient(135deg,#8DAA74,#E4DDD0)"><span style="background:rgba(255,255,255,.25);border-radius:16px;padding:10px 14px;font-weight:700;color:#fff">Vidrio transparente</span></div><p>Vidrio decorativo: el texto se pierde sobre el 3D (versión del 1 de octubre).</p></div>
+        <div class="yes"><div class="lab">✓ Correcto</div><div class="demo"><span class="pill ok">Abastecido</span><span class="pill crit">Crítico</span></div><p>Cada estado con su color de siempre.</p></div>
+        <div class="no"><div class="lab">✕ Incorrecto</div><div class="demo"><span class="pill" style="background:#6E4BB0;color:#fff">Crítico</span><span class="pill" style="background:#F5333F;color:#fff">Medicinas</span></div><p>Morado (categoría) para un estado o rojo para una categoría: se rompe el significado.</p></div>
+    </div>
+
+    <h3>6. Para extender NEXOS</h3>
+    <ol>
+        <li><b>Una pantalla nueva:</b> panel blanco apoyado en un borde, con título, subtítulo, "?" y "×" arriba, el contenido en la retícula del panel y un solo botón rojo abajo a la derecha.</li>
+        <li><b>Un insumo nuevo:</b> agrégalo a <code>src/data/catalog.js</code> con su categoría, crea su ícono en <code>icons.js</code> con trazo redondeado de 2 px y dale un modelo o la caja genérica.</li>
+        <li><b>Una casa nueva:</b> sigue el proceso de <code>fuentes_3d/LEEME.md</code> (puerta de 2,1 m, BaseColor, Normal y Roughness, y <code>fbx_to_glb.py</code>).</li>
+        <li><b>Un color nuevo:</b> no puede ser rojo, azul noche, verde ni ámbar, y su texto debe pasar 4,5:1.</li>
+    </ol>
+</section>
+
+<p style="margin-top:60px;color:var(--muted);font-size:14px">NEXOS · Documento de proyecto · Octubre de 2026 · <a href="../bitacora/index.html">Bitácora</a> · <a href="../bitacora/evolucion.html">Evolución</a> · <a href="../">App</a></p>
+</main>
+</div>
+</body>
+</html>
