@@ -2123,7 +2123,7 @@ export class NeighborhoodScene {
 
     /**
      * Small signs of ordinary life: potted plants at the doors people use,
-     * a bin or two by the street, a bicycle leaning where someone left it.
+     * a bin or two by the street.
      *
      * None of it is interactive and none of it is emergency-related. It exists
      * so a barrio reads as somewhere lived in rather than a diagram of houses.
@@ -2140,7 +2140,6 @@ export class NeighborhoodScene {
         const street = this.street ?? {}
         const prop = (id) => (street[id] ? this.loader.instanceSync(street[id]) : null)
         const bin = () => prop('bin') ?? props.bin()
-        const bicycle = props.bicycle
         /** The way to the nearest path, as a yaw for a prop that should face it. */
         const towardPath = (x, z) => {
             const e = 0.3
@@ -2161,21 +2160,17 @@ export class NeighborhoodScene {
             }
         }
 
-        // bins and bicycles along the street, wherever there is room
+        // bins along the street, wherever there is room
         let bins = 0
-        let bikes = 0
-        for (let i = 0; i < 900 && (bins < 4 || bikes < 3); i++) {
+        for (let i = 0; i < 900 && bins < 4; i++) {
             const x = (rand() - 0.5) * 48
             const z = -28 + rand() * 40
             const d = distToPaths(x, z)
             if (d < 1.1 || d > 2.6) continue
             if (blocked.some((b) => Math.hypot(x - b.x, z - b.z) < b.r + 1.1)) continue
-            if (bins < 4 && rand() < 0.55) {
+            if (rand() < 0.55) {
                 place(bin(), x, z, towardPath(x, z))
                 bins++
-            } else if (bikes < 3) {
-                place(bicycle(), x, z, rand() * Math.PI * 2)
-                bikes++
             }
         }
 
