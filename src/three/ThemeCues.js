@@ -517,11 +517,15 @@ export function buildBarrioCues(theme, ctx) {
             depthWrite: false,
             envMapIntensity: 1.6,
         })
+        // a few, well apart: never two side by side, so they read as puddles, not a cluster of rings
         const pts = ctx.pathPoints
-        for (let i = 0; i < 11 && pts.length; i++) {
+        const placed = []
+        for (let i = 0; i < 400 && placed.length < 6 && pts.length; i++) {
             const p = pts[Math.floor(ctx.rand() * pts.length)]
             const x = p.x + (ctx.rand() - 0.5) * 1.5
             const z = p.z + (ctx.rand() - 0.5) * 1.5
+            if (placed.some((q) => Math.hypot(q.x - x, q.z - z) < 12)) continue
+            placed.push({ x, z })
             const m = new THREE.Mesh(new THREE.CircleGeometry(1, 24).rotateX(-Math.PI / 2), mat)
             m.position.set(x, ground(x, z) + 0.025, z)
             m.scale.set(0.8 + ctx.rand() * 1.1, 1, 0.5 + ctx.rand() * 0.6)
