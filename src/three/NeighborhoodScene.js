@@ -57,6 +57,42 @@ const GRID = 0.4
 /** The eight moves on the grid: [dx, dz, length]. */
 const MOVES = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]]
 
+/**
+ * Soft, borderless variation laid over a canvas: a coarse grid of random tones
+ * (`cells` across), blown up with smoothing in two steps so it reads as one
+ * continuous surface rather than separate spots. `tone()` gives [r, g, b, alpha].
+ */
+function softNoise(ctx, cw, ch, cells, rand, tone) {
+    const gw = cells
+    const gh = Math.max(2, Math.round((cells * ch) / cw))
+    const grid = document.createElement('canvas')
+    grid.width = gw
+    grid.height = gh
+    const gc = grid.getContext('2d')
+    const img = gc.createImageData(gw, gh)
+    for (let i = 0; i < gw * gh; i++) {
+        const [r, g, b, a] = tone()
+        img.data.set([r, g, b, Math.round(a * 255)], i * 4)
+    }
+    gc.putImageData(img, 0, 0)
+    // an intermediate size first, so the final blow-up is a smooth swell, not visible cells
+    const mid = document.createElement('canvas')
+    mid.width = gw * 8
+    mid.height = gh * 8
+    const mc = mid.getContext('2d')
+    mc.imageSmoothingEnabled = true
+    mc.imageSmoothingQuality = 'high'
+    mc.drawImage(grid, 0, 0, mid.width, mid.height)
+    ctx.save()
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    // drawn a cell beyond every edge, so the border cells are not cut in half
+    const cx = cw / gw
+    const cy = ch / gh
+    ctx.drawImage(mid, -cx / 2, -cy / 2, cw + cx, ch + cy)
+    ctx.restore()
+}
+
 /** Ground surface styles (painted into the ground texture) */
 const STYLES = {
     cobble: { kind: 'grid', base: '#BFB09A', tone: [220, 207, 188], size: 0.62, round: 0.28 },
@@ -1427,14 +1463,9 @@ export class NeighborhoodScene {
                 ctx.fillStyle = rand() < 0.5 ? `rgba(110,140,85,${0.05 + rand() * 0.08})` : `rgba(214,220,170,${0.05 + rand() * 0.07})`
                 ctx.fillRect(rand() * cw, rand() * ch, 2 + rand() * 5, 2 + rand() * 5)
             }
-            for (let i = 0; i < 46; i++) {
-                const x = rand() * cw, y = rand() * ch, rad = 80 + rand() * 220
-                const g = ctx.createRadialGradient(x, y, 0, x, y, rad)
-                g.addColorStop(0, rand() < 0.5 ? 'rgba(120,152,96,0.2)' : 'rgba(214,214,160,0.18)')
-                g.addColorStop(1, 'rgba(0,0,0,0)')
-                ctx.fillStyle = g
-                ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2)
-            }
+            // broad, borderless changes of tone, as grass really grows (not round patches)
+            softNoise(ctx, cw, ch, 9, rand, () => (rand() < 0.5 ? [120, 152, 96, rand() * 0.26] : [214, 214, 160, rand() * 0.22]))
+            softNoise(ctx, cw, ch, 26, rand, () => (rand() < 0.5 ? [110, 140, 85, rand() * 0.12] : [224, 226, 176, rand() * 0.1]))
             // tiny wildflowers
             for (let i = 0; i < 900; i++) {
                 ctx.fillStyle = ['rgba(255,255,255,0.7)', 'rgba(242,214,120,0.7)', 'rgba(232,160,170,0.6)'][Math.floor(rand() * 3)]
@@ -1605,14 +1636,6 @@ export class NeighborhoodScene {
      * barrio, not as part of how the barrio was built.
      */
     #paintSkin(ctx, cw, ch, kind, rand, toC, s, shapes) {
-        /** Soft irregular blotch, used by most passes. */
-        const blotch = (x, y, r, fill) => {
-            const g = ctx.createRadialGradient(x, y, 0, x, y, r)
-            g.addColorStop(0, fill)
-            g.addColorStop(1, 'rgba(0,0,0,0)')
-            ctx.fillStyle = g
-            ctx.fillRect(x - r, y - r, r * 2, r * 2)
-        }
         /** A band hugging every walkable surface, for things that collect at the edges. */
         const alongPaths = (width, style) => {
             ctx.save()
@@ -1630,7 +1653,7 @@ export class NeighborhoodScene {
 
         if (kind === 'ash') {
             // a fine grey fall, heavier in drifts
-            for (let i = 0; i < 34; i++) blotch(rand() * cw, rand() * ch, 110 + rand() * 260, 'rgba(146,142,136,0.2)')
+            softNoise(ctx, cw, ch, 10, rand, () => [146, 142, 136, rand() * 0.3])
             for (let i = 0; i < 26000; i++) {
                 ctx.fillStyle = rand() < 0.65 ? 'rgba(168,164,158,0.35)' : 'rgba(96,92,88,0.3)'
                 ctx.fillRect(rand() * cw, rand() * ch, 2 + rand() * 3, 2 + rand() * 3)
@@ -1642,7 +1665,7 @@ export class NeighborhoodScene {
 
         if (kind === 'dust') {
             // dry dust lifted and settled again, palest on open ground
-            for (let i = 0; i < 52; i++) blotch(rand() * cw, rand() * ch, 130 + rand() * 320, 'rgba(216,200,164,0.38)')
+            softNoise(ctx, cw, ch, 8, rand, () => [216, 200, 164, 0.08 + rand() * 0.34])
             for (let i = 0; i < 18000; i++) {
                 ctx.fillStyle = 'rgba(208,192,160,0.4)'
                 ctx.fillRect(rand() * cw, rand() * ch, 2 + rand() * 4, 2 + rand() * 4)
@@ -1670,18 +1693,9 @@ export class NeighborhoodScene {
 
         if (kind === 'wet') {
             // ground that has not dried, darkest where the water ran
-            for (let i = 0; i < 44; i++) blotch(rand() * cw, rand() * ch, 90 + rand() * 230, 'rgba(84,96,104,0.26)')
+            softNoise(ctx, cw, ch, 10, rand, () => [84, 96, 104, rand() * 0.32])
             alongPaths(2.6, 'rgba(90,102,110,0.3)')
             alongPaths(0.6, 'rgba(104,92,74,0.34)')
-            // scattered dark pools on open ground
-            ctx.save()
-            for (let i = 0; i < 40; i++) {
-                ctx.fillStyle = `rgba(74,86,96,${0.16 + rand() * 0.2})`
-                ctx.beginPath()
-                ctx.ellipse(rand() * cw, rand() * ch, 14 + rand() * 46, 8 + rand() * 24, rand() * Math.PI, 0, Math.PI * 2)
-                ctx.fill()
-            }
-            ctx.restore()
         }
     }
 
