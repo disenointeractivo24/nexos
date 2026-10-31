@@ -9,7 +9,7 @@ import { buildBarrioCues } from './ThemeCues.js'
 import { buildCollectionPoint, collectionPointProxy, DISPLAY_SLOTS } from './CollectionPoint.js'
 import { SUPPLIES, CATEGORIES, perBox } from '../data/catalog.js'
 import * as props from './props.js'
-import { TREE_MODELS } from '../data/assets.js'
+import { TREE_MODELS, HOUSE_MODELS, getAsset } from '../data/assets.js'
 
 /**
  * Neighborhoods. Each barrio is built from a layout (data/layouts.js) into its own
@@ -92,6 +92,9 @@ function softNoise(ctx, cw, ch, cells, rand, tone) {
     ctx.drawImage(mid, -cx / 2, -cy / 2, cw + cx, ch + cy)
     ctx.restore()
 }
+
+/** How far an emergency's tint moves the barrio grass: a hint, so it stays the city's green. */
+const grassTint = (skin) => (skin.grassMix ?? 0.5) * 0.35
 
 /** Ground surface styles (painted into the ground texture) */
 const STYLES = {
@@ -262,6 +265,7 @@ export class NeighborhoodScene {
                 })
             )
         )
+        this.#farModels()
     }
 
     /* ---------------- public API (used by App) ---------------- */
@@ -1052,12 +1056,12 @@ export class NeighborhoodScene {
         const look = barrio.layout?.look
         if (!look?.grass) return
         const skin = this.theme?.skin
-        const grass = skin?.grass ? mixHex(look.grass, skin.grass, skin.grassMix ?? 0.5) : look.grass
+        const grass = skin?.grass ? mixHex(look.grass, skin.grass, grassTint(skin)) : look.grass
         this.outerMat.color.set(grass)
     }
 
     #distance() {
-        const hillMat = stylize(sharedMaterial('nb:hill', { color: '#86A37A', roughness: 1 }), { ao: 0, rim: 0.08 })
+        const hillMat = stylize(sharedMaterial('nb:hill', { color: '#5E8C50', roughness: 1 }), { ao: 0, rim: 0.08 })
         const hills = [
             [-150, -210, 110, 46], [-40, -260, 130, 40], [80, -240, 120, 36], [190, -190, 110, 40], [-230, -80, 100, 44], [230, -60, 90, 30],
         ]
@@ -1075,18 +1079,71 @@ export class NeighborhoodScene {
             n
         )
         const cols = ['#EFE6D8', '#E8E0D3', '#F3F0EA', '#E5D3BD', '#DCE2E5'].map((c) => new THREE.Color(c))
+        this.farSpots = []
         const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0)
         let i = 0
         while (i < n) {
             const x = (r() - 0.5) * 300
             const z = -78 - r() * 90
             const tall = r() < 0.16
-            m.compose(p.set(x, 0, z), q.setFromAxisAngle(up, (r() - 0.5) * 0.4), sc.set(4 + r() * 4, tall ? 10 + r() * 16 : 3 + r() * 3, 4 + r() * 4))
+            const yaw = (r() - 0.5) * 0.4
+            const size = sc.set(4 + r() * 4, tall ? 10 + r() * 16 : 3 + r() * 3, 4 + r() * 4)
+            m.compose(p.set(x, 0, z), q.setFromAxisAngle(up, yaw), size)
             blocks.setMatrixAt(i, m)
+            this.farSpots.push({ x, z, yaw, tall, w: Math.max(size.x, size.z), h: size.y, pick: r() })
             blocks.setColorAt(i, cols[Math.floor(r() * cols.length)])
             i++
         }
         this.group.add(blocks)
+        // stand-ins until the real houses and buildings arrive (see #farModels)
+        this.farBlocks = blocks
+    }
+
+    /**
+     * The skyline behind the barrio, built from the same houses and apartment buildings as
+     * the city (the light map copies), instanced, in the places the drawn blocks held.
+     * Every house faces the barrio. Until they load, or if they do not, the blocks stay.
+     */
+    async #farModels() {
+        const load = async (id) => {
+            const t = await this.loader.load(id).catch(() => null)
+            return t?.source === 'glb' ? { id, t } : null
+        }
+        const houses = (await Promise.all(HOUSE_MODELS.map((id) => load(`map-${id}`)))).filter(Boolean)
+        const towers = (await Promise.all(['edificio-1', 'edificio-2', 'edificio-3'].map(load))).filter(Boolean)
+        if (!houses.length && !towers.length) return
+        // which way each model's door looks (assets.js), turned so it looks at the barrio (+z)
+        const facing = { '-z': Math.PI, '+z': 0, '+x': -Math.PI / 2, '-x': Math.PI / 2 }
+        const byModel = new Map()
+        for (const sp of this.farSpots) {
+            const set = sp.tall && towers.length ? towers : houses.length ? houses : towers
+            const pick = set[Math.floor(sp.pick * set.length) % set.length]
+            byModel.set(pick, [...(byModel.get(pick) ?? []), sp])
+        }
+        const place = new THREE.Matrix4(), m = new THREE.Matrix4(), q = new THREE.Quaternion()
+        const p = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0)
+        for (const [{ id, t }, list] of byModel) {
+            const tower = id.startsWith('edificio')
+            const front = facing[getAsset(id).front] ?? 0
+            const placements = list.map((sp) => {
+                // houses fill the block's footprint; buildings take its height
+                const k = tower ? sp.h / t.size.y : sp.w / Math.max(t.size.x, t.size.z)
+                q.setFromAxisAngle(up, front + sp.yaw)
+                return place.compose(p.set(sp.x, 0, sp.z), q, sc.set(k, k, k)).clone()
+            })
+            t.object.updateMatrixWorld(true)
+            t.object.traverse((o) => {
+                if (!o.isMesh) return
+                const im = new THREE.InstancedMesh(o.geometry, o.material, placements.length)
+                placements.forEach((pl, i) => im.setMatrixAt(i, m.multiplyMatrices(pl, o.matrixWorld)))
+                im.instanceMatrix.needsUpdate = true
+                im.computeBoundingSphere()
+                im.name = `horizonte:${id}`
+                this.group.add(im)
+            })
+        }
+        this.group.remove(this.farBlocks)
+        this.farBlocks.dispose()
     }
 
     #cueAssets() {
@@ -1457,15 +1514,16 @@ export class NeighborhoodScene {
         const tex = canvasTexture(px, ch, (ctx, cw) => {
             /* grass, tinted by the session's emergency context */
             const skin = this.theme.skin
-            ctx.fillStyle = skin?.grass ? mixHex(L.look.grass, skin.grass, skin.grassMix ?? 0.5) : L.look.grass
+            ctx.fillStyle = skin?.grass ? mixHex(L.look.grass, skin.grass, grassTint(skin)) : L.look.grass
             ctx.fillRect(0, 0, cw, ch)
             for (let i = 0; i < 26000; i++) {
-                ctx.fillStyle = rand() < 0.5 ? `rgba(110,140,85,${0.05 + rand() * 0.08})` : `rgba(214,220,170,${0.05 + rand() * 0.07})`
+                ctx.fillStyle = rand() < 0.6 ? `rgba(70,112,58,${0.08 + rand() * 0.12})` : `rgba(126,170,98,${0.06 + rand() * 0.1})`
                 ctx.fillRect(rand() * cw, rand() * ch, 2 + rand() * 5, 2 + rand() * 5)
             }
             // broad, borderless changes of tone, as grass really grows (not round patches)
-            softNoise(ctx, cw, ch, 9, rand, () => (rand() < 0.5 ? [120, 152, 96, rand() * 0.26] : [214, 214, 160, rand() * 0.22]))
-            softNoise(ctx, cw, ch, 26, rand, () => (rand() < 0.5 ? [110, 140, 85, rand() * 0.12] : [224, 226, 176, rand() * 0.1]))
+            softNoise(ctx, cw, ch, 9, rand, () => (rand() < 0.6 ? [77, 120, 63, rand() * 0.35] : [112, 158, 88, rand() * 0.22]))
+            softNoise(ctx, cw, ch, 30, rand, () => (rand() < 0.6 ? [70, 110, 58, rand() * 0.3] : [104, 150, 84, rand() * 0.16]))
+            softNoise(ctx, cw, ch, 80, rand, () => [66, 104, 54, rand() * 0.18])
             // tiny wildflowers
             for (let i = 0; i < 900; i++) {
                 ctx.fillStyle = ['rgba(255,255,255,0.7)', 'rgba(242,214,120,0.7)', 'rgba(232,160,170,0.6)'][Math.floor(rand() * 3)]

@@ -92,7 +92,7 @@ const plaza = {
     feature: { type: 'none', x: 0, z: -3 },
     open: [-24, 4],
     lamps: [[-5.6, -7.6, 1], [5.6, -7.6, -1], [-6.4, -13, 1], [6.4, -13, -1], [-20, -19, 1], [20, -19, -1]],
-    look: { grass: '#A9BC8A', trees: 7, bushes: 30, outer: 74, palms: 0, flowers: ['#D0575C', '#F1EEE6', '#E3A3A0', '#E7C76E'] },
+    look: { grass: '#669655', trees: 7, bushes: 30, outer: 74, palms: 0, flowers: ['#D0575C', '#F1EEE6', '#E3A3A0', '#E7C76E'] },
 }
 
 /* 2 · La Flora — palm avenue with a central promenade, a row of houses on each
@@ -138,7 +138,7 @@ const avenida = {
     open: [19, -19],
     lamps: [[-4.8, 7, 1], [4.8, 1.5, -1], [-6.8, -7, 1], [4.8, -18.5, -1], [-4.8, -19, 1]],
     look: {
-        grass: '#A6BB86',
+        grass: '#649453',
         trees: 4,
         bushes: 18,
         outer: 66,
@@ -190,7 +190,7 @@ const loma = {
     feature: { type: 'chapel', x: 0, z: -30.5 },
     open: [21, 13],
     lamps: [[-4.2, 6.5, 1], [1.3, 0.4, -1], [-4.6, -9.5, 1], [8.4, -17, -1]],
-    look: { grass: '#9FB683', trees: 10, bushes: 38, outer: 82, palms: 0, flowers: ['#C9488F', '#E07AB0', '#F1EEE6'], walls: true },
+    look: { grass: '#63934F', trees: 10, bushes: 38, outer: 82, palms: 0, flowers: ['#C9488F', '#E07AB0', '#F1EEE6'], walls: true },
 }
 
 /* 4 · El Poblado — canal with a footbridge and a sports court: a row of houses
@@ -230,7 +230,7 @@ const canal = {
     court: { x: 22, z: 2 },
     open: [-18.5, 0.2],
     lamps: [[-6, -11.2, 1], [6, -11.2, -1], [-16, -11.2, 1], [16, -11.2, -1], [-2.6, 10, 1]],
-    look: { grass: '#A3B98A', trees: 4, bushes: 20, outer: 68, palms: 3, flowers: ['#E3A3A0', '#F1EEE6', '#E7C76E'] },
+    look: { grass: '#689856', trees: 4, bushes: 20, outer: 68, palms: 3, flowers: ['#E3A3A0', '#F1EEE6', '#E7C76E'] },
 }
 
 /* 5 · El Ingenio — a park with a pond in the middle of a square block: streets
@@ -281,7 +281,7 @@ const parque = {
     feature: { type: 'pond', x: 0, z: -14.2, r: 2.2, park: 8.1, parkX: 0, parkZ: -9 },
     open: [-24, 14],
     lamps: [[-3.1, 4, 1], [6.6, 1.4, -1], [-13.8, -9, 1], [13.8, -9, -1], [3, -21, -1]],
-    look: { grass: '#A0BA84', trees: 10, bushes: 26, outer: 76, palms: 0, flowers: ['#D0575C', '#F1EEE6', '#B9A3E3', '#E7C76E'], parkTrees: 7 },
+    look: { grass: '#659553', trees: 10, bushes: 26, outer: 76, palms: 0, flowers: ['#D0575C', '#F1EEE6', '#B9A3E3', '#E7C76E'], parkTrees: 7 },
     camera: { offset: [0, 17.5, 20], look: [0, 0.4, -11] },
 }
 
