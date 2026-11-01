@@ -1,5 +1,26 @@
 # NEXOS — Red de ayuda en tiempo real
 
+## Cómo abrirlo
+
+1. Abre esta carpeta en VS Code (Archivo → Abrir carpeta).
+2. Abre la terminal (Terminal → Nueva terminal) y escribe:
+
+```bash
+npm run dev
+```
+
+3. Abre en el navegador la dirección que aparece (normalmente http://localhost:5173).
+
+Necesita Node.js 18 o superior. Si `npm run dev` dice que faltan módulos (por ejemplo, en Mac o
+Linux), corre primero `npm install` y después `npm run dev`.
+
+- Versión publicada: https://disenointeractivo24.github.io/nexos/
+- Documento del proyecto: https://disenointeractivo24.github.io/nexos/documento/
+- Presentación: https://disenointeractivo24.github.io/nexos/presentacion/
+- Claves de prueba del punto de acopio: ACOPIO-CENTRO, ACOPIO-NORTE, ACOPIO-SUR, ACOPIO-ORIENTE y ACOPIO-OESTE, todas con la clave 2024.
+
+---
+
 A guided 3D experience for humanitarian aid in Cali: city → zone → neighborhood → aid point → support basket.
 Built with Three.js + GSAP on Vite (no framework).
 
