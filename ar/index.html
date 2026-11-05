@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <link rel="icon" href="data:," />
+    <title>NEXOS · Un turno en el punto de acopio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;700;800&display=swap" rel="stylesheet" />
+    <style>
+        html, body { margin: 0; height: 100%; background: #011E41; font-family: "Atkinson Hyperlegible Next", "Segoe UI", system-ui, sans-serif; }
+        #scene-container { position: fixed; inset: 0; }
+        #start { position: fixed; inset: 0; z-index: 2; display: grid; place-items: center; padding: 24px; background: #011E41; color: #fff; }
+        #start[hidden] { display: none; }
+        .start-card { max-width: 560px; }
+        .logo { margin: 0; font-size: clamp(56px, 12vw, 96px); font-weight: 800; line-height: 1; }
+        .logo span { color: #F5333F; }
+        h2 { margin: 12px 0 0; font-size: clamp(24px, 5vw, 34px); }
+        p { margin: 14px 0 0; font-size: 18px; line-height: 1.5; color: rgba(255, 255, 255, 0.85); }
+        .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+        button { min-height: 56px; padding: 0 24px; border: 0; border-radius: 14px; font: 700 18px inherit; font-family: inherit; cursor: pointer; transition: transform 200ms cubic-bezier(0.33, 0, 0.2, 1); }
+        button:active { transform: scale(0.97); }
+        button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+        button[disabled] { opacity: 0.45; cursor: not-allowed; }
+        #enter-ar { background: #D92632; color: #fff; }
+        #enter-desktop { background: rgba(255, 255, 255, 0.12); color: #fff; }
+        #note { font-size: 15px; }
+        #hud { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; pointer-events: none; }
+        #hud[hidden] { display: none; }
+        #hud p { margin: 0; padding: 10px 14px; border-radius: 12px; background: rgba(1, 30, 65, 0.86); color: #fff; font-size: 15px; line-height: 1.35; }
+        .views { display: flex; gap: 8px; pointer-events: auto; }
+        .views button { min-height: 44px; padding: 0 14px; border-radius: 12px; background: rgba(1, 30, 65, 0.86); color: #fff; font-size: 15px; }
+        .views button[aria-pressed="true"] { background: #D92632; }
+    </style>
+</head>
+<body>
+    <div id="scene-container"></div>
+    <div id="start">
+        <div class="start-card">
+            <h1 class="logo">NE<span>X</span>OS</h1>
+            <h2>Un turno en el punto de acopio</h2>
+            <p>Hoy tú recibes, abres y organizas lo que llega. Detrás de cada donación hay manos que hacen este trabajo.</p>
+            <div class="actions">
+                <button id="enter-ar" type="button" disabled>Entrar con el visor</button>
+                <button id="enter-desktop" type="button">Probar en el computador</button>
+            </div>
+            <p id="note">Buscando visor…</p>
+        </div>
+    </div>
+    <div id="hud" hidden>
+        <div class="views" role="group" aria-label="Vistas">
+            <button type="button" data-view="persona" aria-pressed="true">Persona</button>
+            <button type="button" data-view="arriba" aria-pressed="false">Desde arriba</button>
+            <button type="button" data-view="frente" aria-pressed="false">Desde afuera</button>
+        </div>
+        <p>Arrastra para mirar · W A S D o flechas para caminar · Clic para usar. Los estantes están a tu espalda.</p>
+    </div>
+    <script type="module" src="/src/index.js"></script>
+</body>
+</html>

@@ -25,6 +25,11 @@ jobs:
           node-version: 20
       - run: npm install
       - run: npm run build
+      # The augmented reality experience is its own project (see ar/README.md), published at /ar/
+      - run: npm install --prefix ar
+      - run: npm test --prefix ar
+      - run: npm run build --prefix ar
+      - run: cp -r ar/dist dist/ar
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

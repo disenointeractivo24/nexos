@@ -62,6 +62,15 @@ var POINTS = [
 ]
 
 /**
+ * Puntos de práctica: tienen su pestaña y responden como cualquier otro, pero no
+ * cuentan en el Resumen ni los ve quien dona. Los usa la experiencia de realidad aumentada.
+ */
+var DEMO_POINTS = [
+  { id: 'demo-ar', tab: 'Demo AR', name: 'Punto de demostración (realidad aumentada)' },
+]
+function allPoints_() { return POINTS.concat(DEMO_POINTS) }
+
+/**
  * Mismos umbrales que la aplicación (src/data/inventory.js): crítico por debajo
  * del 30 % del tope, abastecido desde el 75 %. Las fórmulas los usan sin
  * decimales (cantidad × 10 < tope × 3), así funcionan en una hoja en español.
@@ -113,7 +122,8 @@ function json_(obj) {
 }
 
 function pointById_(id) {
-  for (var i = 0; i < POINTS.length; i++) if (POINTS[i].id === String(id)) return POINTS[i]
+  var points = allPoints_()
+  for (var i = 0; i < points.length; i++) if (points[i].id === String(id)) return points[i]
   return null
 }
 
@@ -151,8 +161,9 @@ function organize_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet()
   var legacy = readLegacy_(ss)
 
-  for (var p = 0; p < POINTS.length; p++) {
-    var point = POINTS[p]
+  var points = allPoints_()
+  for (var p = 0; p < points.length; p++) {
+    var point = points[p]
     var kept = readZone_(ss.getSheetByName(point.tab)) || legacy[point.id] || {}
     buildZone_(ss, point, kept)
   }
@@ -166,7 +177,7 @@ function organize_() {
   }
 
   // el orden de las pestañas: Resumen y luego los puntos
-  var order = [SUMMARY_TAB].concat(POINTS.map(function (pt) { return pt.tab }))
+  var order = [SUMMARY_TAB].concat(allPoints_().map(function (pt) { return pt.tab }))
   for (var i = 0; i < order.length; i++) {
     ss.setActiveSheet(ss.getSheetByName(order[i]))
     ss.moveActiveSheet(i + 1)
@@ -190,7 +201,8 @@ function ensure_() {
 function ensureLayout_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet()
   var ready = !!ss.getSheetByName(SUMMARY_TAB)
-  for (var i = 0; ready && i < POINTS.length; i++) ready = !!ss.getSheetByName(POINTS[i].tab)
+  var points = allPoints_()
+  for (var i = 0; ready && i < points.length; i++) ready = !!ss.getSheetByName(points[i].tab)
   if (ready) return
   organizarHoja()
 }
