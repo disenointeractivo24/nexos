@@ -193,38 +193,6 @@ export function messageBoard() {
     )
 }
 
-/* ---------------- where to look ---------------- */
-
-/** Floats at the side of the view, pointing to what needs the person and is out of sight. */
-export function guideTag() {
-    return new Panel(
-        0.25,
-        0.09,
-        (ctx, w, h, d) => {
-            if (!d) return
-            fillRR(ctx, 2, 2, w - 4, h - 4, (h - 4) / 2, '#1F8A4C')
-            const tip = d.side < 0 ? 62 : w - 62
-            const back = d.side < 0 ? 122 : w - 122
-            ctx.strokeStyle = '#FFFFFF'
-            ctx.lineWidth = 20
-            ctx.lineCap = 'round'
-            ctx.lineJoin = 'round'
-            ctx.beginPath()
-            ctx.moveTo(back, h / 2 - 42)
-            ctx.lineTo(tip, h / 2)
-            ctx.lineTo(back, h / 2 + 42)
-            ctx.stroke()
-            ctx.fillStyle = '#FFFFFF'
-            ctx.font = `800 74px ${FONT}`
-            ctx.textAlign = 'center'
-            ctx.textBaseline = 'middle'
-            ctx.fillText(d.label, d.side < 0 ? w / 2 + 44 : w / 2 - 44, h / 2 + 4)
-            ctx.textAlign = 'start'
-        },
-        { overlay: true }
-    )
-}
-
 /* ---------------- what there is to do ---------------- */
 
 const TODO_LOOK = {
@@ -290,22 +258,61 @@ export function taskList() {
 
 /* ---------------- buttons and marks ---------------- */
 
-/** A button in the room; the caller wires what it does. */
-export function buttonPanel(label, { width = 0.3, height = 0.08, fill = BRAND.redText, ink = '#FFFFFF' } = {}) {
+/** A soft ring of light around a button, behind it. One drawing, its strength changed from outside. */
+function buttonHalo(width, height, color) {
+    const reach = 0.035 // metres it extends past the button, on every side
+    const scale = 900 // pixels per metre: it is all blur, it needs no detail
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round((width + reach * 2) * scale)
+    canvas.height = Math.round((height + reach * 2) * scale)
+    const ctx = canvas.getContext('2d')
+    const inset = reach * scale * 0.72
+    ctx.shadowColor = color
+    ctx.shadowBlur = reach * scale * 0.7
+    ctx.fillStyle = color
+    for (let i = 0; i < 3; i++) fillRR(ctx, inset, inset, canvas.width - inset * 2, canvas.height - inset * 2, (canvas.height - inset * 2) / 2, color)
+    const map = new THREE.CanvasTexture(canvas)
+    map.colorSpace = THREE.SRGBColorSpace
+    const halo = new THREE.Mesh(
+        new THREE.PlaneGeometry(width + reach * 2, height + reach * 2),
+        new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, toneMapped: false })
+    )
+    halo.position.z = -0.002
+    return halo
+}
+
+/**
+ * A button in the room; the caller wires what it does. A white edge and a thick lower lip make
+ * it stand off whatever it lies on. With `halo`, it also has a ring of light, for the one
+ * thing the person is expected to press next.
+ */
+export function buttonPanel(label, { width = 0.3, height = 0.08, fill = BRAND.redText, ink = '#FFFFFF', halo = null } = {}) {
     const p = new Panel(width, height, (ctx, w, h, text = label) => {
-        // the lower edge gives it a little body, so it reads as something to press
-        fillRR(ctx, 2, 8, w - 4, h - 10, (h - 10) / 2, 'rgba(1,30,65,0.35)')
-        fillRR(ctx, 2, 2, w - 4, h - 14, (h - 14) / 2, fill)
+        const edge = 12
+        const lip = 22
+        const bodyH = h - lip - edge
+        fillRR(ctx, edge / 2, edge / 2 + lip, w - edge, bodyH, bodyH / 2, BRAND.navy)
+        fillRR(ctx, edge / 2, edge / 2, w - edge, bodyH, bodyH / 2, fill)
+        ctx.strokeStyle = '#FFFFFF'
+        ctx.lineWidth = edge
+        rr(ctx, edge / 2, edge / 2, w - edge, bodyH, bodyH / 2)
+        ctx.stroke()
         ctx.fillStyle = ink
         // the longest labels shrink to stay on the button
-        let size = Math.round(h * 0.38)
+        let size = Math.round(h * 0.36)
         ctx.font = `800 ${size}px ${FONT}`
-        while (ctx.measureText(text).width > w * 0.84) ctx.font = `800 ${(size -= 2)}px ${FONT}`
+        while (ctx.measureText(text).width > w * 0.82) ctx.font = `800 ${(size -= 2)}px ${FONT}`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        ctx.fillText(text, w / 2, (h - 12) / 2 + 3)
+        ctx.fillText(text, w / 2, edge / 2 + bodyH / 2 + 3)
         ctx.textAlign = 'start'
     })
+    if (halo) {
+        p.halo = buttonHalo(width, height, halo)
+        p.mesh.add(p.halo)
+        // the sign in front of its own light, whichever is nearer by a hair
+        p.mesh.renderOrder = 1
+    }
     p.refresh(label)
     return p
 }

@@ -10,7 +10,7 @@ import { ORDERS, SHIFT_STOCK, TRUCK_GAP, Workday } from './sim/workday.js'
 import { Sound } from './sound.js'
 import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
-import { bigBoard, buttonPanel, familyCard, fontsReady, guideTag, messageBoard, nextPanel, orderCard, receivePanel, taskList } from './world/panels.js'
+import { bigBoard, buttonPanel, familyCard, fontsReady, messageBoard, nextPanel, orderCard, receivePanel, taskList } from './world/panels.js'
 import { buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
 import { buildTruck } from './world/truck.js'
 
@@ -52,9 +52,6 @@ const RAY_NEAR = 0.24
 const MESSAGE_HOLD = 2.5
 const ALERT_HOLD = 7
 const WARN_HOLD = 3.5
-/** Between looks: the guide appears past the first angle, and is done past the second (radians). */
-const GUIDE_OUT = 0.68
-const GUIDE_SEEN = 0.45
 /** How often one more of the signs that change with time gets a look, in seconds. */
 const SIGN_TURN = 0.2
 /** A bar that goes in steps: no one reads a change smaller than this, and each one costs an upload. */
@@ -67,8 +64,6 @@ const BUTTONS = new Set(['action', 'list', 'receive', 'next'])
 const temp = new THREE.Vector3()
 const temp2 = new THREE.Vector3()
 const up = new THREE.Vector3()
-const side = new THREE.Vector3()
-const toward = new THREE.Vector3()
 
 const list = (names) => {
     if (names.length < 2) return names.join('')
@@ -91,7 +86,6 @@ export class ShiftSystem extends createSystem({
     init() {
         this.things = new Map() // entity → { kind, ... }
         this.families = new Map() // order id → its people, and their card
-        this.guides = [] // what needs the person and may be out of sight, the newest first
         this.sayQueue = []
         this.sayUntil = 0
         this.signTurn = 0
@@ -154,7 +148,8 @@ export class ShiftSystem extends createSystem({
         this.#markHeld()
         this.#pollButtons()
         this.#placeList(delta)
-        this.#placeGuide(delta)
+        // what is expected next breathes: it can be found without reading the whole table
+        this.action.halo.material.opacity = 0.6 + 0.4 * Math.sin(this.elapsed * 3.2)
         this.signClock += delta
         if (this.signClock > SIGN_TURN) {
             this.signClock = 0
@@ -336,9 +331,9 @@ export class ShiftSystem extends createSystem({
         this.truck.object.visible = false
         root.add(this.truck.object)
         // the buttons: the one that hands over, between the mats; the list, to one side
-        this.action = buttonPanel('Empezar el turno')
+        this.action = buttonPanel('Empezar el turno', { width: 0.32, height: 0.095, halo: '#FFD34D' })
         this.#thing(this.action.mesh, { kind: 'action' }, { grab: false })
-        this.action.mesh.position.set(x, top + 0.045, this.station.matZ + 0.06)
+        this.action.mesh.position.set(x, top + 0.05, this.station.matZ + 0.09)
         this.action.mesh.rotation.x = -0.9
         this.#setActive(this.action.mesh, false)
         // up in the middle, between the signs, while there is someone in line to bring forward
@@ -347,17 +342,14 @@ export class ShiftSystem extends createSystem({
         this.nextButton.mesh.position.set(x, 0, far)
         hangFromRoof(this.nextButton, top + 0.88)
         this.#setActive(this.nextButton.mesh, false)
-        this.listButton = buttonPanel('Por hacer', { width: 0.2, fill: '#011E41' })
+        this.listButton = buttonPanel('Por hacer', { width: 0.22, height: 0.085, fill: '#011E41' })
         this.#thing(this.listButton.mesh, { kind: 'list' }, { grab: false })
-        this.listButton.mesh.position.set(x, top + 0.045, this.station.matZ - 0.1)
+        this.listButton.mesh.position.set(x, top + 0.05, this.station.matZ - 0.1)
         this.listButton.mesh.rotation.x = -0.9
         // called up with a button; the world's child rather than the tent's, it goes with the person
         this.list = taskList()
         this.list.mesh.visible = false
         this.world.scene.add(this.list.mesh)
-        this.guide = guideTag()
-        this.guide.mesh.visible = false
-        this.world.scene.add(this.guide.mesh)
     }
 
     /**
@@ -382,49 +374,6 @@ export class ShiftSystem extends createSystem({
         if (!this.sayQueue.length || this.elapsed < this.sayUntil) return
         const { kind, text } = this.sayQueue.shift()
         this.#show(kind, text)
-    }
-
-    /* ---------------- where to look ---------------- */
-
-    /** Something needs the person, maybe where they are not looking. */
-    #guideTo(name, object, label) {
-        this.#stopGuide(name)
-        this.guides.unshift({ name, object, label, wait: 1.2, seen: 0 })
-    }
-
-    #stopGuide(name) {
-        this.guides = this.guides.filter((g) => g.name !== name)
-    }
-
-    /** At the side of the view while it is out of sight; once they have looked, it has done its job. */
-    #placeGuide(dt) {
-        const { mesh } = this.guide
-        const [g] = this.guides
-        mesh.visible = false
-        if (!g || !this.running || this.paused || this.view?.walking === false) return
-        const cam = this.world.camera
-        cam.getWorldPosition(temp)
-        cam.getWorldDirection(temp2)
-        temp2.setY(0).normalize()
-        side.set(-temp2.z, 0, temp2.x)
-        g.object.getWorldPosition(toward).sub(temp).setY(0).normalize()
-        const angle = Math.atan2(toward.dot(side), toward.dot(temp2))
-        if (Math.abs(angle) < GUIDE_SEEN) {
-            g.seen += dt
-            if (g.seen > 0.4) this.guides.shift()
-            return
-        }
-        g.wait -= dt
-        if (g.wait > 0 || Math.abs(angle) < GUIDE_OUT) return
-        const sign = Math.sign(angle) || 1
-        this.guide.refresh({ label: g.label, side: sign })
-        const swing = 0.3 + Math.sin(this.elapsed * 4) * 0.012
-        const eyes = temp.clone()
-        // a little under the eyes, clear of the signs that hang at their height
-        mesh.position.copy(temp).addScaledVector(temp2, 0.85).addScaledVector(side, sign * swing)
-        mesh.position.y -= 0.15
-        mesh.lookAt(eyes)
-        mesh.visible = true
     }
 
     /** The one button says what can be handed over, or disappears. */
@@ -480,7 +429,6 @@ export class ShiftSystem extends createSystem({
             // the shift ended while it was on its way: it turns out it has nowhere to stop
             this.truckParked = true
             if (!this.running) return this.#truckLeaves()
-            this.#guideTo('truck', this.receive.mesh, 'Camión')
             this.sound.play('radio')
             this.#say('radio', 'Llegó el camión. Recibe las donaciones en el panel de tu izquierda.')
             this.#refreshReceive()
@@ -626,7 +574,6 @@ export class ShiftSystem extends createSystem({
         this.familyAtCounter = null
         this.holding = null
         this.marked = null
-        this.guides = []
         this.sayQueue = []
         this.sayUntil = 0
         this.order.mesh.visible = false
@@ -1323,7 +1270,6 @@ export class ShiftSystem extends createSystem({
         if (event === 'incoming') this.#truckComes()
         if (event === 'received') {
             this.sound.play('done')
-            this.#stopGuide('truck')
             this.#dropBoxes(detail)
             this.#say('info', this.world.session ? 'Lleva una caja a la mesa azul: agárrala o mantén el gatillo sobre ella.' : 'Mantén presionada una caja y llévala a la mesa azul.')
         }
@@ -1374,7 +1320,6 @@ export class ShiftSystem extends createSystem({
         this.message.mesh.visible = false
         this.#setActive(this.receive.mesh, false)
         this.list.mesh.visible = false
-        this.guides = []
         this.sayQueue = []
         // whatever it still carries goes back: the point closes for the day
         if (this.truckParked) this.#truckLeaves()
