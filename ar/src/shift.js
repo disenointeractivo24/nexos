@@ -152,9 +152,7 @@ export class ShiftSystem extends createSystem({
     async startOnDesktop() {
         await this.ready
         this.sound.unlock()
-        const scene = this.world.scene
-        scene.background = new THREE.Color('#DDE3EA')
-        scene.add(new THREE.Mesh(new THREE.PlaneGeometry(60, 60).rotateX(-Math.PI / 2).translate(0, -0.26, 0), new THREE.MeshStandardMaterial({ color: '#B9C2CC', roughness: 1 })))
+        this.#backdrop()
         this.#place(new THREE.Vector3(0, 0, 0), 0)
         const camera = this.world.camera
         const canvas = this.world.renderer.domElement
@@ -174,6 +172,13 @@ export class ShiftSystem extends createSystem({
         this.showView('persona')
     }
 
+    /** Sky and ground, where the real room cannot be seen behind the tent. */
+    #backdrop() {
+        const scene = this.world.scene
+        scene.background = new THREE.Color('#DDE3EA')
+        scene.add(new THREE.Mesh(new THREE.PlaneGeometry(60, 60).rotateX(-Math.PI / 2).translate(0, -0.26, 0), new THREE.MeshStandardMaterial({ color: '#B9C2CC', roughness: 1 })))
+    }
+
     /** The views offered on a computer. */
     showView(name) {
         if (!this.view) return
@@ -189,7 +194,9 @@ export class ShiftSystem extends createSystem({
         if (!session || this.placed || this.placing) return
         this.placing = true
         this.sound.unlock()
-        this.world.scene.background = null
+        // a headset that cannot show the room gets the same backdrop as a computer
+        if (session.environmentBlendMode === 'opaque') this.#backdrop()
+        else this.world.scene.background = null
 
         const hint = messageBoard()
         hint.refresh({ kind: 'info', text: 'Busca unos 3 metros libres, mira hacia el frente y presiona para levantar tu carpa.' })

@@ -22,16 +22,37 @@ world.registerSystem(ShiftSystem)
 const shift = world.getSystem(ShiftSystem)
 window.nexosAR = { world, shift }
 
-// capability detection: the headset button only works where a browser really offers AR
-const supported = (await navigator.xr?.isSessionSupported?.('immersive-ar').catch(() => false)) ?? false
-enterAr.disabled = !supported
-note.textContent = supported
-    ? 'Ponte el visor y busca una mesa libre a tu alrededor.'
-    : 'Este navegador no tiene realidad aumentada. Ábrelo en las Meta Quest o pruébalo aquí, con el mouse.'
+// capability detection, in words that say what to do about it. Asked again now that all is
+// loaded: the page's first question (see index.html) only serves to report early.
+const ask = (mode) => navigator.xr?.isSessionSupported?.(mode).catch(() => false) ?? false
+const [ar, vr] = await Promise.all([ask('immersive-ar'), ask('immersive-vr')])
+const modes = { xr: !!navigator.xr, ar, vr }
+const isQuest = /OculusBrowser|Quest/i.test(navigator.userAgent)
+enterDesktop.disabled = false
+enterAr.disabled = !modes.ar && !modes.vr
+if (modes.ar) note.textContent = 'Ponte el visor y busca unos 3 metros libres a tu alrededor.'
+else if (modes.vr) {
+    enterAr.textContent = 'Entrar con el visor (sin ver tu espacio)'
+    note.textContent = 'Este navegador no ofrece ver tu espacio real, así que la carpa se verá sobre un fondo virtual. Busca unos 3 metros libres.'
+} else if (isQuest) {
+    note.textContent = `Este navegador de las gafas no ofrece el modo inmersivo: actualízalo en Ajustes › Sistema › Actualización de software. ${modes.xr ? 'WebXR sí, modos no.' : 'WebXR no está disponible.'} ${navigator.userAgent}`
+} else {
+    note.textContent = 'Aquí no hay gafas: esto es un computador o un celular. Abre este enlace en el navegador de las Meta Quest, o pruébalo aquí con el mouse.'
+}
+
+// the SDK only logs why a session did not open; the person in the headset needs to read it
+const logError = console.error.bind(console)
+console.error = (...args) => {
+    logError(...args)
+    if (String(args[0]).startsWith('[XR] Failed')) {
+        start.hidden = false
+        note.textContent = `No se pudo abrir el modo inmersivo: ${args[1]?.message ?? args[1]}`
+    }
+}
 
 enterAr.addEventListener('click', () => {
     start.hidden = true
-    world.launchXR()
+    world.launchXR({ sessionMode: modes.ar ? SessionMode.ImmersiveAR : SessionMode.ImmersiveVR })
 })
 enterDesktop.addEventListener('click', () => {
     start.hidden = true
