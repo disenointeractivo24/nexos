@@ -1199,7 +1199,6 @@ export class ShiftSystem extends createSystem({
         this.kit.entity.destroy()
         this.kit = null
         this.order.mesh.visible = false
-        this.#stopGuide('shelves')
         f.slot = this.#freeSlot()
         this.#giveCard(f)
         this.#walkTo(f.leader, f.slot.x, f.slot.z, () => (f.leader.targetYaw = 0))
@@ -1260,7 +1259,6 @@ export class ShiftSystem extends createSystem({
         this.#refreshOrder(order)
         this.order.mesh.visible = true
         gsap.fromTo(this.order.mesh.scale, { x: 0.86, y: 0.86 }, { x: 1, y: 1, duration: 0.4, ease: 'back.out(2.4)' })
-        this.#guideTo('shelves', this.station.shelf, 'Estantes')
         this.sound.play('radio')
         this.#say(order.urgent ? 'alert' : 'radio', `${order.family} pasó al mostrador. Busca lo que pide en los estantes, a tu espalda, o en las cajas que abras.`)
         this.#refreshAction()
@@ -1296,7 +1294,6 @@ export class ShiftSystem extends createSystem({
         })
         this.kit = null
         this.order.mesh.visible = false
-        this.#stopGuide('shelves')
         this.sound.play('done')
         const short = Object.entries(order.short ?? {})
         if (order.gaveUp) this.#say('warn', `${order.family} no pudo esperar más y se llevó lo que había en su caja.`)
@@ -1314,7 +1311,6 @@ export class ShiftSystem extends createSystem({
             this.kit.entity.destroy()
             this.kit = null
             this.order.mesh.visible = false
-            this.#stopGuide('shelves')
         }
         this.#sendAway(f, f.leader.position.x, ENTRY_Z)
         this.sound.play('wrong')
