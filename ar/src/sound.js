@@ -158,6 +158,15 @@ export class Sound {
                 this.#burst({ decay: 1.6, level: 0.3, filter: 180, at })
                 this.#tone({ freq: 62, decay: 1.5, level: 0.16, type: 'sawtooth', slide: -22, at })
                 break
+            case 'grumble': { // someone complaining, too far to make out: not words, only the tone of it
+                let delay = 0
+                for (let i = 0; i < 5; i++) {
+                    const decay = 0.1 + Math.random() * 0.11
+                    this.#tone({ freq: 135 + Math.random() * 75, decay, level: 0.09, type: 'sawtooth', slide: -25, delay, at })
+                    delay += decay + 0.02
+                }
+                break
+            }
             case 'heart': // felt more than heard
                 this.#tone({ freq: 58, decay: 0.16, level: 0.1 })
                 this.#tone({ freq: 50, decay: 0.2, level: 0.07, delay: 0.2 })

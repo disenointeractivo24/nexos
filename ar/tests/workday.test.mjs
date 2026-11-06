@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { COMPLAINS_BELOW, angerFor, complaintFor, moodFor } from '../src/sim/temper.js'
 import { ARRIVALS, GUIDED, MEDICINE_IN_CARTONS, ORDERS, SHIFT_STOCK, TRUCK_GAP, Workday, categoryOf } from '../src/sim/workday.js'
 
 /** A first truck that always brings the same, for the rules that are not about what comes. */
@@ -298,6 +299,32 @@ test('a shift that is not guided never stands still', () => {
     assert.equal(day.calm, false)
     day.tick(1)
     assert.equal(day.clock, 1)
+})
+
+test('faces follow the bar: glad in the green, losing patience in the amber, angry in the red', () => {
+    assert.equal(moodFor(1), 'happy')
+    assert.equal(moodFor(0.7), 'smile')
+    assert.equal(moodFor(0.6), 'flat')
+    assert.equal(moodFor(0.4), 'worried')
+    assert.equal(moodFor(0.34), 'angry')
+    assert.equal(moodFor(0), 'angry')
+    assert.ok(moodFor(COMPLAINS_BELOW - 0.01) === 'angry', 'whoever complains is angry')
+    assert.equal(moodFor(COMPLAINS_BELOW), 'worried', 'and not before the bar turns red')
+})
+
+test('anger only grows as the wait runs out', () => {
+    assert.equal(angerFor(1), 0)
+    assert.equal(angerFor(0.5), 0)
+    assert.equal(angerFor(0), 1)
+    for (let left = 1; left > 0; left -= 0.05) assert.ok(angerFor(left - 0.05) >= angerFor(left))
+})
+
+test('complaints depend on who says them and how close they are to leaving', () => {
+    const waiting = { state: 'waiting' }
+    assert.notEqual(complaintFor(waiting, 0.3, 0), complaintFor(waiting, 0.3, 1))
+    assert.match(complaintFor(waiting, 0.1, 0), /nos vamos/)
+    assert.match(complaintFor({ state: 'packing' }, 0.3, 0), /pedido/)
+    assert.match(complaintFor({ state: 'waiting', urgent: true }, 0.1, 0), /pacientes/)
 })
 
 test('whoever waits too long in line leaves, and that is counted', () => {

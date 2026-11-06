@@ -561,6 +561,38 @@ export function familyCard() {
     return p
 }
 
+/** What someone is complaining about, beside their head: its tail points at them. */
+export function speechBubble() {
+    return new Panel(0.62, 0.22, (ctx, w, h, d) => {
+        if (!d) return
+        ctx.clearRect(0, 0, w, h)
+        const tail = 92
+        const body = h - tail
+        const x = d.side > 0 ? w * 0.2 : w * 0.8
+        ctx.beginPath()
+        ctx.moveTo(x - 60, body - 10)
+        ctx.lineTo(x + d.side * -70, h - 6)
+        ctx.lineTo(x + 60, body - 10)
+        ctx.closePath()
+        ctx.fillStyle = BRAND.redText
+        ctx.fill()
+        fillRR(ctx, 4, 4, w - 8, body - 8, 70, BRAND.redText)
+        ctx.fillStyle = '#FFFFFF'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        let size = 118
+        let lines
+        do {
+            ctx.font = `800 ${(size -= 4)}px ${FONT}`
+            lines = wrap(ctx, d.text, w - 150)
+        } while (lines.length > 2 && size > 70)
+        const lineHeight = size * 1.12
+        lines.forEach((line, i) => ctx.fillText(line, w / 2, body / 2 + (i - (lines.length - 1) / 2) * lineHeight))
+        ctx.textAlign = 'left'
+        // whoever complains may be standing behind someone: what they say still has to be read
+    }, { overlay: true })
+}
+
 /* ---------------- the shelves ---------------- */
 
 /**

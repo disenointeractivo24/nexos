@@ -7,13 +7,15 @@ import { CATEGORIES, SUPPLIES } from '../../src/data/catalog.js'
 import { InventoryStore, sheetsEndpoint } from '../../src/app/inventoryStore.js'
 import { Workable } from './components.js'
 import { Haptics } from './haptics.js'
+import { COMPLAINS_BELOW, complaintFor } from './sim/temper.js'
 import { ORDERS, SHIFT_STOCK, TRUCK_GAP, Workday } from './sim/workday.js'
 import { Sound } from './sound.js'
 import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
 import { Glow } from './world/glow.js'
-import { bigBoard, buttonPanel, familyCard, fontsReady, messageBoard, nextPanel, orderCard, receivePanel, taskList } from './world/panels.js'
+import { bigBoard, buttonPanel, familyCard, fontsReady, messageBoard, nextPanel, orderCard, receivePanel, speechBubble, taskList } from './world/panels.js'
 import { buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
+import { Temper } from './world/temper.js'
 import { buildTruck } from './world/truck.js'
 
 /** The inventory this experience works on: its own point, never one the donors see. */
@@ -60,6 +62,11 @@ const SIGN_TURN = 0.2
 const barStep = (left) => Math.round(Math.max(0, left) * 20) / 20
 /** A catalog name too long for the front of a crate. */
 const SHELF_NAME = { cans: 'Enlatados' }
+/** How long someone complains for, and how long until the next one does: they take turns, there is one bubble. */
+const COMPLAINT_SECONDS = 3
+const COMPLAINT_PAUSE = 1.4
+/** How much of what is left of the wait each family has, for its faces and its bar alike. */
+const leftOf = (order) => Math.max(0, 1 - order.waited / order.patience)
 /** What is pressed, rather than carried. */
 const BUTTONS = new Set(['action', 'list', 'receive', 'next'])
 
@@ -146,7 +153,12 @@ export class ShiftSystem extends createSystem({
         this.#nextMessage()
         this.atmosphere.update(delta, this.running ? this.day.pressure : 0)
         this.sound.ambient(this.atmosphere.level, delta)
-        for (const person of this.crowd) person.update(delta, this.elapsed)
+        this.#feelings()
+        for (const person of this.crowd) {
+            person.update(delta, this.elapsed)
+            person.temper.update(delta, this.elapsed)
+        }
+        if (!this.paused) this.#complaints(delta)
         this.#followCards()
         this.#carry(delta)
         this.#markHeld()
@@ -349,6 +361,13 @@ export class ShiftSystem extends createSystem({
         hangFromRoof(this.nextButton, top + 0.88)
         this.#setActive(this.nextButton.mesh, false)
         this.glow = new Glow(this.world.scene)
+        this.bubble = speechBubble()
+        this.bubble.mesh.visible = false
+        this.bubble.mesh.pointerEvents = 'none'
+        this.bubble.mesh.scale.setScalar(1.25)
+        root.add(this.bubble.mesh)
+        this.complaintIn = 0
+        this.complaintTurn = 0
         // something to shine on where a carton goes: the mat itself cannot be pressed or carried
         this.matSpot = new THREE.Object3D()
         this.matSpot.position.copy(this.station.mat)
@@ -591,6 +610,7 @@ export class ShiftSystem extends createSystem({
         this.kit = null
         this.onMat = null
         this.familyAtCounter = null
+        this.#hushed()
         this.holding = null
         this.marked = null
         this.sayQueue = []
@@ -1181,6 +1201,7 @@ export class ShiftSystem extends createSystem({
         const person = new GuideCharacter(this.loader.instanceSync(this.people.get(id)), [], { face: true, stoop: elder ? 0.12 : 0 })
         person.root.scale.setScalar(child ? CHILD_SCALE : PERSON_SCALE)
         person.place(position, yaw)
+        person.temper = new Temper(person)
         person.appear()
         this.rootObject.add(person.root)
         this.crowd.add(person)
@@ -1270,6 +1291,52 @@ export class ShiftSystem extends createSystem({
         return list(Object.entries(order.items).map(([id, q]) => `${q} de ${SUPPLIES[id].label.toLowerCase()}`))
     }
 
+    /** Everyone feels what their family's wait is doing to them. */
+    #feelings() {
+        for (const { order, members } of this.families.values()) {
+            const left = leftOf(order)
+            for (const person of members) person.temper.left = left
+        }
+    }
+
+    /** One at a time, whoever is worst off and not walking says so, out loud and in a bubble beside them. */
+    #complaints(dt) {
+        this.complaintIn -= dt
+        const speaker = this.speaker
+        if (speaker) {
+            const stillThere = this.families.get(speaker.order.id) === speaker && (speaker.order.state === 'waiting' || speaker.order.state === 'packing')
+            if (!stillThere || this.elapsed > this.speakerUntil) this.#hushed()
+            else this.#placeBubble()
+        }
+        if (this.speaker || this.complaintIn > 0 || !this.running) return
+        const candidates = [...this.families.values()].filter((f) => (f.order.state === 'waiting' || f.order.state === 'packing') && leftOf(f.order) < COMPLAINS_BELOW && f.leader.walkAmt < 0.3)
+        candidates.sort((a, b) => (a === this.lastSpeaker) - (b === this.lastSpeaker) || leftOf(a.order) - leftOf(b.order))
+        const next = candidates[0]
+        if (!next) return
+        this.speaker = this.lastSpeaker = next
+        this.speakerUntil = this.elapsed + COMPLAINT_SECONDS
+        this.complaintIn = COMPLAINT_SECONDS + COMPLAINT_PAUSE
+        next.leader.temper.complain(COMPLAINT_SECONDS)
+        this.bubbleSide = next.leader.position.x < -0.3 || next.leader.position.x > 2 ? -1 : 1
+        this.bubble.refresh({ text: complaintFor(next.order, leftOf(next.order), this.complaintTurn++), side: this.bubbleSide })
+        this.#placeBubble()
+        this.bubble.mesh.visible = true
+        this.sound.play('grumble', this.#worldOf(next.leader.root))
+    }
+
+    /** By the head of whoever is talking, and turned to the person. */
+    #placeBubble() {
+        const { position } = this.speaker.leader
+        const atCounter = this.speaker.order.state === 'packing'
+        this.bubble.mesh.position.set(position.x + this.bubbleSide * 0.74, atCounter ? 1.2 : 1.38, position.z + 0.25)
+        this.bubble.mesh.lookAt(this.world.camera.getWorldPosition(temp))
+    }
+
+    #hushed() {
+        this.speaker = null
+        if (this.bubble) this.bubble.mesh.visible = false
+    }
+
     /** Half of the cards at a time: `half` says which. */
     #refreshCards(half) {
         let n = 0
@@ -1352,6 +1419,11 @@ export class ShiftSystem extends createSystem({
         this.order.mesh.visible = false
         this.sound.play('done')
         const short = Object.entries(order.short ?? {})
+        // how it went is how they leave: only someone who got it all goes away glad
+        for (const person of f.members) {
+            person.temper.settled = short.length ? 'worried' : 'happy'
+            if (!short.length) person.celebrate()
+        }
         if (order.gaveUp) this.#say('warn', `${order.family} no pudo esperar más y se llevó lo que había en su caja.`)
         else if (short.length) this.#say('warn', `${order.family} se fue sin ${list(short.map(([id, n]) => `${n} de ${SUPPLIES[id].label.toLowerCase()}`))}.`)
         else this.#say('done', `${order.family} recibió todo su pedido.`)
@@ -1362,6 +1434,7 @@ export class ShiftSystem extends createSystem({
         const f = this.families.get(order.id)
         this.#removeCard(f)
         f.slot = null
+        for (const person of f.members) person.temper.settled = 'angry'
         if (this.familyAtCounter === f) {
             this.familyAtCounter = null
             this.kit.entity.destroy()
@@ -1425,6 +1498,7 @@ export class ShiftSystem extends createSystem({
     /** The shift, in numbers and in people. */
     #closing(r) {
         this.#endGuide()
+        this.#hushed()
         this.running = false
         this.ending = true
         this.message.mesh.visible = false
