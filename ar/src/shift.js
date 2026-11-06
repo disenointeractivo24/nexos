@@ -10,7 +10,7 @@ import { ORDERS, SHIFT_STOCK, TRUCK_GAP, Workday } from './sim/workday.js'
 import { Sound } from './sound.js'
 import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
-import { bigBoard, buttonPanel, familyCard, fontsReady, messageBoard, orderCard, receivePanel, taskList } from './world/panels.js'
+import { bigBoard, buttonPanel, familyCard, fontsReady, messageBoard, nextPanel, orderCard, receivePanel, taskList } from './world/panels.js'
 import { buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
 import { buildTruck } from './world/truck.js'
 
@@ -294,11 +294,11 @@ export class ShiftSystem extends createSystem({
         this.action.mesh.position.set(x, top + 0.045, this.station.matZ + 0.06)
         this.action.mesh.rotation.x = -0.9
         this.#setActive(this.action.mesh, false)
-        // just behind it, while there is someone in line to bring forward
-        this.nextButton = buttonPanel('Que pase el siguiente', { fill: '#011E41' })
+        // up in the middle, between the signs, while there is someone in line to bring forward
+        this.nextButton = nextPanel()
         this.#thing(this.nextButton.mesh, { kind: 'next' }, { grab: false })
-        this.nextButton.mesh.position.set(x, top + 0.045, this.station.matZ - 0.1)
-        this.nextButton.mesh.rotation.x = -0.9
+        this.nextButton.mesh.position.set(x, 0, far)
+        hangFromRoof(this.nextButton, top + 0.88)
         this.#setActive(this.nextButton.mesh, false)
         this.listButton = buttonPanel('Por hacer', { width: 0.2, fill: '#011E41' })
         this.#thing(this.listButton.mesh, { kind: 'list' }, { grab: false })
@@ -327,7 +327,11 @@ export class ShiftSystem extends createSystem({
         this.pendingAction = action
         this.#setActive(this.action.mesh, !!action)
         if (action) this.action.refresh(label)
-        this.#setActive(this.nextButton.mesh, !!this.running && day.line.length > 0)
+        const next = this.running ? day.nextInLine : null
+        this.#setActive(this.nextButton.mesh, !!next)
+        const shown = next?.id ?? null
+        if (next && shown !== this.nextShown) this.nextButton.refresh({ family: next.family, urgent: next.urgent })
+        this.nextShown = shown
     }
 
     /** Hidden is also out of reach: a ray must not press, or stop at, what cannot be seen. */

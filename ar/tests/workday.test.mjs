@@ -212,6 +212,17 @@ test('the next one can be brought forward: whoever was there goes back to the li
     assert.equal(day.callNext().id, 'pedido-1', 'and back again')
 })
 
+test('who is next can be read beforehand, and is who comes up', () => {
+    const day = started()
+    assert.equal(day.nextInLine, null)
+    untilAtCounter(day, 'pedido-1')
+    day.orders.forEach((o) => (o.patience = 1e6))
+    untilJoined(day, 'urgente')
+    assert.equal(day.nextInLine.id, 'urgente')
+    assert.equal(day.callNext().id, 'urgente')
+    assert.equal(day.nextInLine.id, 'pedido-2')
+})
+
 test('a carton taken straight to a kit stays in the inventory when that person goes back', () => {
     const store = fakeStore({ ...SHIFT_STOCK, rice: 0 })
     const day = started(store)

@@ -294,7 +294,7 @@ export class Workday {
 
     /** Nobody has to be called: whoever is next comes up as soon as there is room, what is urgent first. */
     #comeUp(except = null) {
-        const [order] = this.line.filter((o) => o !== except).sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || b.waited - a.waited)
+        const order = this.#nextOf(this.line.filter((o) => o !== except))
         order.state = 'packing'
         // patience starts again only the first time: going back to the line does not refill it
         if (!order.attended) {
@@ -304,6 +304,15 @@ export class Workday {
         }
         this.current = order
         this.#emit('order', order)
+    }
+
+    #nextOf(line) {
+        return [...line].sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || (a.attended ? 1 : 0) - (b.attended ? 1 : 0) || b.waited - a.waited)[0] ?? null
+    }
+
+    /** Who would come up next: what is urgent first, then whoever has not been up yet, then whoever has waited longest. */
+    get nextInLine() {
+        return this.#nextOf(this.line)
     }
 
     /**
