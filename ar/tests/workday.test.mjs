@@ -192,6 +192,52 @@ test('what is urgent comes up before anyone who has been waiting longer', () => 
     untilAtCounter(day, 'urgente')
 })
 
+test('the next one can be brought forward: whoever was there goes back to the line, empty-handed', () => {
+    const store = fakeStore()
+    const day = started(store)
+    assert.equal(day.callNext(), null, 'nobody waiting')
+    untilAtCounter(day, 'pedido-1')
+    assert.equal(day.callNext(), null, 'nobody else waiting')
+    assert.equal(day.current.id, 'pedido-1')
+    untilJoined(day, 'pedido-2')
+    const first = day.current
+    day.addToKit('rice')
+    const events = []
+    day.on((e) => events.push(e))
+    assert.equal(day.callNext().id, 'pedido-2')
+    assert.deepEqual(events, ['backToLine', 'order'])
+    assert.equal(first.state, 'waiting')
+    assert.deepEqual(first.packed, {})
+    assert.equal(day.available('rice'), SHIFT_STOCK.rice)
+    assert.equal(day.callNext().id, 'pedido-1', 'and back again')
+})
+
+test('a carton taken straight to a kit stays in the inventory when that person goes back', () => {
+    const store = fakeStore({ ...SHIFT_STOCK, rice: 0 })
+    const day = started(store)
+    untilAtCounter(day, 'pedido-1')
+    untilJoined(day, 'pedido-2')
+    const b = day.boxes.find((x) => x.items.includes('rice'))
+    day.openBox(b.id)
+    day.addFromBox(b.id, 'rice')
+    day.callNext()
+    assert.equal(store.get('rice'), 1)
+    assert.equal(day.available('rice'), 1)
+})
+
+test('going back to the line does not refill anyone\'s patience', () => {
+    const day = started()
+    untilAtCounter(day, 'pedido-1')
+    untilJoined(day, 'pedido-2')
+    const first = day.current
+    const waited = first.waited
+    assert.ok(waited > 0)
+    day.callNext()
+    day.callNext()
+    assert.equal(day.current, first)
+    assert.equal(first.waited, waited)
+})
+
 test('whoever waits too long in line leaves, and that is counted', () => {
     const day = started()
     const events = []

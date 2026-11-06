@@ -46,7 +46,7 @@ const DROP_NEAR = 0.2
 /** The same, for a ray in the headset: how far from it, in metres. */
 const RAY_NEAR = 0.24
 /** What is pressed, rather than carried. */
-const BUTTONS = new Set(['action', 'list', 'receive'])
+const BUTTONS = new Set(['action', 'list', 'receive', 'next'])
 
 const temp = new THREE.Vector3()
 const temp2 = new THREE.Vector3()
@@ -294,6 +294,12 @@ export class ShiftSystem extends createSystem({
         this.action.mesh.position.set(x, top + 0.045, this.station.matZ + 0.06)
         this.action.mesh.rotation.x = -0.9
         this.#setActive(this.action.mesh, false)
+        // just behind it, while there is someone in line to bring forward
+        this.nextButton = buttonPanel('Que pase el siguiente', { fill: '#011E41' })
+        this.#thing(this.nextButton.mesh, { kind: 'next' }, { grab: false })
+        this.nextButton.mesh.position.set(x, top + 0.045, this.station.matZ - 0.1)
+        this.nextButton.mesh.rotation.x = -0.9
+        this.#setActive(this.nextButton.mesh, false)
         this.listButton = buttonPanel('Por hacer', { width: 0.2, fill: '#011E41' })
         this.#thing(this.listButton.mesh, { kind: 'list' }, { grab: false })
         this.listButton.mesh.position.set(x + 0.86, top + 0.045, this.station.matZ + 0.06)
@@ -321,6 +327,7 @@ export class ShiftSystem extends createSystem({
         this.pendingAction = action
         this.#setActive(this.action.mesh, !!action)
         if (action) this.action.refresh(label)
+        this.#setActive(this.nextButton.mesh, !!this.running && day.line.length > 0)
     }
 
     /** Hidden is also out of reach: a ray must not press, or stop at, what cannot be seen. */
@@ -613,8 +620,18 @@ export class ShiftSystem extends createSystem({
         if (t.kind === 'action') return this.#pressAction()
         if (t.kind === 'list') return this.toggleList()
         if (t.kind === 'receive') return this.#pressReceive()
+        if (t.kind === 'next') return this.#pressNext()
         if (t.kind === 'box' && t.onMat) return this.#openBox(t)
         if (t.kind === 'box' && this.#isCovered(t)) return this.#say('warn', 'Primero toma la caja de arriba.')
+    }
+
+    /** Whoever is next comes up now. If someone had things in their kit, that is worth saying. */
+    #pressNext() {
+        const previous = this.day.current
+        const hadItems = this.day.canDeliver
+        if (!this.day.callNext()) return
+        this.sound.play('tap')
+        if (hadItems) this.#say('warn', `${previous.family} volvió a la fila, y lo de su caja quedó en los estantes.`)
     }
 
     #pressAction() {
@@ -1002,21 +1019,41 @@ export class ShiftSystem extends createSystem({
     #familyJoins(order) {
         const slot = this.#freeSlot()
         const { leader, members } = this.#familyPeople(order, slot)
-        const card = familyCard()
-        card.mesh.position.set(slot, 1.9, ENTRY_Z)
-        card.mesh.scale.setScalar(1.6)
-        card.refresh({ ...order, left: 1 })
-        this.rootObject.add(card.mesh)
-        this.families.set(order.id, { leader, members, card, slot, order })
+        const f = { leader, members, card: null, slot, order }
+        this.families.set(order.id, f)
+        this.#giveCard(f)
         this.#walkTo(leader, slot, LINE_Z, () => (leader.targetYaw = 0))
         if (order.urgent) {
-            gsap.to(card.mesh.scale, { x: 1.78, y: 1.78, duration: 1.2, repeat: -1, yoyo: true, ease: 'sine.inOut' })
             this.sound.play('alert')
-            this.#say('alert', `${order.family} necesita ${this.#wants(order)} ya. Pasa en cuanto entregues lo de quien está en el mostrador.`)
+            this.#say('alert', `${order.family} necesita ${this.#wants(order)} ya. Pasa al entregar lo del mostrador, o con «Que pase el siguiente».`)
         } else if (this.day.current) {
             this.sound.play('radio')
-            this.#say('radio', `Llegó ${order.family}. Pasará cuando termines con quien está en el mostrador.`)
+            this.#say('radio', `Llegó ${order.family}. Pasará cuando termines, o con «Que pase el siguiente».`)
         }
+    }
+
+    /** The card over the head of whoever is in line. */
+    #giveCard(f) {
+        const { order, leader } = f
+        const card = familyCard()
+        card.mesh.position.set(leader.position.x, 1.9, leader.position.z)
+        card.mesh.scale.setScalar(1.6)
+        card.refresh({ ...order, left: Math.max(0, 1 - order.waited / order.patience) })
+        this.rootObject.add(card.mesh)
+        f.card = card
+        if (order.urgent) gsap.to(card.mesh.scale, { x: 1.78, y: 1.78, duration: 1.2, repeat: -1, yoyo: true, ease: 'sine.inOut' })
+    }
+
+    /** Sent back to wait: their carton goes, and they return to a place in the line. */
+    #familyStepsBack() {
+        const f = this.familyAtCounter
+        this.familyAtCounter = null
+        this.kit.entity.destroy()
+        this.kit = null
+        this.order.mesh.visible = false
+        f.slot = this.#freeSlot()
+        this.#giveCard(f)
+        this.#walkTo(f.leader, f.slot, LINE_Z, () => (f.leader.targetYaw = 0))
     }
 
     #followCards() {
@@ -1031,7 +1068,7 @@ export class ShiftSystem extends createSystem({
 
     #refreshCards() {
         for (const f of this.families.values()) {
-            if (f.order.state !== 'waiting') continue
+            if (f.order.state !== 'waiting' || !f.card) continue
             f.card.refresh({ ...f.order, left: Math.max(0, 1 - f.order.waited / f.order.patience) })
         }
     }
@@ -1085,6 +1122,8 @@ export class ShiftSystem extends createSystem({
 
     #familyLeaves(order) {
         const f = this.familyAtCounter
+        // cleared now, not when they are gone: the next one may already be coming up
+        this.familyAtCounter = null
         const { kit } = this
         // they take the kit with them
         gsap.to(kit.object.position, {
@@ -1096,7 +1135,6 @@ export class ShiftSystem extends createSystem({
             onComplete: () => {
                 kit.entity.destroy()
                 this.#sendAway(f, WORKER.x + 3, ENTRY_Z)
-                this.familyAtCounter = null
             },
         })
         this.kit = null
@@ -1135,6 +1173,7 @@ export class ShiftSystem extends createSystem({
         }
         if (event === 'emptied') this.#clearBox(detail)
         if (event === 'joined') this.#familyJoins(detail)
+        if (event === 'backToLine') this.#familyStepsBack()
         if (event === 'order') this.#familyComes(detail)
         if (event === 'packed') {
             this.#refreshOrder(detail.order)

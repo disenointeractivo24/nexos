@@ -293,13 +293,35 @@ export class Workday {
     }
 
     /** Nobody has to be called: whoever is next comes up as soon as there is room, what is urgent first. */
-    #comeUp() {
-        const [order] = [...this.line].sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || b.waited - a.waited)
+    #comeUp(except = null) {
+        const [order] = this.line.filter((o) => o !== except).sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || b.waited - a.waited)
         order.state = 'packing'
-        order.waited = 0
-        order.warned = false
+        // patience starts again only the first time: going back to the line does not refill it
+        if (!order.attended) {
+            order.attended = true
+            order.waited = 0
+            order.warned = false
+        }
         this.current = order
         this.#emit('order', order)
+    }
+
+    /**
+     * The person decides not to wait for the turn: the next one comes up now, and whoever was
+     * at the counter goes back to the line. What was in their kit stays on the shelves.
+     * @returns the order now at the counter, or null with nobody waiting
+     */
+    callNext() {
+        if (!this.line.length) return null
+        const previous = this.current
+        if (previous) {
+            previous.packed = {}
+            previous.state = 'waiting'
+            this.current = null
+            this.#emit('backToLine', previous)
+        }
+        this.#comeUp(previous)
+        return this.current
     }
 
     /** Waiting at the counter has its limit too: they take what is in the kit, if there is anything. */
