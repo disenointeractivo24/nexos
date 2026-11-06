@@ -1,4 +1,4 @@
-import { SessionMode, World } from '@iwsdk/core'
+import { SessionMode, VisibilityState, World } from '@iwsdk/core'
 import { ShiftSystem } from './shift.js'
 
 const start = document.getElementById('start')
@@ -50,6 +50,21 @@ console.error = (...args) => {
     }
 }
 
+// out of the headset there is nothing else on the page: a way back has to be there
+let wasInside = false
+world.visibilityState.subscribe((state) => {
+    if (state !== VisibilityState.NonImmersive) {
+        wasInside = true
+        return
+    }
+    if (!wasInside) return
+    wasInside = false
+    start.hidden = false
+    enterDesktop.hidden = true
+    enterAr.textContent = shift.placed ? 'Volver al turno' : 'Entrar con el visor'
+    note.textContent = shift.placed ? 'Saliste de las gafas. Tu turno quedó en pausa, tal como lo dejaste.' : 'Saliste de las gafas antes de levantar la carpa.'
+})
+
 enterAr.addEventListener('click', () => {
     start.hidden = true
     world.launchXR({ sessionMode: modes.ar ? SessionMode.ImmersiveAR : SessionMode.ImmersiveVR })
@@ -58,6 +73,11 @@ enterDesktop.addEventListener('click', () => {
     start.hidden = true
     hud.hidden = false
     shift.startOnDesktop()
+    // the instructions make room for the table once they have been read, or once the person is at it
+    const howTo = hud.querySelector('p')
+    const hide = () => howTo && (howTo.hidden = true)
+    setTimeout(hide, 16000)
+    document.getElementById('scene-container').addEventListener('pointerdown', () => setTimeout(hide, 6000), { once: true })
 })
 document.getElementById('show-list').addEventListener('click', () => shift.toggleList())
 window.addEventListener('keydown', (e) => {

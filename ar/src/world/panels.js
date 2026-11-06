@@ -17,7 +17,9 @@ export const BRAND = {
     line: 'rgba(1,30,65,0.12)',
 }
 export const FONT = '"Atkinson Hyperlegible Next", "Segoe UI", system-ui, sans-serif'
-const PX = 2400 // per metre: text stays sharp from a person's distance
+const PX = 2400 // what the drawing code counts in, per metre
+/** What a canvas really has of that: sharper than any headset shows, and far lighter to upload. */
+const RES = 0.67
 
 /** The canvases need the real typeface, or the first panels would be drawn in a fallback. */
 export const fontsReady = () =>
@@ -113,9 +115,11 @@ export class Panel {
         this.height = height
         this.draw = draw
         this.measure = measure
+        this.drawWidth = Math.round(width * PX)
+        this.drawHeight = Math.round(height * PX)
         this.canvas = document.createElement('canvas')
-        this.canvas.width = Math.round(width * PX)
-        this.canvas.height = Math.round(height * PX)
+        this.canvas.width = Math.round(this.drawWidth * RES)
+        this.canvas.height = Math.round(this.drawHeight * RES)
         this.ctx = this.canvas.getContext('2d')
         this.texture = new THREE.CanvasTexture(this.canvas)
         this.texture.colorSpace = THREE.SRGBColorSpace
@@ -128,12 +132,19 @@ export class Panel {
         this.onResize = null
     }
 
+    /** Redraws only if there is something different to say: each upload costs a headset a frame. */
     refresh(data) {
+        const key = JSON.stringify(data) ?? ''
+        if (key === this.shown) return
+        this.shown = key
         const { ctx, canvas } = this
+        ctx.setTransform(RES, 0, 0, RES, 0, 0)
         if (this.measure) {
-            const h = Math.ceil(this.measure(ctx, canvas.width, data))
-            if (h !== canvas.height) {
-                canvas.height = h
+            const h = Math.ceil(this.measure(ctx, this.drawWidth, data))
+            if (h !== this.drawHeight) {
+                this.drawHeight = h
+                canvas.height = Math.round(h * RES)
+                ctx.setTransform(RES, 0, 0, RES, 0, 0)
                 this.height = h / PX
                 this.texture.dispose()
                 this.mesh.geometry.dispose()
@@ -141,8 +152,8 @@ export class Panel {
                 this.onResize?.(this.height)
             }
         }
-        ctx.clearRect(0, 0, canvas.width, canvas.height)
-        this.draw?.(ctx, canvas.width, canvas.height, data)
+        ctx.clearRect(0, 0, this.drawWidth, this.drawHeight)
+        this.draw?.(ctx, this.drawWidth, this.drawHeight, data)
         this.texture.needsUpdate = true
     }
 }
@@ -179,6 +190,38 @@ export function messageBoard() {
             text.forEach((line, i) => ctx.fillText(line, 232, 142 + i * 68))
         },
         { measure: (ctx, w, m) => Math.max(230, 110 + lines(ctx, w, m).length * 68 + 26) }
+    )
+}
+
+/* ---------------- where to look ---------------- */
+
+/** Floats at the side of the view, pointing to what needs the person and is out of sight. */
+export function guideTag() {
+    return new Panel(
+        0.25,
+        0.09,
+        (ctx, w, h, d) => {
+            if (!d) return
+            fillRR(ctx, 2, 2, w - 4, h - 4, (h - 4) / 2, '#1F8A4C')
+            const tip = d.side < 0 ? 62 : w - 62
+            const back = d.side < 0 ? 122 : w - 122
+            ctx.strokeStyle = '#FFFFFF'
+            ctx.lineWidth = 20
+            ctx.lineCap = 'round'
+            ctx.lineJoin = 'round'
+            ctx.beginPath()
+            ctx.moveTo(back, h / 2 - 42)
+            ctx.lineTo(tip, h / 2)
+            ctx.lineTo(back, h / 2 + 42)
+            ctx.stroke()
+            ctx.fillStyle = '#FFFFFF'
+            ctx.font = `800 74px ${FONT}`
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.fillText(d.label, d.side < 0 ? w / 2 + 44 : w / 2 - 44, h / 2 + 4)
+            ctx.textAlign = 'start'
+        },
+        { overlay: true }
     )
 }
 
@@ -411,7 +454,7 @@ export function nextPanel() {
         badge(ctx, 150, middle, 100, d.urgent ? 'warn' : 'person', '#FFFFFF', fill)
         ctx.textBaseline = 'alphabetic'
         ctx.fillStyle = '#FFFFFF'
-        ctx.font = `800 44px ${FONT}`
+        ctx.font = `800 50px ${FONT}`
         ctx.fillText(d.urgent ? 'QUE PASE LA URGENCIA' : 'QUE PASE EL SIGUIENTE', 290, middle - 38)
         ctx.fillStyle = '#FFFFFF'
         let size = 92
@@ -431,7 +474,7 @@ export function orderCard() {
         0.3,
         (ctx, w, h, d) => {
             if (!d) return
-            const { order, available } = d
+            const { order, status } = d
             fillRR(ctx, 2, 2, w - 4, h - 4, 48, '#FFFFFF')
             rr(ctx, 2, 2, w - 4, HEADER, [48, 48, 0, 0])
             ctx.fillStyle = order.urgent ? BRAND.redText : BRAND.navy
@@ -452,13 +495,14 @@ export function orderCard() {
                 const y = HEADER + 62 + i * ROW
                 const have = order.packed[id] ?? 0
                 const done = have >= qty
-                const out = !done && available(id) === 0
+                const out = !done && status[id] === 'out'
+                const inBox = !done && status[id] === 'box'
                 if (done) badge(ctx, 84, y, 30, 'check', BRAND.greenInk, '#FFFFFF')
                 else {
                     ctx.beginPath()
                     ctx.arc(84, y, 28, 0, Math.PI * 2)
                     ctx.lineWidth = 6
-                    ctx.strokeStyle = out ? BRAND.redText : 'rgba(1,30,65,0.28)'
+                    ctx.strokeStyle = out ? BRAND.redText : inBox ? BRAND.amber : 'rgba(1,30,65,0.28)'
                     ctx.stroke()
                 }
                 ctx.textBaseline = 'middle'
@@ -466,16 +510,16 @@ export function orderCard() {
                 ctx.font = `700 48px ${FONT}`
                 ctx.fillText(SUPPLIES[id].label, 136, y + 2)
                 ctx.textAlign = 'right'
-                ctx.fillStyle = out ? BRAND.redText : done ? BRAND.greenInk : BRAND.muted
+                ctx.fillStyle = out ? BRAND.redText : inBox ? BRAND.amberInk : done ? BRAND.greenInk : BRAND.muted
                 ctx.font = `800 44px ${FONT}`
-                ctx.fillText(out ? `${have} de ${qty} · agotado` : `${have} de ${qty}`, w - 52, y + 2)
+                ctx.fillText(`${have} de ${qty}${out ? ' · agotado' : inBox ? ' · en la caja' : ''}`, w - 52, y + 2)
                 ctx.textAlign = 'start'
             })
             // the one thing to do about all this, and how long they can wait for it
             const y = h - FOOTER
             ctx.textBaseline = 'middle'
             ctx.fillStyle = BRAND.navy
-            ctx.font = `800 42px ${FONT}`
+            ctx.font = `800 46px ${FONT}`
             ctx.fillText('Pon cada insumo en la caja de abajo', 52, y + 34)
             const bar = w - 104
             fillRR(ctx, 52, y + 72, bar, 20, 10, BRAND.line)
@@ -494,12 +538,12 @@ export function familyCard() {
         badge(ctx, 104, 118, 66, d.urgent ? 'warn' : 'person', d.urgent ? '#FFFFFF' : BRAND.navy, d.urgent ? BRAND.redText : '#FFFFFF')
         ctx.textBaseline = 'alphabetic'
         ctx.fillStyle = ink
-        let size = 58
+        let size = 68
         ctx.font = `800 ${size}px ${FONT}`
         while (ctx.measureText(d.family).width > w - 240) ctx.font = `800 ${(size -= 2)}px ${FONT}`
-        ctx.fillText(d.family, 198, 102)
-        ctx.font = `400 40px ${FONT}`
-        ctx.fillText(d.urgent ? `Urgente · pasa primero` : `En la fila · ${d.people} personas`, 198, 158)
+        ctx.fillText(d.family, 198, 98)
+        ctx.font = `700 50px ${FONT}`
+        ctx.fillText(d.urgent ? `Urgente · pasa primero` : `En la fila · ${d.people} personas`, 198, 168)
         // the time left, as a bar: its length says it, the colour only backs it up
         const x = 36
         const y = h - 76
@@ -536,13 +580,13 @@ export function crateLabel(title, color, tint) {
             // a crate of a single supply already says its name above
             const single = rows.length === 1
             if (!single) {
-                let size = 36
+                let size = 48
                 ctx.font = `700 ${size}px ${FONT}`
                 while (ctx.measureText(label).width > cell - 36) ctx.font = `700 ${(size -= 2)}px ${FONT}`
-                ctx.fillText(label, x + cell / 2, 158)
+                ctx.fillText(label, x + cell / 2, 166)
             }
-            const y = single ? 122 + (h - 142) / 2 + 4 : 226
-            let big = out ? (single ? 76 : 50) : single ? 110 : 76
+            const y = single ? 122 + (h - 142) / 2 + 4 : 268
+            let big = out ? (single ? 76 : 54) : single ? 120 : 104
             ctx.font = `800 ${big}px ${FONT}`
             while (out && ctx.measureText('Agotado').width > cell - 36) ctx.font = `800 ${(big -= 2)}px ${FONT}`
             ctx.fillText(out ? 'Agotado' : String(count), x + cell / 2, y)

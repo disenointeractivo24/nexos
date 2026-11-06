@@ -356,6 +356,17 @@ test('from an open carton straight into the kit: the shelves stay as they were',
     assert.equal(store.get('milk'), 0)
 })
 
+test('what is loose in an open carton can be told apart from what truly ran out', () => {
+    const day = started(fakeStore({ ...SHIFT_STOCK, milk: 0 }))
+    assert.equal(day.inOpenCartons('milk'), 0, 'nobody knows until it is opened')
+    const b = day.boxes.find((x) => x.items.includes('milk'))
+    day.openBox(b.id)
+    assert.equal(day.inOpenCartons('milk'), 2)
+    day.sort(b.id, 'milk', categoryOf('milk'))
+    assert.equal(day.inOpenCartons('milk'), 1)
+    assert.equal(day.available('milk'), 1)
+})
+
 test('emptying a carton is told the same way, by either road', () => {
     const day = started()
     let emptied = 0

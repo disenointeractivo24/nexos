@@ -13,6 +13,11 @@ const BOX = { w: 0.4, h: 0.3, d: 0.3 }
 export const BOX_HEIGHT = BOX.h
 const CRATE = { w: 0.5, h: 0.2, d: 0.32 }
 const WALL = 0.007
+/**
+ * How large supplies are, everywhere they appear: the same in any carton, crate or kit. A little
+ * under their real size, so that what a carton holds stays in the carton instead of towering over it.
+ */
+const SUPPLY_FIT = 0.72
 /** How full a carton is: its contents stand on this much packing paper, so they show. */
 const FILL = 0.6
 
@@ -124,11 +129,36 @@ export function packInto(sizes, width, depth, gap = 0.012) {
     return { fit, spots }
 }
 
-/** A carton's contents, standing on its packing paper: where each goes and how big, in the carton's space. */
-export function cartonLayout(supplies, items, width = BOX.w - 0.03, depth = BOX.d - 0.03, floor = BOX.h * FILL) {
-    const sizes = items.map((id) => realSize(supplies.get(id), id))
-    const { fit, spots } = packInto(sizes, width, depth)
-    return items.map((id, i) => ({ itemId: id, fit, position: new THREE.Vector3(spots[i].x, floor, spots[i].z) }))
+/**
+ * A carton's contents, on its packing paper: where each goes, in the carton's space. A supply
+ * measures the same in every carton: what does not fit beside the others goes on top of them.
+ */
+export function cartonLayout(supplies, items) {
+    const width = BOX.w - 0.03
+    const depth = BOX.d - 0.03
+    const entries = items.map((id, i) => {
+        const size = realSize(supplies.get(id), id)
+        // only what could never fit in a carton gives way, and always by the same amount
+        const fit = Math.min(SUPPLY_FIT, width / size.w, depth / size.d)
+        return { i, itemId: id, fit, w: size.w * fit, d: size.d * fit, h: size.h * fit }
+    })
+    const layers = [[]]
+    // the tallest go down, and what lies flat on top
+    for (const entry of [...entries].sort((a, b) => b.h - a.h)) {
+        const layer = layers[layers.length - 1]
+        if (layer.length && packInto([...layer, entry], width, depth).fit < 1) layers.push([entry])
+        else layer.push(entry)
+    }
+    const placed = []
+    let y = BOX.h * FILL
+    for (const layer of layers) {
+        const { spots } = packInto(layer, width, depth)
+        layer.forEach((entry, n) => {
+            placed[entry.i] = { itemId: entry.itemId, fit: entry.fit, position: new THREE.Vector3(spots[n].x, y, spots[n].z) }
+        })
+        y += Math.max(...layer.map((entry) => entry.h)) + 0.004
+    }
+    return placed
 }
 
 /* ---------------- cardboard ---------------- */
@@ -356,5 +386,8 @@ export function crateLayout(supplies, categoryId) {
     const items = Object.values(SUPPLIES)
         .filter((s) => s.category === categoryId)
         .map((s) => s.id)
-    return cartonLayout(supplies, items, CRATE.w - 0.04, CRATE.d - 0.04, CRATE.h * 0.55)
+    // on show, side by side: here they do give way, so that one of each fits along the crate
+    const sizes = items.map((id) => realSize(supplies.get(id), id)).map((s) => ({ w: s.w * SUPPLY_FIT, d: s.d * SUPPLY_FIT }))
+    const { fit, spots } = packInto(sizes, CRATE.w - 0.04, CRATE.d - 0.04)
+    return items.map((id, i) => ({ itemId: id, fit: fit * SUPPLY_FIT, position: new THREE.Vector3(spots[i].x, CRATE.h * 0.55, spots[i].z) }))
 }

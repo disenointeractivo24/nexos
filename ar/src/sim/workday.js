@@ -137,7 +137,7 @@ export class Workday {
     receive() {
         const list = this.incoming.splice(0, this.room)
         if (!list.length) return []
-        const boxes = list.map((b) => ({ ...b, id: `caja-${++this.boxCount}`, items: [...b.items], state: 'received', left: b.items.length }))
+        const boxes = list.map((b) => ({ ...b, id: `caja-${++this.boxCount}`, items: [...b.items], loose: [...b.items], state: 'received', left: b.items.length }))
         this.boxes.push(...boxes)
         if (!this.incoming.length) this.nextTruck = TRUCK_GAP
         this.#emit('received', boxes)
@@ -275,6 +275,8 @@ export class Workday {
     /** It left its carton and is now part of the point's inventory, wherever it went. */
     #takeOut(b, itemId) {
         b.left--
+        const at = b.loose.indexOf(itemId)
+        if (at >= 0) b.loose.splice(at, 1)
         if (b.left === 0) b.state = 'empty'
         this.store.add(itemId, 1)
         this.sortedCount++
@@ -349,6 +351,11 @@ export class Workday {
     /** How many of an item are on the shelves, leaving out what is already in the kit. */
     available(itemId) {
         return Math.max(0, this.store.get(itemId) - (this.current?.packed[itemId] ?? 0))
+    }
+
+    /** How many of an item are out in the open, in the cartons that have been opened. */
+    inOpenCartons(itemId) {
+        return this.boxes.filter((b) => b.state === 'open').reduce((n, b) => n + b.loose.filter((id) => id === itemId).length, 0)
     }
 
     /** What the order at the counter still lacks, in units. */
