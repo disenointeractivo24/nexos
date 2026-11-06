@@ -144,6 +144,32 @@ test('there is not enough medicine for everyone who asks for it, however long th
     assert.ok(!RESTOCK.flatMap((b) => b.items).includes('medicine'))
 })
 
+test('from an open carton straight into the kit: the shelves stay as they were', () => {
+    const store = fakeStore({ ...SHIFT_STOCK, milk: 0 })
+    const day = started(store)
+    untilJoined(day, 'pedido-2')
+    day.call('pedido-2')
+    const b = day.boxes.find((x) => x.items.includes('milk'))
+    assert.equal(day.addFromBox(b.id, 'milk').reason, 'none', 'not while it is closed')
+    day.openBox(b.id)
+    assert.equal(day.addFromBox(b.id, 'soap').reason, 'extra')
+    const left = b.left
+    assert.equal(day.addFromBox(b.id, 'milk').ok, true)
+    assert.equal(b.left, left - 1)
+    assert.equal(day.current.packed.milk, 1)
+    assert.equal(day.available('milk'), 0)
+    day.deliver()
+    assert.equal(store.get('milk'), 0)
+})
+
+test('emptying a carton is told the same way, by either road', () => {
+    const day = started()
+    let emptied = 0
+    day.on((e) => e === 'emptied' && emptied++)
+    sortBox(day, day.boxes[0])
+    assert.equal(emptied, 1)
+})
+
 test('the todo list follows what is going on', () => {
     const day = started()
     assert.ok(day.todo.some((r) => r.id === 'boxes'))

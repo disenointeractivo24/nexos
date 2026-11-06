@@ -36,11 +36,11 @@ export const ORDERS = [
 
 /** When each of them comes, in seconds since the shift began. */
 export const ARRIVALS = [
-    { at: 15, id: 'pedido-1' },
-    { at: 60, id: 'pedido-2' },
-    { at: 110, id: 'pedido-3' },
-    { at: 160, id: 'urgente' },
-    { at: 185, id: 'pedido-4' },
+    { at: 30, id: 'pedido-1' },
+    { at: 100, id: 'pedido-2' },
+    { at: 170, id: 'pedido-3' },
+    { at: 240, id: 'urgente' },
+    { at: 300, id: 'pedido-4' },
 ]
 
 /** Cartons waiting: below the first a new one comes soon, at the second the pile is full. */
@@ -156,16 +156,13 @@ export class Workday {
         if (this.isFinished) return 0
         const line = this.line
         const urgent = line.some((o) => o.urgent) || this.current?.urgent
-        return clamp01(0.14 * line.length + 0.04 * this.unopened + (urgent ? 0.35 : 0) + 0.2 * Math.min(this.clock / 240, 1))
+        return clamp01(0.14 * line.length + 0.04 * this.unopened + (urgent ? 0.35 : 0) + 0.2 * Math.min(this.clock / 360, 1))
     }
 
     /** Time passes: people arrive, the ones in line lose patience, more cartons come. */
     tick(dt) {
         if (!this.started || this.isFinished) return
         this.clock += dt
-        // nobody around: whoever comes next does not keep the person idle for long
-        const nobody = !this.current && !this.line.length
-        if (nobody && this.pending.length) this.pending[0].at -= dt * 2
         while (this.pending.length && this.pending[0].at <= this.clock) this.#arrive(this.pending.shift())
 
         this.nextTruck -= dt
@@ -228,12 +225,18 @@ export class Workday {
             this.#emit('mistake', { itemId, categoryId })
             return { ok: false, wanted: CATEGORIES[right].label }
         }
+        this.#takeOut(b, itemId)
+        this.#emit('sorted', { itemId, categoryId, box: b })
+        if (b.state === 'empty') this.#emit('emptied', b)
+        return { ok: true }
+    }
+
+    /** It left its carton and is now part of the point's inventory, wherever it went. */
+    #takeOut(b, itemId) {
         b.left--
         if (b.left === 0) b.state = 'empty'
         this.store.add(itemId, 1)
         this.sortedCount++
-        this.#emit('sorted', { itemId, categoryId, box: b })
-        return { ok: true }
     }
 
     /* ---------------- people ---------------- */
@@ -276,14 +279,30 @@ export class Workday {
     addToKit(itemId) {
         const o = this.current
         if (!o) return { ok: false, reason: 'none' }
-        const wanted = o.items[itemId] ?? 0
-        const have = o.packed[itemId] ?? 0
-        if (have >= wanted) return { ok: false, reason: 'extra' }
+        if ((o.packed[itemId] ?? 0) >= (o.items[itemId] ?? 0)) return { ok: false, reason: 'extra' }
         if (this.available(itemId) <= 0) return { ok: false, reason: 'stock' }
-        o.packed[itemId] = have + 1
-        const complete = !Object.keys(this.missing).length
-        this.#emit('packed', { order: o, itemId, complete })
+        this.#pack(o, itemId)
         return { ok: true }
+    }
+
+    /**
+     * Straight from an open carton into the current kit, without going by the shelves.
+     * @returns {{ ok: boolean, reason?: 'none'|'extra' }}
+     */
+    addFromBox(boxId, itemId) {
+        const o = this.current
+        const b = this.box(boxId)
+        if (!o || !b || b.state !== 'open' || b.left <= 0) return { ok: false, reason: 'none' }
+        if ((o.packed[itemId] ?? 0) >= (o.items[itemId] ?? 0)) return { ok: false, reason: 'extra' }
+        this.#takeOut(b, itemId)
+        this.#pack(o, itemId)
+        if (b.state === 'empty') this.#emit('emptied', b)
+        return { ok: true }
+    }
+
+    #pack(o, itemId) {
+        o.packed[itemId] = (o.packed[itemId] ?? 0) + 1
+        this.#emit('packed', { order: o, itemId, complete: !Object.keys(this.missing).length })
     }
 
     /** Hands over what is in the kit, whole or not: that is the person's call. It leaves the inventory now. */

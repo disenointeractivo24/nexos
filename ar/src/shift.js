@@ -541,6 +541,7 @@ export class ShiftSystem extends createSystem({
         const over = (object) => ray.intersectObject(object, true).length > 0
         if (t.kind === 'item') {
             // what the pointer is on; failing that, the nearest crate within reach of it
+            if (this.kit && (over(this.kit.object) || onScreen(this.kit.object) < DROP_NEAR)) return this.kit
             const { zones } = this.station
             const nearest = [...zones].sort((a, b) => onScreen(a.crate) - onScreen(b.crate))[0]
             return zones.find((z) => over(z.crate)) ?? (onScreen(nearest.crate) < DROP_NEAR ? nearest : null)
@@ -582,6 +583,7 @@ export class ShiftSystem extends createSystem({
             return this.#goHome(t)
         }
         if (t.kind === 'item') {
+            if (target && target === this.kit) return this.#packFromBox(entity, t)
             if (target) return this.#stow(entity, t, target)
             return this.#goHome(t)
         }
@@ -620,6 +622,7 @@ export class ShiftSystem extends createSystem({
 
     #releaseItem(entity, t) {
         t.object.getWorldPosition(temp)
+        if (this.kit && temp.distanceTo(this.#worldOf(this.kit.object)) < KIT_REACH) return this.#packFromBox(entity, t)
         let best = null
         let bestDist = CRATE_REACH
         for (const zone of this.station.zones) {
@@ -686,7 +689,7 @@ export class ShiftSystem extends createSystem({
             object.position.copy(home)
             this.#thing(object, { kind: 'item', itemId, box: t.box, home })
         }
-        this.#say('info', `Caja de ${t.box.from}. ${this.world.session ? 'Agarra cada insumo y suéltalo en su caja del estante, a tu espalda.' : 'Mantén presionado cada insumo y llévalo a su caja del estante, a tu espalda.'}`)
+        this.#say('info', `Caja de ${t.box.from}. Lleva cada insumo a su caja del estante, a tu espalda, o directo a un pedido.`)
     }
 
     /** An item goes into its crate, or back to its carton with a word about where it goes. */
@@ -725,17 +728,35 @@ export class ShiftSystem extends createSystem({
             if (result.reason === 'stock') this.#say('warn', `No queda ${label.toLowerCase()} en los estantes.`)
             return this.#goHome(t)
         }
-        const slot = this.kit.layout.findIndex((s, i) => s.itemId === t.itemId && !this.kit.used.has(i))
-        this.kit.used.add(slot)
-        const { fit, position } = this.kit.layout[slot]
-        const object = supplyObject(this.loader, this.supplies.get(t.itemId), t.itemId, fit)
-        object.position.copy(position)
-        this.kit.object.add(object)
-        this.sound.play('item', this.#worldOf(this.kit.object))
+        this.#showInKit(t.itemId)
         // the crate's sample is back in its place at once: there are more of them
         t.object.position.copy(t.home)
         t.object.rotation.set(0, 0, 0)
         this.#refreshShelf()
+    }
+
+    /** From an open carton straight into the kit, without going by the shelves. */
+    #packFromBox(entity, t) {
+        const result = this.day.addFromBox(t.box.id, t.itemId)
+        if (!result.ok) {
+            this.sound.play('wrong', this.#worldOf(this.kit.object))
+            this.#say('warn', `${SUPPLIES[t.itemId].label}: ya está completo o no está en este pedido.`)
+            return this.#goHome(t)
+        }
+        this.things.delete(entity)
+        entity.destroy()
+        this.#showInKit(t.itemId)
+    }
+
+    /** One more unit in the kit, in the place kept for it. */
+    #showInKit(itemId) {
+        const slot = this.kit.layout.findIndex((s, i) => s.itemId === itemId && !this.kit.used.has(i))
+        this.kit.used.add(slot)
+        const { fit, position } = this.kit.layout[slot]
+        const object = supplyObject(this.loader, this.supplies.get(itemId), itemId, fit)
+        object.position.copy(position)
+        this.kit.object.add(object)
+        this.sound.play('item', this.#worldOf(this.kit.object))
     }
 
     /* ---------------- people ---------------- */
@@ -913,7 +934,7 @@ export class ShiftSystem extends createSystem({
             if (this.running) this.sound.play('truck')
             this.#dropBoxes(detail)
         }
-        if (event === 'sorted' && detail.box.state === 'empty') this.#clearBox(detail.box)
+        if (event === 'emptied') this.#clearBox(detail)
         if (event === 'joined') this.#familyJoins(detail)
         if (event === 'order') this.#familyComes(detail)
         if (event === 'packed') {
@@ -976,7 +997,7 @@ export class ShiftSystem extends createSystem({
             stats: [
                 { value: String(r.people), label: 'personas recibieron algo', tone: 'good' },
                 { value: `${r.whole.length}/${r.orders}`, label: 'pedidos completos', tone: r.whole.length === r.orders ? 'good' : 'warn' },
-                { value: String(r.sorted), label: 'insumos ordenados' },
+                { value: String(r.sorted), label: 'insumos recibidos' },
             ],
             lines,
             note: 'Cada donación que ves en la app pasó por este trabajo.',
