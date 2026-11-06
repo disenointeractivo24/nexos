@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ARRIVALS, MEDICINE_IN_CARTONS, ORDERS, SHIFT_STOCK, TRUCK_GAP, Workday, categoryOf } from '../src/sim/workday.js'
+import { ARRIVALS, GUIDED, MEDICINE_IN_CARTONS, ORDERS, SHIFT_STOCK, TRUCK_GAP, Workday, categoryOf } from '../src/sim/workday.js'
 
 /** A first truck that always brings the same, for the rules that are not about what comes. */
 const FIRST = [
@@ -247,6 +247,57 @@ test('going back to the line does not refill anyone\'s patience', () => {
     day.callNext()
     assert.equal(day.current, first)
     assert.equal(first.waited, waited)
+})
+
+test('the first time, nothing happens until the person does it', () => {
+    const day = new Workday({ store: fakeStore(), guided: true })
+    day.start()
+    assert.equal(day.incoming.length, 1)
+    day.tick(1000)
+    assert.equal(day.clock, 0)
+    assert.equal(day.line.length + (day.current ? 1 : 0), 0)
+    const [box] = day.receive()
+    assert.deepEqual(box.items, GUIDED.carton.items)
+    day.tick(1000)
+    assert.equal(day.incoming.length, 0, 'no other truck')
+    assert.equal(day.current, null)
+})
+
+test('the guided order comes up on opening the carton, and can be met from the carton and the shelves', () => {
+    const day = new Workday({ store: fakeStore(), guided: true })
+    day.start()
+    const [box] = day.receive()
+    day.openBox(box.id)
+    assert.equal(day.current.id, GUIDED.order)
+    assert.deepEqual(day.current.items, GUIDED.items)
+    for (const id of Object.keys(GUIDED.items)) assert.ok(GUIDED.carton.items.includes(id) || SHIFT_STOCK[id] > 0, id)
+    day.tick(1000)
+    assert.equal(day.current.waited, 0, 'no hurry')
+    assert.ok(day.addFromBox(box.id, 'rice').ok)
+    assert.ok(day.addToKit('water').ok)
+    assert.deepEqual(day.missing, {})
+})
+
+test('once the guided order is handed over, the day runs as any other', () => {
+    const day = new Workday({ store: fakeStore(), guided: true })
+    day.start()
+    const [box] = day.receive()
+    day.openBox(box.id)
+    pack(day)
+    day.deliver()
+    assert.equal(day.calm, false)
+    assert.equal(day.truckIn, GUIDED.truckAfter)
+    for (let i = 0; i < GUIDED.truckAfter; i++) day.tick(1)
+    assert.ok(day.incoming.length >= 2, 'the next truck')
+    untilAtCounter(day, 'pedido-2')
+    assert.equal(day.current.items.milk, ORDERS[1].items.milk)
+})
+
+test('a shift that is not guided never stands still', () => {
+    const day = started()
+    assert.equal(day.calm, false)
+    day.tick(1)
+    assert.equal(day.clock, 1)
 })
 
 test('whoever waits too long in line leaves, and that is counted', () => {

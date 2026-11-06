@@ -6,10 +6,12 @@ import { GuideCharacter } from '../../src/three/GuideCharacter.js'
 import { CATEGORIES, SUPPLIES } from '../../src/data/catalog.js'
 import { InventoryStore, sheetsEndpoint } from '../../src/app/inventoryStore.js'
 import { Workable } from './components.js'
+import { Haptics } from './haptics.js'
 import { ORDERS, SHIFT_STOCK, TRUCK_GAP, Workday } from './sim/workday.js'
 import { Sound } from './sound.js'
 import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
+import { Glow } from './world/glow.js'
 import { bigBoard, buttonPanel, familyCard, fontsReady, messageBoard, nextPanel, orderCard, receivePanel, taskList } from './world/panels.js'
 import { buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
 import { buildTruck } from './world/truck.js'
@@ -91,6 +93,7 @@ export class ShiftSystem extends createSystem({
         this.signTurn = 0
         this.crowd = new Set() // every person standing or walking about
         this.sound = new Sound()
+        this.haptics = new Haptics()
         this.placed = false
         this.loader = new AssetLoader()
         this.ready = this.#prepare()
@@ -131,6 +134,7 @@ export class ShiftSystem extends createSystem({
         this.elapsed += delta
         gsap.updateRoot(this.elapsed)
         this.view?.update(delta)
+        this.haptics.watch(this.world.session)
         const cam = this.world.camera
         cam.getWorldPosition(temp)
         cam.getWorldDirection(temp2)
@@ -146,6 +150,7 @@ export class ShiftSystem extends createSystem({
         this.#followCards()
         this.#carry(delta)
         this.#markHeld()
+        this.#followGuide()
         this.#pollButtons()
         this.#placeList(delta)
         // what is expected next breathes: it can be found without reading the whole table
@@ -181,7 +186,8 @@ export class ShiftSystem extends createSystem({
         const endpoint = import.meta.env.PROD ? sheetsEndpoint() : ''
         this.store = new InventoryStore({ pointId: DEMO_POINT, endpoint })
         await this.store.start()
-        this.day = new Workday({ store: this.store })
+        // only the first shift since the page opened: whoever comes to try it next starts fresh with a reload
+        this.day = new Workday({ store: this.store, guided: true })
         this.day.on((event, detail) => this.#onDay(event, detail))
         const scene = this.world.scene
         const sky = new THREE.HemisphereLight('#FFF4E6', '#8A8172', 1.6)
@@ -342,6 +348,11 @@ export class ShiftSystem extends createSystem({
         this.nextButton.mesh.position.set(x, 0, far)
         hangFromRoof(this.nextButton, top + 0.88)
         this.#setActive(this.nextButton.mesh, false)
+        this.glow = new Glow(this.world.scene)
+        // something to shine on where a carton goes: the mat itself cannot be pressed or carried
+        this.matSpot = new THREE.Object3D()
+        this.matSpot.position.copy(this.station.mat)
+        root.add(this.matSpot)
         this.listButton = buttonPanel('Por hacer', { width: 0.22, height: 0.085, fill: '#011E41' })
         this.#thing(this.listButton.mesh, { kind: 'list' }, { grab: false })
         this.listButton.mesh.position.set(x, top + 0.05, this.station.matZ - 0.1)
@@ -357,6 +368,8 @@ export class ShiftSystem extends createSystem({
      * A warning answers what the person just did, so it never waits; the rest take their turn.
      */
     #say(kind, text) {
+        // while learning, the guide does the talking: only what corrects the person gets through
+        if (this.guide && this.day.calm && kind !== 'warn' && kind !== 'alert') return
         if (kind !== 'warn' && kind !== 'alert' && this.elapsed < this.sayUntil) {
             this.sayQueue = [...this.sayQueue.slice(-1), { kind, text }]
             return
@@ -365,6 +378,7 @@ export class ShiftSystem extends createSystem({
     }
 
     #show(kind, text) {
+        this.shownText = text
         this.message.refresh({ kind, text })
         const hold = kind === 'alert' ? ALERT_HOLD : kind === 'warn' ? WARN_HOLD : MESSAGE_HOLD
         this.sayUntil = Math.max(this.sayUntil, this.elapsed + hold)
@@ -382,6 +396,8 @@ export class ShiftSystem extends createSystem({
         const choose = () => {
             if (this.pendingStart) return ['start', 'Empezar el turno']
             if (this.ending) return ['again', 'Hacer otro turno']
+            // the guided order is finished once: half of it is for when there is no time left
+            if (this.guide && day.calm && Object.keys(day.missing).length) return [null, '']
             if (day.canDeliver) return ['deliver', Object.keys(day.missing).length ? 'Entregar lo que hay' : 'Entregar el pedido']
             return [null, '']
         }
@@ -405,7 +421,8 @@ export class ShiftSystem extends createSystem({
         const { day } = this
         const count = day.incoming.length
         const mode = !count ? 'waiting' : this.truckParked ? 'ready' : 'coming'
-        this.receive.mesh.visible = this.running
+        // with time standing still, a countdown to the next truck would only look broken
+        this.receive.mesh.visible = this.running && !(day.calm && !count)
         // only with the truck there is anything to press
         this.receive.mesh.pointerEvents = this.running && mode === 'ready' ? 'auto' : 'none'
         this.receive.refresh({ mode, count, room: day.room, seconds: day.truckIn, gap: TRUCK_GAP })
@@ -531,6 +548,7 @@ export class ShiftSystem extends createSystem({
     #pressReceive() {
         if (!this.day.room) {
             this.sound.play('wrong')
+            this.haptics.play('wrong')
             return this.#say('warn', 'No hay espacio en el mostrador: abre alguna caja primero. El camión te espera.')
         }
         this.day.receive()
@@ -543,6 +561,7 @@ export class ShiftSystem extends createSystem({
         this.running = true
         this.big.mesh.visible = false
         this.message.mesh.visible = true
+        this.guide = this.day.calm ? { phase: null } : null
         this.#say('radio', 'Viene un camión con donaciones, por tu izquierda.')
         this.day.start()
         this.#refreshReceive()
@@ -581,6 +600,80 @@ export class ShiftSystem extends createSystem({
         this.day = new Workday({ store: this.store })
         this.day.on((event, detail) => this.#onDay(event, detail))
         this.#begin()
+    }
+
+    /* ---------------- the first time ---------------- */
+
+    /** What shines and what the board says, all read from how things stand: any order of doing them works. */
+    #guideStep() {
+        const { day } = this
+        const hands = this.world.session
+        const [heldEntity] = this.queries.held.entities
+        const held = this.holding?.t ?? this.things.get(heldEntity)
+        const things = [...this.things.values()]
+
+        if (day.calm && !day.boxes.length) {
+            if (!this.truckParked) return { phase: 'truck', targets: [], text: 'Viene un camión con donaciones, por tu izquierda.' }
+            return { phase: 'receive', targets: [this.receive.mesh], text: 'Llegó el camión. Presiona el panel que brilla, a tu izquierda, para recibir las donaciones.' }
+        }
+        if (day.calm && !day.current) {
+            const box = things.find((t) => t.kind === 'box' && t.box === day.boxes[0])
+            if (box?.onMat) return { phase: 'open', targets: [box.object], text: hands ? 'Presiona la caja para quitarle la cinta.' : 'Haz clic en la caja para quitarle la cinta.' }
+            const targets = held === box ? [this.matSpot] : box && !box.moving ? [box.object] : []
+            return { phase: 'box', targets, text: hands ? 'Lleva la caja que brilla a la mesa azul: agárrala o mantén el gatillo sobre ella.' : 'Mantén presionada la caja que brilla y llévala a la mesa azul.' }
+        }
+        if (day.calm) {
+            const missing = Object.keys(day.missing)
+            if (!missing.length) return { phase: 'deliver', targets: [this.action.mesh], text: 'Pedido completo. Presiona «Entregar el pedido», en la mesa.' }
+            const loose = (id) => things.filter((t) => t.kind === 'item' && t.itemId === id)
+            const onShelf = missing.filter((id) => !loose(id).length)
+            const wants = list(Object.entries(day.missing).map(([id, n]) => `${n} de ${SUPPLIES[id].label.toLowerCase()}`))
+            let targets = []
+            if (held) {
+                if (missing.includes(held.itemId)) targets = [this.kit.object]
+            } else {
+                targets = missing.flatMap((id) => {
+                    const here = loose(id)
+                    if (here.length) return here.map((t) => t.object)
+                    const zone = this.station.zones.find((z) => z.stock.has(id))
+                    return [this.things.get(zone.stock.get(id)).object]
+                })
+            }
+            if (onShelf.length === missing.length) return { phase: 'shelf', targets, text: `Falta ${wants}: brilla en el estante, a tu espalda. Llévalo a su caja, en «Arma el pedido».` }
+            const where = onShelf.length ? 'en la caja abierta y en el estante, a tu espalda' : 'en la caja abierta'
+            return { phase: 'order', targets, text: `${day.current.family} necesita ${wants}. Lo que brilla está ${where}: llévalo a su caja, en «Arma el pedido».` }
+        }
+        // handed over, time runs again: only what was left in the carton still gets a hand
+        const left = things.filter((t) => t.kind === 'item')
+        if (!left.length || day.current) return null
+        let targets = left.map((t) => t.object)
+        if (held) targets = held.kind === 'item' ? [this.station.zones.find((z) => z.categoryId === SUPPLIES[held.itemId].category).crate] : []
+        return { phase: 'sort', targets, text: 'Lo que quedó en la caja va a su lugar en el estante, a tu espalda. Desde ahora el tiempo corre.' }
+    }
+
+    #followGuide() {
+        if (!this.guide) return
+        const step = this.#guideStep()
+        if (!step) return this.#endGuide(true)
+        this.glow.show(step.targets)
+        this.glow.update(this.elapsed)
+        if (step.phase !== this.guide.phase) {
+            this.guide.phase = step.phase
+            if (this.day.calm) {
+                this.sayUntil = 0
+                this.#show('info', step.text)
+            } else this.#say('info', step.text)
+        } else if (this.day.calm && step.text !== this.shownText && this.elapsed >= this.sayUntil) {
+            // back to it, once whatever came in between has been read
+            this.#show('info', step.text)
+        }
+    }
+
+    #endGuide(finished = false) {
+        if (!this.guide) return
+        this.guide = null
+        this.glow.show([])
+        if (finished && this.running) this.#say('done', 'Ya conoces el trabajo. Llegarán más camiones y más gente: tú decides qué haces primero.')
     }
 
     /* ---------------- objects ---------------- */
@@ -696,6 +789,7 @@ export class ShiftSystem extends createSystem({
     #pressIn(entity) {
         const t = this.things.get(entity)
         if (!t || !BUTTONS.has(t.kind) || t.urgentPulse) return
+        this.haptics.play('tap')
         t.baseScale ??= t.object.scale.x
         const k = t.baseScale * 0.93
         gsap.to(t.object.scale, { x: k, y: k, z: k, duration: 0.08, overwrite: true })
@@ -717,7 +811,10 @@ export class ShiftSystem extends createSystem({
         if (t.kind === 'receive') return this.#pressReceive()
         if (t.kind === 'next') return this.#pressNext()
         if (t.kind === 'box' && t.onMat) return this.#openBox(t)
-        if (t.kind === 'box' && this.#isCovered(t)) return this.#say('warn', 'Primero toma la caja de arriba.')
+        if (t.kind === 'box' && this.#isCovered(t)) {
+            this.haptics.play('wrong')
+            return this.#say('warn', 'Primero toma la caja de arriba.')
+        }
     }
 
     /** Whoever is next comes up now. If someone had things in their kit, that is worth saying. */
@@ -872,7 +969,7 @@ export class ShiftSystem extends createSystem({
         if (!moved) {
             this.#goHome(t)
             const where = { box: 'la mesa azul', item: 'su caja del estante', stock: 'el pedido' }[t.kind]
-            return this.#say('info', `Mantén presionado y arrástralo hasta ${where}.`)
+            return this.#show('info', `Mantén presionado y arrástralo hasta ${where}.`)
         }
         if (t.kind === 'box') {
             if (target && !this.onMat) return this.#moveToMat(entity, t)
@@ -886,7 +983,7 @@ export class ShiftSystem extends createSystem({
         }
         if (t.kind === 'stock') {
             if (target) return this.#giveToKit(t)
-            if (!this.kit) this.#say('info', 'Todavía no hay nadie en el mostrador: quien llegue pasará solo.')
+            if (!this.kit) this.#show('info', 'Todavía no hay nadie en el mostrador: quien llegue pasará solo.')
             return this.#goHome(t)
         }
     }
@@ -895,7 +992,9 @@ export class ShiftSystem extends createSystem({
 
     #take(entity) {
         const t = this.things.get(entity)
-        if (t) gsap.killTweensOf(t.object.position)
+        if (!t) return
+        gsap.killTweensOf(t.object.position)
+        this.haptics.play('grab')
     }
 
     /** Let go in the headset: what it counts as depends on where it, or the ray holding it, was. */
@@ -903,6 +1002,8 @@ export class ShiftSystem extends createSystem({
         const t = this.things.get(entity)
         const hand = this.heldHand
         this.heldHand = null
+        // what answers goes to the hand that let go, even if the other one pressed something meanwhile
+        if (hand) this.haptics.hand = hand
         this.#mark(null)
         if (!t) return
         const pointedAt = hand ? this.#targetAlong(hand, t) : null
@@ -916,6 +1017,7 @@ export class ShiftSystem extends createSystem({
         temp.copy(t.object.position)
         if (pointedAt || Math.hypot(temp.x - m.x, temp.z - m.z) < MAT_REACH) {
             if (!this.onMat) return this.#moveToMat(entity, t)
+            this.haptics.play('wrong')
             this.#say('warn', 'La mesa está ocupada: termina primero la caja abierta.')
         }
         this.#goHome(t)
@@ -956,6 +1058,7 @@ export class ShiftSystem extends createSystem({
     /* ---------------- what happens to what is carried ---------------- */
 
     #moveToMat(entity, t) {
+        this.haptics.play('right')
         t.onMat = true
         t.moving = true
         this.onMat = entity
@@ -980,6 +1083,7 @@ export class ShiftSystem extends createSystem({
 
     #openBox(t) {
         if (!this.day.openBox(t.box.id)) return
+        this.haptics.play('tap')
         const { flaps, seal } = t.object.userData
         seal.visible = false
         // open, it has nothing more to be pressed for, and its flaps must not stop a ray on its way in
@@ -1002,9 +1106,11 @@ export class ShiftSystem extends createSystem({
         if (!result.ok) {
             this.#goHome(t)
             this.sound.play('wrong', this.#worldOf(zone.crate))
+            this.haptics.play('wrong')
             this.#say('warn', `${SUPPLIES[t.itemId].label} no va en ${CATEGORIES[zone.categoryId].label}: va en ${result.wanted}.`)
             return
         }
+        this.haptics.play('right')
         this.things.delete(entity)
         const object = t.object
         // it flies to its crate and joins what is there
@@ -1028,6 +1134,7 @@ export class ShiftSystem extends createSystem({
         const result = this.day.addToKit(t.itemId)
         if (!result.ok) {
             this.sound.play('wrong', this.#worldOf(this.kit.object))
+            this.haptics.play('wrong')
             if (result.reason === 'extra') this.#say('warn', `${label}: ya está completo o no está en este pedido.`)
             if (result.reason === 'stock') this.#say('warn', `No queda ${label.toLowerCase()} en los estantes.`)
             return this.#goHome(t)
@@ -1044,6 +1151,7 @@ export class ShiftSystem extends createSystem({
         const result = this.day.addFromBox(t.box.id, t.itemId)
         if (!result.ok) {
             this.sound.play('wrong', this.#worldOf(this.kit.object))
+            this.haptics.play('wrong')
             this.#say('warn', `${SUPPLIES[t.itemId].label}: ya está completo o no está en este pedido.`)
             return this.#goHome(t)
         }
@@ -1054,6 +1162,7 @@ export class ShiftSystem extends createSystem({
 
     /** One more unit in the kit, in the place kept for it. */
     #showInKit(itemId) {
+        this.haptics.play('right')
         const slot = this.kit.layout.findIndex((s, i) => s.itemId === itemId && !this.kit.used.has(i))
         this.kit.used.add(slot)
         const { fit, position } = this.kit.layout[slot]
@@ -1315,6 +1424,7 @@ export class ShiftSystem extends createSystem({
 
     /** The shift, in numbers and in people. */
     #closing(r) {
+        this.#endGuide()
         this.running = false
         this.ending = true
         this.message.mesh.visible = false

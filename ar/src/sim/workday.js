@@ -44,6 +44,11 @@ const MAX_BOXES = 4
 /** Seconds from one truck leaving to the next one arriving, and how many cartons each brings. */
 export const TRUCK_GAP = 40
 const FIRST_TRUCK_CARTONS = 3
+/**
+ * The first time: one carton and a small order with one thing from it and one from the shelves,
+ * enough to go through the whole job once. And the next truck, soon after, once it is over.
+ */
+export const GUIDED = { carton: { from: 'Barrio San Fernando', items: ['rice', 'soap', 'cans'] }, order: 'pedido-1', items: { rice: 1, water: 1 }, truckAfter: 12 }
 /** Seconds the counter stays free between one person leaving and the next coming up. */
 const COUNTER_GAP = 3
 
@@ -55,11 +60,13 @@ export class Workday {
     /**
      * @param {{ store: { add(id: string, n: number): number, get(id: string): number },
      *           first?: { from: string, items: string[] }[], random?: () => number,
-     *           orders?: typeof ORDERS, arrivals?: typeof ARRIVALS }} opts
+     *           orders?: typeof ORDERS, arrivals?: typeof ARRIVALS, guided?: boolean }} opts
      */
-    constructor({ store, first = null, random = Math.random, orders = ORDERS, arrivals = ARRIVALS }) {
+    constructor({ store, first = null, random = Math.random, orders = ORDERS, arrivals = ARRIVALS, guided = false }) {
         this.store = store
-        this.first = first
+        this.first = guided ? [GUIDED.carton] : first
+        /** Learning: time stands still, until that first order has been handed over. */
+        this.calm = guided
         this.random = random
         this.medicineLeft = MEDICINE_IN_CARTONS
         this.boxes = []
@@ -69,7 +76,7 @@ export class Workday {
         this.counterFree = 0
         this.sortedCount = 0
         this.mistakes = 0
-        this.orders = orders.map((o) => ({ ...o, items: { ...o.items }, packed: {}, state: 'scheduled', waited: 0, warned: false }))
+        this.orders = orders.map((o) => ({ ...o, items: { ...(guided && o.id === GUIDED.order ? GUIDED.items : o.items) }, packed: {}, state: 'scheduled', waited: 0, warned: false }))
         this.pending = [...arrivals].sort((a, b) => a.at - b.at)
         this.current = null
         this.clock = 0
@@ -205,7 +212,7 @@ export class Workday {
 
     /** Time passes: people arrive and come up in turn, patience runs out, more trucks come. */
     tick(dt) {
-        if (!this.started || this.isFinished) return
+        if (!this.started || this.isFinished || this.calm) return
         this.clock += dt
         while (this.pending.length && this.pending[0].at <= this.clock) this.#arrive(this.pending.shift())
 
@@ -237,6 +244,14 @@ export class Workday {
         this.#emit('joined', order)
     }
 
+    /** While learning, nobody arrives on their own: the first person comes once there is a carton open. */
+    #firstComes() {
+        const first = this.pending.shift()
+        this.clock = first.at
+        this.#arrive(first)
+        this.#comeUp()
+    }
+
     /* ---------------- cartons ---------------- */
 
     box(id) {
@@ -249,6 +264,7 @@ export class Workday {
         if (!b || b.state !== 'received') return false
         b.state = 'open'
         this.#emit('opened', b)
+        if (this.calm && !this.current) this.#firstComes()
         return true
     }
 
@@ -415,6 +431,10 @@ export class Workday {
         o.state = 'delivered'
         this.current = null
         this.counterFree = COUNTER_GAP
+        if (this.calm) {
+            this.calm = false
+            this.nextTruck = GUIDED.truckAfter
+        }
         this.#emit('delivered', o)
         return o
     }
