@@ -403,14 +403,14 @@ export function receivePanel() {
 export function nextPanel() {
     return new Panel(0.5, 0.14, (ctx, w, h, d) => {
         if (!d) return
-        const fill = d.urgent ? BRAND.redText : BRAND.navy
+        const fill = '#1F8A4C' // the same green as the mark that receives the truck
         // the lower edge gives it a little body, so it reads as something to press
-        fillRR(ctx, 2, 14, w - 4, h - 16, 84, 'rgba(1,30,65,0.35)')
+        fillRR(ctx, 2, 14, w - 4, h - 16, 84, '#14603A')
         fillRR(ctx, 2, 2, w - 4, h - 22, 84, fill)
         const middle = (h - 20) / 2
         badge(ctx, 150, middle, 100, d.urgent ? 'warn' : 'person', '#FFFFFF', fill)
         ctx.textBaseline = 'alphabetic'
-        ctx.fillStyle = 'rgba(255,255,255,0.82)'
+        ctx.fillStyle = '#FFFFFF'
         ctx.font = `800 44px ${FONT}`
         ctx.fillText(d.urgent ? 'QUE PASE LA URGENCIA' : 'QUE PASE EL SIGUIENTE', 290, middle - 38)
         ctx.fillStyle = '#FFFFFF'
