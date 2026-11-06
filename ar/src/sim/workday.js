@@ -3,19 +3,23 @@ import { CATEGORIES, SUPPLIES } from '../../../src/data/catalog.js'
 /**
  * The workday, with no 3D in it: what has arrived, who is waiting, what the person just
  * did. The scene asks it and shows the answer, so the rules can be read (and tested) alone.
+ *
+ * There is no fixed order to it. Cartons keep arriving and people keep coming; the person
+ * decides whether to open, to sort or to attend, and the day answers to what they chose.
  */
 
-/** What comes off the first truck. */
+/** What comes off the first truck: the only medicine, blanket and hygiene kit of the shift. */
 export const FIRST_DELIVERY = [
-    { id: 'caja-1', from: 'Barrio San Fernando', items: ['rice', 'rice', 'water', 'water', 'cans'] },
-    { id: 'caja-2', from: 'Barrio El Ingenio', items: ['medicine', 'soap', 'soap', 'hygieneKit'] },
-    { id: 'caja-3', from: 'Barrio La Flora', items: ['blanket', 'milk', 'milk'] },
+    { from: 'Barrio San Fernando', items: ['rice', 'rice', 'water', 'water', 'cans'] },
+    { from: 'Barrio El Ingenio', items: ['medicine', 'soap', 'soap', 'hygieneKit'] },
+    { from: 'Barrio La Flora', items: ['blanket', 'milk', 'milk'] },
 ]
 
-/** What comes off the second one, in the middle of it all. */
-export const SECOND_DELIVERY = [
-    { id: 'caja-4', from: 'Barrio Meléndez', items: ['water', 'water', 'rice', 'cans'] },
-    { id: 'caja-5', from: 'Barrio Aguablanca', items: ['soap', 'milk'] },
+/** What keeps coming afterwards, round and round: always more cartons, never of everything. */
+export const RESTOCK = [
+    { from: 'Barrio Meléndez', items: ['water', 'water', 'rice', 'cans'] },
+    { from: 'Barrio Aguablanca', items: ['soap', 'milk', 'rice'] },
+    { from: 'Barrio Ciudad Jardín', items: ['cans', 'water', 'milk'] },
 ]
 
 /** The demonstration point opens each shift with this little: not everyone will get everything. */
@@ -30,45 +34,46 @@ export const ORDERS = [
     { id: 'pedido-4', family: 'Familia Caicedo', people: 6, patience: 130, items: { rice: 4, cans: 1 }, visitors: ['npc-mayor', 'npc-nino-1'] },
 ]
 
-/**
- * When things happen, in seconds since the first inventory update. If the person has
- * nothing to do, the next thing simply comes sooner.
- */
-export const SCHEDULE = [
-    { at: 0, type: 'family', id: 'pedido-1' },
-    { at: 45, type: 'family', id: 'pedido-2' },
-    { at: 70, type: 'truck' },
-    { at: 95, type: 'family', id: 'pedido-3' },
-    { at: 130, type: 'family', id: 'urgente' },
-    { at: 150, type: 'family', id: 'pedido-4' },
+/** When each of them comes, in seconds since the shift began. */
+export const ARRIVALS = [
+    { at: 15, id: 'pedido-1' },
+    { at: 60, id: 'pedido-2' },
+    { at: 110, id: 'pedido-3' },
+    { at: 160, id: 'urgente' },
+    { at: 185, id: 'pedido-4' },
 ]
 
-export const categoryOf = (itemId) => SUPPLIES[itemId].category
+/** Cartons waiting: below the first a new one comes soon, at the second the pile is full. */
+const KEEP_BOXES = 2
+const MAX_BOXES = 4
+const TRUCK_EVERY = 35
+const TRUCK_SOON = 3
 
-const prepareBox = (state) => (b) => ({ ...b, items: [...b.items], state, left: b.items.length })
+export const categoryOf = (itemId) => SUPPLIES[itemId].category
 const clamp01 = (n) => Math.min(1, Math.max(0, n))
+const low = (id) => SUPPLIES[id].label.toLowerCase()
 
 export class Workday {
     /**
      * @param {{ store: { add(id: string, n: number): number, get(id: string): number },
-     *           delivery?: typeof FIRST_DELIVERY, second?: typeof SECOND_DELIVERY,
-     *           orders?: typeof ORDERS, schedule?: typeof SCHEDULE }} opts
+     *           first?: typeof FIRST_DELIVERY, restock?: typeof RESTOCK,
+     *           orders?: typeof ORDERS, arrivals?: typeof ARRIVALS }} opts
      */
-    constructor({ store, delivery = FIRST_DELIVERY, second = SECOND_DELIVERY, orders = ORDERS, schedule = SCHEDULE }) {
+    constructor({ store, first = FIRST_DELIVERY, restock = RESTOCK, orders = ORDERS, arrivals = ARRIVALS }) {
         this.store = store
-        this.second = second
-        this.boxes = delivery.map(prepareBox('waiting'))
-        this.sorted = {} // item → units on the shelves, not yet written to the inventory
+        this.restock = restock
+        this.first = first
+        this.boxes = []
+        this.boxCount = 0
+        this.restocked = 0
+        this.nextTruck = TRUCK_EVERY
         this.sortedCount = 0
         this.mistakes = 0
-        this.received = 0 // units written to the inventory, all shift
-        this.arrived = false
-        this.committed = false
         this.orders = orders.map((o) => ({ ...o, items: { ...o.items }, packed: {}, state: 'scheduled', waited: 0, warned: false }))
-        this.pending = [...schedule].sort((a, b) => a.at - b.at)
+        this.pending = [...arrivals].sort((a, b) => a.at - b.at)
         this.current = null
-        this.clock = 0 // since the first inventory update: what the schedule counts
-        this.elapsed = 0 // the whole shift, for the review
+        this.clock = 0
+        this.started = false
         this.isFinished = false
         this.listeners = new Set()
     }
@@ -82,8 +87,18 @@ export class Workday {
         for (const fn of this.listeners) fn(event, detail)
     }
 
-    get total() {
-        return this.boxes.reduce((n, b) => n + b.items.length, 0)
+    #newBoxes(list) {
+        const boxes = list.map((b) => ({ ...b, id: `caja-${++this.boxCount}`, items: [...b.items], state: 'received', left: b.items.length }))
+        this.boxes.push(...boxes)
+        this.#emit('truck', boxes)
+    }
+
+    /** The first truck is at the door, and the clock starts. */
+    start() {
+        if (this.started) return false
+        this.started = true
+        this.#newBoxes(this.first)
+        return true
     }
 
     get line() {
@@ -94,20 +109,44 @@ export class Workday {
         return this.isFinished
     }
 
-    /** The checklist, as the board shows it. */
-    get tasks() {
-        const opened = this.boxes.filter((b) => b.state !== 'waiting' && b.state !== 'received').length
-        const kits = this.orders.filter((o) => o.state === 'ready' || o.state === 'delivered').length
-        const closed = this.orders.filter((o) => o.state === 'delivered' || o.state === 'left').length
-        const n = this.orders.length
-        return [
-            { id: 'receive', label: 'Recibir las cajas', progress: `${this.boxes.length} llegaron`, done: this.arrived && !this.pending.some((e) => e.type === 'truck') },
-            { id: 'open', label: 'Abrir e inspeccionar', progress: `${opened}/${this.boxes.length}`, done: this.#boxesDone && opened === this.boxes.length },
-            { id: 'sort', label: 'Clasificar en los estantes', progress: `${this.sortedCount}/${this.total}`, done: this.#boxesDone },
-            { id: 'commit', label: 'Actualizar el inventario', done: this.committed && !this.readyToCommit && this.#boxesDone },
-            { id: 'kits', label: 'Armar los pedidos', progress: `${kits}/${n}`, done: closed === n },
-            { id: 'deliver', label: 'Entregar los pedidos', progress: `${this.orders.filter((o) => o.state === 'delivered').length}/${n}`, done: closed === n },
-        ]
+    get unopened() {
+        return this.boxes.filter((b) => b.state === 'received').length
+    }
+
+    /** Units out of their carton's box that still have no place on the shelves. */
+    get unsorted() {
+        return this.boxes.filter((b) => b.state === 'open').reduce((n, b) => n + b.left, 0)
+    }
+
+    /** What is left to do right now, the most pressing first, however it gets done. */
+    get todo() {
+        const rows = []
+        const line = this.line
+        for (const o of line.filter((x) => x.urgent)) {
+            rows.push({ id: 'urgent', tone: 'alert', label: `Urgente: ${o.family}`, detail: `Le quedan ${Math.max(0, Math.ceil(o.patience - o.waited))} segundos` })
+        }
+        const o = this.current
+        if (o) {
+            const missing = Object.entries(this.missing)
+            rows.push({
+                id: 'order',
+                tone: 'work',
+                label: `Pedido de ${o.family}`,
+                detail: missing.length ? `Falta ${missing.map(([id, n]) => `${n} de ${low(id)}`).join(', ')}` : 'Completo: ya puedes entregarlo',
+            })
+        }
+        const normal = line.filter((x) => !x.urgent)
+        if (normal.length) rows.push({ id: 'line', tone: 'work', label: 'Atender a la fila', detail: normal.length === 1 ? `${normal[0].family} espera` : `${normal.length} familias esperan` })
+        if (this.unsorted) rows.push({ id: 'sort', tone: 'work', label: 'Clasificar lo que abriste', detail: `${this.unsorted} ${this.unsorted === 1 ? 'insumo' : 'insumos'} en la mesa` })
+        if (this.unopened) rows.push({ id: 'boxes', tone: 'work', label: 'Abrir cajas', detail: `${this.unopened} por abrir` })
+        const out = Object.keys(SUPPLIES).filter((id) => this.available(id) === 0)
+        if (out.length) rows.push({ id: 'out', tone: 'warn', label: 'Sin existencias', detail: out.map((id) => SUPPLIES[id].label).join(', ') })
+        return rows
+    }
+
+    /** Of all those who come, how many have been closed one way or the other. */
+    get progress() {
+        return { done: this.orders.filter((o) => o.state === 'delivered' || o.state === 'left').length, total: this.orders.length }
     }
 
     /* ---------------- the pressure of the moment ---------------- */
@@ -116,26 +155,26 @@ export class Workday {
     get pressure() {
         if (this.isFinished) return 0
         const line = this.line
-        const boxes = this.boxes.filter((b) => b.state !== 'empty' && b.state !== 'waiting').length
         const urgent = line.some((o) => o.urgent) || this.current?.urgent
-        return clamp01(0.12 * line.length + 0.06 * boxes + (urgent ? 0.35 : 0) + 0.2 * Math.min(this.clock / 240, 1))
+        return clamp01(0.14 * line.length + 0.04 * this.unopened + (urgent ? 0.35 : 0) + 0.2 * Math.min(this.clock / 240, 1))
     }
 
-    get #boxesDone() {
-        return this.boxes.every((b) => b.state === 'empty')
-    }
-
-    /**
-     * Time passes: people arrive, the ones in line lose patience. Call it every frame.
-     * A person with nothing to do does not wait for the schedule.
-     */
+    /** Time passes: people arrive, the ones in line lose patience, more cartons come. */
     tick(dt) {
-        if (this.arrived && !this.isFinished) this.elapsed += dt
-        if (!this.committed || this.isFinished) return
+        if (!this.started || this.isFinished) return
         this.clock += dt
-        const idle = !this.current && !this.line.length && this.#boxesDone && !this.readyToCommit
-        if (idle && this.pending.length) this.clock = Math.max(this.clock, this.pending[0].at)
-        while (this.pending.length && this.pending[0].at <= this.clock) this.#fire(this.pending.shift())
+        // nobody around: whoever comes next does not keep the person idle for long
+        const nobody = !this.current && !this.line.length
+        if (nobody && this.pending.length) this.pending[0].at -= dt * 2
+        while (this.pending.length && this.pending[0].at <= this.clock) this.#arrive(this.pending.shift())
+
+        this.nextTruck -= dt
+        if (this.unopened < KEEP_BOXES) this.nextTruck = Math.min(this.nextTruck, TRUCK_SOON)
+        if (this.nextTruck <= 0) {
+            this.nextTruck = TRUCK_EVERY
+            if (this.unopened < MAX_BOXES) this.#newBoxes([this.restock[this.restocked++ % this.restock.length]])
+        }
+
         for (const o of this.line) {
             o.waited += dt
             if (!o.warned && o.waited > o.patience * 0.65) {
@@ -147,40 +186,26 @@ export class Workday {
                 this.#emit('left', o)
             }
         }
-        if (!this.pending.length && !this.current && !this.line.length && this.#boxesDone && !this.readyToCommit) {
+        if (!this.pending.length && !this.current && !this.line.length) {
             this.isFinished = true
             this.#emit('finished', this.review)
         }
     }
 
-    #fire(event) {
-        if (event.type === 'truck') {
-            const boxes = this.second.map(prepareBox('received'))
-            this.boxes.push(...boxes)
-            this.#emit('truck', boxes)
-            return
-        }
+    #arrive(event) {
         const order = this.orders.find((o) => o.id === event.id)
         if (!order) return
         order.state = 'waiting'
         this.#emit('joined', order)
     }
 
-    /* ---------------- receiving ---------------- */
-
-    confirmArrival() {
-        if (this.arrived) return false
-        this.arrived = true
-        for (const b of this.boxes) b.state = 'received'
-        this.#emit('arrived')
-        return true
-    }
+    /* ---------------- cartons ---------------- */
 
     box(id) {
         return this.boxes.find((b) => b.id === id)
     }
 
-    /** A box can only be opened once its arrival is confirmed, and only once. */
+    /** Only once. */
     openBox(id) {
         const b = this.box(id)
         if (!b || b.state !== 'received') return false
@@ -190,7 +215,8 @@ export class Workday {
     }
 
     /**
-     * An item let go over a category's crate.
+     * An item let go over a category's crate. On the shelf, it counts: there is no
+     * separate step to register it, and the inventory moves at once.
      * @returns {{ ok: boolean, wanted?: string }} `wanted` is the label of the right category
      */
     sort(boxId, itemId, categoryId) {
@@ -204,30 +230,13 @@ export class Workday {
         }
         b.left--
         if (b.left === 0) b.state = 'empty'
-        this.sorted[itemId] = (this.sorted[itemId] ?? 0) + 1
+        this.store.add(itemId, 1)
         this.sortedCount++
         this.#emit('sorted', { itemId, categoryId, box: b })
-        if (this.#boxesDone) this.#emit('allSorted')
         return { ok: true }
     }
 
-    get readyToCommit() {
-        return this.#boxesDone && Object.keys(this.sorted).length > 0
-    }
-
-    /** Writes what is on the shelves into the point's inventory. Until then, nobody can be given it. */
-    commit() {
-        if (!this.readyToCommit) return null
-        const lines = Object.entries(this.sorted).map(([itemId, qty]) => ({ itemId, qty, now: this.store.add(itemId, qty) }))
-        for (const { qty } of lines) this.received += qty
-        this.sorted = {}
-        const first = !this.committed
-        this.committed = true
-        this.#emit('committed', { lines, first })
-        return lines
-    }
-
-    /* ---------------- families ---------------- */
+    /* ---------------- people ---------------- */
 
     /** Someone in line comes to the counter, if nobody is being attended. The person chooses who. */
     call(id) {
@@ -240,7 +249,7 @@ export class Workday {
         return order
     }
 
-    /** How many of an item can still be given to the order at the counter. */
+    /** How many of an item are on the shelves, leaving out what is already in the kit. */
     available(itemId) {
         return Math.max(0, this.store.get(itemId) - (this.current?.packed[itemId] ?? 0))
     }
@@ -256,37 +265,31 @@ export class Workday {
         )
     }
 
-    /** Nothing more of what they need is left: they can only be given what there is. */
-    get onlyPartial() {
-        const o = this.current
-        if (!o || o.state !== 'packing') return false
-        const ids = Object.keys(this.missing)
-        return ids.length > 0 && ids.every((id) => this.available(id) === 0)
+    get canDeliver() {
+        return !!this.current && Object.values(this.current.packed).some((n) => n > 0)
     }
 
     /**
      * Something put into the current kit.
-     * @returns {{ ok: boolean, reason?: 'none'|'extra'|'stock', index?: number }}
+     * @returns {{ ok: boolean, reason?: 'none'|'extra'|'stock' }}
      */
     addToKit(itemId) {
         const o = this.current
-        if (!o || o.state !== 'packing') return { ok: false, reason: 'none' }
+        if (!o) return { ok: false, reason: 'none' }
         const wanted = o.items[itemId] ?? 0
         const have = o.packed[itemId] ?? 0
         if (have >= wanted) return { ok: false, reason: 'extra' }
         if (this.available(itemId) <= 0) return { ok: false, reason: 'stock' }
         o.packed[itemId] = have + 1
-        const index = Object.values(o.packed).reduce((n, q) => n + q, 0) - 1
-        const complete = Object.entries(o.items).every(([id, q]) => (o.packed[id] ?? 0) >= q)
-        if (complete) o.state = 'ready'
+        const complete = !Object.keys(this.missing).length
         this.#emit('packed', { order: o, itemId, complete })
-        return { ok: true, index }
+        return { ok: true }
     }
 
-    /** Hands the kit over, whole or with what there is; only now does it leave the inventory. */
+    /** Hands over what is in the kit, whole or not: that is the person's call. It leaves the inventory now. */
     deliver() {
         const o = this.current
-        if (!o || !(o.state === 'ready' || this.onlyPartial)) return null
+        if (!this.canDeliver) return null
         o.short = this.missing
         for (const [itemId, qty] of Object.entries(o.packed)) this.store.add(itemId, -qty)
         o.state = 'delivered'
@@ -300,21 +303,21 @@ export class Workday {
     /** What the shift came to, as the review tells it. */
     get review() {
         const delivered = this.orders.filter((o) => o.state === 'delivered')
-        const whole = delivered.filter((o) => !Object.keys(o.short ?? {}).length)
         const partial = delivered.filter((o) => Object.keys(o.short ?? {}).length)
         const left = this.orders.filter((o) => o.state === 'left')
         const urgent = this.orders.find((o) => o.urgent)
         return {
             orders: this.orders.length,
-            whole,
+            whole: delivered.filter((o) => !partial.includes(o)),
             partial,
             left,
-            urgent: urgent && (urgent.state === 'left' ? 'left' : Object.keys(urgent.short ?? {}).length ? 'partial' : urgent.state === 'delivered' ? 'whole' : 'pending'),
+            urgent: urgent && (urgent.state === 'left' ? 'left' : partial.includes(urgent) ? 'partial' : urgent.state === 'delivered' ? 'whole' : 'pending'),
             people: delivered.reduce((n, o) => n + o.people, 0),
             peopleLeft: left.reduce((n, o) => n + o.people, 0),
-            received: this.received,
+            sorted: this.sortedCount,
+            boxesLeft: this.unopened,
             mistakes: this.mistakes,
-            seconds: this.elapsed,
+            seconds: this.clock,
         }
     }
 }

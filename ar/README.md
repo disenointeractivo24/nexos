@@ -11,7 +11,7 @@ npm test --prefix ar                   # las reglas del turno, sin 3D
 
 ## Sin visor
 
-En el botón **Probar en el computador**: arrastra para mirar, W A S D o flechas para caminar, clic para usar. Los botones de abajo cambian entre la vista de la persona, desde arriba y desde afuera.
+En el botón **Probar en el computador**: mantén presionado un insumo o una caja para llevarlo, arrastra el fondo para mirar, W A S D para caminar, Q y E para girar y T para ver la lista de tareas. En el visor, la lista sale con A o X. Los botones de abajo cambian entre la vista de la persona, desde arriba y desde afuera.
 
 ## Inventario
 

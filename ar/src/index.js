@@ -38,6 +38,10 @@ enterDesktop.addEventListener('click', () => {
     hud.hidden = false
     shift.startOnDesktop()
 })
+document.getElementById('show-list').addEventListener('click', () => shift.toggleList())
+window.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyT' && !hud.hidden) shift.toggleList()
+})
 for (const button of hud.querySelectorAll('[data-view]')) {
     button.addEventListener('click', () => {
         shift.showView(button.dataset.view)

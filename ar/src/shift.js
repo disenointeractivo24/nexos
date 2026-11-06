@@ -2,7 +2,7 @@ import { createSystem, Grabbed, Hovered, OneHandGrabbable, Pressed, RayInteracta
 import gsap from 'gsap'
 import * as THREE from 'three'
 import { AssetLoader } from '../../src/three/AssetLoader.js'
-import { GuideFace } from '../../src/three/guideFace.js'
+import { GuideCharacter } from '../../src/three/GuideCharacter.js'
 import { CATEGORIES, SUPPLIES } from '../../src/data/catalog.js'
 import { InventoryStore, sheetsEndpoint } from '../../src/app/inventoryStore.js'
 import { Workable } from './components.js'
@@ -10,8 +10,8 @@ import { ORDERS, SHIFT_STOCK, Workday } from './sim/workday.js'
 import { Sound } from './sound.js'
 import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
-import { bigBoard, buttonPanel, familyCard, fontsReady, messageBoard, orderCard, taskBoard } from './world/panels.js'
-import { buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, standOnPole, supplyObject, WORKER } from './world/station.js'
+import { bigBoard, buttonPanel, familyCard, fontsReady, messageBoard, orderCard, taskList } from './world/panels.js'
+import { buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
 
 /** The inventory this experience works on: its own point, never one the donors see. */
 const DEMO_POINT = 'demo-ar'
@@ -28,6 +28,11 @@ const COUNTER_Z = -2.55
 const LINE_Z = -3.4
 const LINE_SLOTS = [-0.95, 0.95, -2.7, 2.7]
 const ENTRY_Z = -7
+const WALK_SPEED = 1.5
+/** What someone being carried on a computer floats at, from the eyes. */
+const HOLD_DISTANCE = 0.72
+/** How close, on screen, the pointer must be to count as over something it was let go on. */
+const DROP_NEAR = 0.2
 
 const temp = new THREE.Vector3()
 const temp2 = new THREE.Vector3()
@@ -41,11 +46,10 @@ const list = (names) => {
 /**
  * One shift at the collection point: raises the tent around the person, then turns what they
  * do with the boxes and supplies into steps of the Workday, and shows what the Workday answers.
+ * Nothing here sets an order: there are always cartons and there is always someone coming.
  *
- * Headset: boxes and supplies are taken with a hand or the grip (a grabbable object ignores
- * rays by design); buttons, crates and cards answer to a ray too.
- * Computer: there is no hand, so pressing does it all: pressing an item picks it, pressing a
- * crate or the kit then puts it there. Dragging looks around, the keys walk.
+ * What gets carried is held down to carry it: with a hand or the grip in the headset, with
+ * the mouse button on a computer. Let go over where it goes, it stays there.
  */
 export class ShiftSystem extends createSystem({
     pressed: { required: [Workable, Pressed] },
@@ -55,13 +59,15 @@ export class ShiftSystem extends createSystem({
     init() {
         this.things = new Map() // entity → { kind, ... }
         this.families = new Map() // order id → its people, and their card
-        this.selected = null
+        this.crowd = new Set() // every person standing or walking about
         this.sound = new Sound()
         this.placed = false
         this.loader = new AssetLoader()
         this.ready = this.#prepare()
         this.elapsed = gsap.ticker.time
         this.cardClock = 0
+        this.raycaster = new THREE.Raycaster()
+        this.holdTarget = new THREE.Vector3()
 
         // GSAP on the frame loop: a headset can stop the page's own animation frames
         gsap.ticker.remove(gsap.updateRoot)
@@ -92,14 +98,20 @@ export class ShiftSystem extends createSystem({
         up.set(0, 1, 0).applyQuaternion(cam.quaternion)
         this.sound.listen(temp, temp2, up)
         if (!this.placed || !this.day) return
+
         if (this.running) this.day.tick(delta)
-        const pressure = this.running ? this.day.pressure : 0
-        this.atmosphere.update(delta, pressure)
+        this.atmosphere.update(delta, this.running ? this.day.pressure : 0)
         this.sound.ambient(this.atmosphere.level, delta)
+        for (const person of this.crowd) person.update(delta, this.elapsed)
+        this.#followCards()
+        this.#carry(delta)
+        this.#pollButtons()
+        this.#placeList(delta)
         this.cardClock += delta
         if (this.cardClock > 1) {
             this.cardClock = 0
             this.#refreshCards()
+            if (this.list.mesh.visible) this.#refreshList()
         }
     }
 
@@ -126,7 +138,7 @@ export class ShiftSystem extends createSystem({
         const sun = new THREE.DirectionalLight('#FFE9CF', 1.8)
         sun.position.set(-1.5, 3, 2)
         scene.add(sun)
-        this.atmosphere = new Atmosphere(scene, this.world.camera, sky, sun)
+        this.atmosphere = new Atmosphere(sky, sun)
     }
 
     /* ---------------- starting ---------------- */
@@ -147,6 +159,11 @@ export class ShiftSystem extends createSystem({
             solids: this.station.solids,
             bounds: { minX: -2.4, maxX: 2.4, minZ: -2.4, maxZ: 1.7 },
             roof: (on) => this.station.tent.traverse((o) => o.userData.roof && (o.visible = on)),
+            grab: {
+                pick: (ndc) => this.#pick(ndc),
+                move: (ndc) => this.#holdAt(ndc),
+                drop: (ndc) => this.#dropAt(ndc),
+            },
         })
         canvas.style.cursor = 'grab'
         this.showView('persona')
@@ -210,6 +227,7 @@ export class ShiftSystem extends createSystem({
         }
         this.#boards()
         for (const zone of this.station.zones) this.#stockCrate(zone)
+        this.#refreshShelf()
         this.#intro()
     }
 
@@ -220,57 +238,50 @@ export class ShiftSystem extends createSystem({
         const top = this.station.deskTop
         const far = this.station.deskFar + 0.22
         const x = WORKER.x
-        this.board = taskBoard()
-        // to the right on the counter, on its own pole
-        this.board.mesh.position.set(x + 1.2, top + 0.34, far)
-        this.board.mesh.rotation.y = -0.42
-        standOnPole(this.board.mesh, 0.4, top)
-        root.add(this.board.mesh)
-        this.message = messageBoard()
         // leaving the middle free for whoever is at the counter
-        this.message.mesh.position.set(x - 0.72, top + 0.72, far)
-        this.message.mesh.scale.setScalar(1.15)
+        this.message = messageBoard()
+        this.message.mesh.position.set(x - 0.76, 0, far)
         this.message.mesh.rotation.y = 0.26
-        hangFromRoof(this.message.mesh, 0.52, 0.17)
+        hangFromRoof(this.message, top + 0.88)
         root.add(this.message.mesh)
-        // the one button, between the two mats, where no carton or flap reaches it
-        this.action = buttonPanel('Empezar el turno')
-        this.#thing(this.action.mesh, { kind: 'action' }, { grab: false })
-        this.action.mesh.position.set(x, top + 0.04, this.station.matZ + 0.06)
-        this.action.mesh.rotation.x = -0.9
-        this.action.mesh.visible = false
         this.order = orderCard()
-        this.order.mesh.position.set(x + 0.72, top + 0.62, far)
-        this.order.mesh.rotation.y = -0.2
-        hangFromRoof(this.order.mesh, 0.4, 0.26)
+        this.order.mesh.position.set(x + 0.76, 0, far)
+        this.order.mesh.rotation.y = -0.26
+        hangFromRoof(this.order, top + 0.88)
         this.order.mesh.visible = false
         root.add(this.order.mesh)
         this.big = bigBoard()
-        this.big.mesh.position.set(x, top + 0.72, far)
+        this.big.mesh.position.set(x, 0, far)
         this.big.mesh.visible = false
-        hangFromRoof(this.big.mesh, 0.86, 0.58)
+        hangFromRoof(this.big, top + 1.0)
         root.add(this.big.mesh)
-        this.#refreshBoard()
-    }
-
-    #refreshBoard() {
-        this.board.refresh(this.day.tasks)
+        // the buttons: the one that hands over, between the mats; the list, to one side
+        this.action = buttonPanel('Empezar el turno')
+        this.#thing(this.action.mesh, { kind: 'action' }, { grab: false })
+        this.action.mesh.position.set(x, top + 0.045, this.station.matZ + 0.06)
+        this.action.mesh.rotation.x = -0.9
+        this.action.mesh.visible = false
+        this.listButton = buttonPanel('Por hacer', { width: 0.2, fill: '#011E41' })
+        this.#thing(this.listButton.mesh, { kind: 'list' }, { grab: false })
+        this.listButton.mesh.position.set(x + 0.86, top + 0.045, this.station.matZ + 0.06)
+        this.listButton.mesh.rotation.x = -0.9
+        // called up with a button; the world's child rather than the tent's, it goes with the person
+        this.list = taskList()
+        this.list.mesh.visible = false
+        this.world.scene.add(this.list.mesh)
     }
 
     #say(kind, text) {
         this.message.refresh({ kind, text })
     }
 
-    /** The one button says the most pressing thing there is to confirm, or disappears. */
+    /** The one button says what can be handed over, or disappears. */
     #refreshAction() {
         const { day } = this
         const choose = () => {
             if (this.pendingStart) return ['start', 'Empezar el turno']
             if (this.ending) return ['again', 'Hacer otro turno']
-            if (this.boxesWaiting) return ['arrival', 'Confirmar llegada']
-            if (day.current?.state === 'ready') return ['deliver', 'Entregar el pedido']
-            if (day.onlyPartial) return ['deliver', 'Entregar lo que hay']
-            if (day.readyToCommit) return ['commit', 'Actualizar inventario']
+            if (day.canDeliver) return ['deliver', Object.keys(day.missing).length ? 'Entregar lo que hay' : 'Entregar el pedido']
             return [null, '']
         }
         const [action, label] = choose()
@@ -279,17 +290,61 @@ export class ShiftSystem extends createSystem({
         if (action) this.action.refresh(label)
     }
 
+    /* ---------------- the list of what to do ---------------- */
+
+    /** Shows or hides it, wherever the person is looking. */
+    toggleList(on = !this.list.mesh.visible) {
+        if (!this.placed || !this.running) return
+        this.sound.play('tap')
+        this.list.mesh.visible = on
+        if (on) {
+            this.listFresh = true
+            this.#refreshList()
+        }
+    }
+
+    #refreshList() {
+        const { day } = this
+        const closeHint = this.world.session ? 'Con A o X la cierras' : 'Con T la cierras'
+        this.list.refresh({ rows: day.todo, progress: day.progress, hint: closeHint })
+    }
+
+    /** A little down and in front of the eyes, catching up gently, so it never swings with the head. */
+    #placeList(dt) {
+        const { mesh } = this.list
+        if (!mesh.visible) return
+        const cam = this.world.camera
+        cam.getWorldPosition(temp)
+        cam.getWorldDirection(temp2)
+        const head = temp.clone()
+        const target = temp.addScaledVector(temp2, 0.62)
+        target.y -= 0.06
+        if (this.listFresh) {
+            mesh.position.copy(target)
+            this.listFresh = false
+        } else mesh.position.lerp(target, 1 - Math.exp(-dt * 7))
+        mesh.lookAt(head)
+    }
+
+    #pollButtons() {
+        const pads = this.input?.xr?.gamepads
+        if (!pads) return
+        if (pads.right?.getButtonDown('a-button') || pads.left?.getButtonDown('x-button')) this.toggleList()
+    }
+
     /* ---------------- opening ---------------- */
 
     #intro() {
         this.pendingStart = true
+        const button = this.world.session ? 'el botón A o X del control' : 'la tecla T'
         this.big.refresh({
+            kicker: 'Un turno en el punto de acopio',
             title: 'Hoy este punto es tuyo',
             lines: [
-                { text: 'Eres la persona responsable de este centro de acopio en Cali.' },
-                { text: 'Recibe lo que llega, ordénalo en los estantes, actualiza el inventario y atiende a quienes vengan.' },
-                { text: 'No alcanzará para todo. Tú decides.', bold: true, color: '#F7C25C' },
+                { text: 'Eres responsable de este centro de acopio en Cali. Siempre habrá cajas por abrir y gente por atender.' },
+                { text: `Tú decides qué haces primero. Con ${button} ves lo que falta.` },
             ],
+            note: 'No alcanzará para todo.',
         })
         this.big.mesh.visible = true
         this.message.mesh.visible = false
@@ -303,10 +358,10 @@ export class ShiftSystem extends createSystem({
         this.running = true
         this.big.mesh.visible = false
         this.message.mesh.visible = true
-        this.#dropBoxes(this.day.boxes)
+        this.day.start()
         this.sound.play('radio')
-        this.#say('radio', `Llegó un camión con ${this.day.boxes.length} cajas. Revísalas y confirma que las recibiste.`)
-        this.boxesWaiting = true
+        this.#say('radio', 'Llegaron cajas al mostrador. Las familias vienen en camino.')
+        this.#refreshShelf()
         this.#refreshAction()
     }
 
@@ -331,21 +386,20 @@ export class ShiftSystem extends createSystem({
         if (this.world.session && !entity.hasComponent(OneHandGrabbable)) entity.addComponent(OneHandGrabbable, { rotate: true, translate: true })
     }
 
+    #isCovered(t) {
+        return [...this.things.values()].some((o) => o !== t && o.kind === 'box' && !o.onMat && o.home.x === t.home.x && o.home.y > t.home.y)
+    }
+
     /** Of the pile, only what has nothing on top can be lifted. */
     #offerTopBoxes() {
-        if (!this.day.arrived) return
-        const pile = [...this.things.entries()].filter(([, t]) => t.kind === 'box' && !t.onMat)
-        for (const [entity, t] of pile) {
-            const covered = pile.some(([, o]) => o !== t && o.home.x === t.home.x && o.home.y > t.home.y)
-            if (!covered) this.#makeGrabbable(entity)
-        }
+        for (const [entity, t] of this.things) if (t.kind === 'box' && !t.onMat && !this.#isCovered(t)) this.#makeGrabbable(entity)
     }
 
     #worldOf(object) {
         return object.getWorldPosition(new THREE.Vector3())
     }
 
-    /** A crate on the shelf, with one of each of its supplies showing on top. */
+    /** A crate on the shelf, with one of each of its supplies showing while there is any. */
     #stockCrate(zone) {
         const shelfEntity = (this.shelfEntity ??= this.world.createTransformEntity(this.station.shelf, { parent: this.root }))
         zone.entity = this.#thing(zone.crate, { kind: 'crate', zone }, { grab: false, parent: shelfEntity })
@@ -354,17 +408,30 @@ export class ShiftSystem extends createSystem({
             const object = supplyObject(this.loader, this.supplies.get(itemId), itemId, fit)
             object.position.copy(position)
             // a sample stays in the crate; taking it means taking one of many
-            const entity = this.#thing(object, { kind: 'stock', itemId, zone, home: position.clone(), fit }, { grab: false, parent: zone.entity })
+            const entity = this.#thing(object, { kind: 'stock', itemId, zone, home: position.clone(), fit }, { parent: zone.entity })
             zone.stock.set(itemId, entity)
         }
     }
 
-    /** Cartons land on the counter, in the free places of its left end. */
+    /** The counts on the crates, and what can physically be seen in them. */
+    #refreshShelf() {
+        for (const zone of this.station.zones) {
+            const rows = [...zone.stock.keys()].map((id) => ({ label: SUPPLIES[id].label, count: this.day.available(id) }))
+            zone.label.refresh(rows)
+            for (const [id, entity] of zone.stock) {
+                const t = this.things.get(entity)
+                if (t !== this.holding?.t) t.object.visible = this.day.available(id) > 0
+            }
+        }
+    }
+
+    /** Cartons land on the counter, in the free places of its left end, the lower ones first. */
     #dropBoxes(boxes) {
-        const taken = [...this.things.values()].filter((t) => t.kind === 'box').map((t) => t.home)
+        const taken = [...this.things.values()].filter((t) => t.kind === 'box' && !t.onMat).map((t) => t.home)
         const free = this.station.intake.filter((spot) => !taken.some((h) => h.distanceTo(spot) < 0.01))
         boxes.forEach((b, i) => {
             const spot = free[i]
+            if (!spot) return
             const object = cardboardBox()
             object.position.set(spot.x, spot.y + 0.6, spot.z)
             object.name = b.id
@@ -377,9 +444,10 @@ export class ShiftSystem extends createSystem({
                 onStart: () => setTimeout(() => this.sound.play('box', this.#worldOf(object)), 180),
             })
         })
+        this.#offerTopBoxes()
     }
 
-    /* ---------------- what the person does ---------------- */
+    /* ---------------- pressing ---------------- */
 
     /** Pressed: on a computer, a click only counts once it turned out not to be a drag. */
     #press(entity) {
@@ -390,16 +458,13 @@ export class ShiftSystem extends createSystem({
         this.#act(entity)
     }
 
+    /** What is pressed rather than carried. What is grabbable is pressed by the very gesture that takes it. */
     #act(entity) {
         const t = this.things.get(entity)
-        // what is grabbable is pressed by the very gesture that takes it: that one is a grab
         if (!t || t.moving || entity.hasComponent(OneHandGrabbable)) return
         if (t.kind === 'action') return this.#pressAction()
-        if (t.kind === 'box') return this.#pressBox(entity, t)
-        if (t.kind === 'item') return this.#selectItem(entity, t)
-        if (t.kind === 'crate') return this.#pressCrate(t.zone)
-        if (t.kind === 'stock') return this.day.current ? this.#selectItem(entity, t) : this.#pressCrate(t.zone)
-        if (t.kind === 'kit') return this.#pressKit()
+        if (t.kind === 'list') return this.toggleList()
+        if (t.kind === 'box' && t.onMat) return this.#openBox(t)
         if (t.kind === 'call') return this.#callFamily(t.order)
     }
 
@@ -409,100 +474,129 @@ export class ShiftSystem extends createSystem({
         this.sound.play('tap')
         if (pending === 'start') return this.#begin()
         if (pending === 'again') return location.reload()
-        if (pending === 'arrival') {
-            this.boxesWaiting = false
-            this.day.confirmArrival()
-        }
-        if (pending === 'commit') this.day.commit()
         if (pending === 'deliver') this.day.deliver()
         this.#refreshAction()
     }
 
-    #pressBox(entity, t) {
-        if (t.box.state !== 'received') return
-        if (t.onMat) return this.#openBox(entity, t)
-        if (this.onMat) return this.#say('warn', 'Termina primero la caja que tienes abierta.')
-        // only what has nothing on top can be lifted
-        const covered = [...this.things.values()].some((o) => o.kind === 'box' && !o.onMat && o.home.x === t.home.x && o.home.y > t.home.y)
-        if (covered) return this.#say('warn', 'Empieza por la caja de arriba.')
-        this.#moveToMat(entity, t)
+    /* ---------------- carrying, on a computer ---------------- */
+
+    #rayAt(ndc) {
+        this.raycaster.setFromCamera(ndc, this.world.camera)
+        return this.raycaster
     }
 
-    #moveToMat(entity, t) {
-        t.onMat = true
-        t.moving = true
-        this.onMat = entity
-        const m = this.station.mat
-        const settled = () => {
-            // on the mat it stops being carried and is worked on: a new carton, free of the grab
-            // handle, so a ray or a hand can press it open
-            const object = cardboardBox()
-            object.position.copy(m)
-            object.name = t.object.name
-            this.things.delete(entity)
-            entity.destroy()
-            t.moving = false
-            this.onMat = this.#thing(object, t, { grab: false })
-            this.sound.play('box', this.#worldOf(object))
+    #entityOf(hit) {
+        for (let o = hit.object; o; o = o.parent) {
+            for (const [entity, t] of this.things) if (t.object === o) return { entity, t }
         }
-        gsap.to(t.object.rotation, { x: 0, y: 0, z: 0, duration: 0.5, ease: 'power2.out' })
-        gsap.to(t.object.position, { x: m.x, y: m.y, z: m.z, duration: 0.6, ease: 'power2.inOut', onComplete: settled })
-        this.#offerTopBoxes()
-        this.#say('info', 'Quita la cinta: presiona la caja para abrirla.')
+        return null
     }
 
-    #openBox(entity, t) {
-        if (!this.day.openBox(t.box.id)) return
-        const { flaps, seal } = t.object.userData
-        seal.visible = false
-        this.sound.play('tape', this.#worldOf(t.object))
-        for (const hinge of flaps) gsap.to(hinge.rotation, { x: hinge.userData.side * 2.75, duration: 0.55, ease: 'power2.out' })
-        const m = this.station.mat
-        for (const { itemId, fit, position } of cartonLayout(this.supplies, t.box.items)) {
-            const object = supplyObject(this.loader, this.supplies.get(itemId), itemId, fit)
-            const home = position.clone().add(m)
-            object.position.copy(home)
-            this.#thing(object, { kind: 'item', itemId, box: t.box, home })
+    /** Pressed on something that can be carried? Then it is in hand until let go. */
+    #pick(ndc) {
+        if (!this.running) return false
+        const carriable = [...this.things.values()].filter((t) => {
+            if (!t.object.visible || t.moving) return false
+            if (t.kind === 'box') return !t.onMat
+            return t.kind === 'item' || t.kind === 'stock'
+        })
+        const hits = this.#rayAt(ndc).intersectObjects(carriable.map((t) => t.object), true)
+        const found = hits.length ? this.#entityOf(hits[0]) : null
+        if (!found) return false
+        const { t, entity } = found
+        if (t.kind === 'box' && this.#isCovered(t)) {
+            this.#say('warn', 'Primero toma la caja de arriba.')
+            return false
         }
-        this.#say('info', `Caja de ${t.box.from}. ${this.world.session ? 'Lleva cada insumo a su caja del estante, a tu espalda.' : 'Presiona un insumo y luego su caja del estante, a tu espalda.'}`)
+        gsap.killTweensOf(t.object.position)
+        gsap.killTweensOf(t.object.rotation)
+        this.holding = { entity, t, moved: false, start: t.object.position.clone() }
+        this.#holdAt(ndc, true)
+        return true
     }
 
-    #selectItem(entity, t) {
-        if (this.selected === entity) return this.#deselect()
-        this.#deselect()
-        this.selected = entity
-        gsap.to(t.object.position, { y: t.home.y + 0.1, duration: 0.2, ease: 'power2.out' })
-        this.sound.play('tap')
-        const where = t.kind === 'stock' ? '¿lo pones en el pedido?' : '¿en qué caja del estante va?'
-        this.#say('info', `${SUPPLIES[t.itemId].label}: ${where}`)
+    #holdAt(ndc, first = false) {
+        if (!this.holding) return
+        if (!first) this.holding.moved = true
+        const { ray } = this.#rayAt(ndc)
+        this.holdTarget.copy(ray.origin).addScaledVector(ray.direction, HOLD_DISTANCE)
+        this.#markTarget(ndc)
     }
 
-    #deselect() {
-        const t = this.things.get(this.selected)
-        if (t) gsap.to(t.object.position, { y: t.home.y, duration: 0.2, ease: 'power2.out' })
-        this.selected = null
+    /** It follows the pointer, a touch behind, so it has some weight. */
+    #carry(dt) {
+        if (!this.holding?.moved) return
+        const { object } = this.holding.t
+        const local = object.parent.worldToLocal(temp.copy(this.holdTarget))
+        object.position.lerp(local, 1 - Math.exp(-dt * 22))
     }
 
-    #pressCrate(zone) {
-        const entity = this.selected
-        const t = this.things.get(entity)
-        if (!t || t.kind !== 'item') return this.#say('info', `Aquí va lo de ${CATEGORIES[zone.categoryId].label}. Primero toma un insumo.`)
-        this.selected = null
-        this.#stow(entity, t, zone)
+    /** Where this one could be let go, if the pointer is over it. */
+    #targetAt(ndc, t) {
+        const ray = this.#rayAt(ndc)
+        const onScreen = (object) => {
+            const p = this.#worldOf(object).project(this.world.camera)
+            return p.z < 1 ? Math.hypot(p.x - ndc.x, p.y - ndc.y) : Infinity
+        }
+        const over = (object) => ray.intersectObject(object, true).length > 0
+        if (t.kind === 'item') {
+            // what the pointer is on; failing that, the nearest crate within reach of it
+            const { zones } = this.station
+            const nearest = [...zones].sort((a, b) => onScreen(a.crate) - onScreen(b.crate))[0]
+            return zones.find((z) => over(z.crate)) ?? (onScreen(nearest.crate) < DROP_NEAR ? nearest : null)
+        }
+        if (t.kind === 'stock') return this.kit && (over(this.kit.object) || onScreen(this.kit.object) < DROP_NEAR) ? this.kit : null
+        if (t.kind === 'box') {
+            const m = this.rootObject.localToWorld(temp2.copy(this.station.mat))
+            const p = m.clone().project(this.world.camera)
+            return p.z < 1 && Math.hypot(p.x - ndc.x, p.y - ndc.y) < DROP_NEAR * 1.6 ? this.station.mat : null
+        }
+        return null
     }
 
-    #pressKit() {
-        const t = this.things.get(this.selected)
-        if (!t || t.kind !== 'stock') return this.#say('info', 'Toma de los estantes lo que está en el pedido.')
-        this.#deselect()
-        this.#giveToKit(t)
+    /** What it would land in swells a little, to say so. */
+    #markTarget(ndc) {
+        const target = this.#targetAt(ndc, this.holding.t)
+        const object = target?.crate ?? target?.object ?? null
+        if (object === this.marked) return
+        if (this.marked) gsap.to(this.marked.scale, { x: 1, y: 1, z: 1, duration: 0.14 })
+        if (object) gsap.to(object.scale, { x: 1.05, y: 1.05, z: 1.05, duration: 0.14 })
+        this.marked = object
     }
+
+    #dropAt(ndc) {
+        if (!this.holding) return
+        const { entity, t, moved } = this.holding
+        const target = moved ? this.#targetAt(ndc, t) : null
+        this.holding = null
+        if (this.marked) gsap.to(this.marked.scale, { x: 1, y: 1, z: 1, duration: 0.14 })
+        this.marked = null
+        if (!moved) {
+            this.#goHome(t)
+            const where = { box: 'la mesa azul', item: 'su caja del estante', stock: 'el pedido' }[t.kind]
+            return this.#say('info', `Mantén presionado y arrástralo hasta ${where}.`)
+        }
+        if (t.kind === 'box') {
+            if (target && !this.onMat) return this.#moveToMat(entity, t)
+            if (target) this.#say('warn', 'La mesa está ocupada: termina primero la caja abierta.')
+            return this.#goHome(t)
+        }
+        if (t.kind === 'item') {
+            if (target) return this.#stow(entity, t, target)
+            return this.#goHome(t)
+        }
+        if (t.kind === 'stock') {
+            if (target) return this.#giveToKit(t)
+            if (!this.kit) this.#say('info', 'Nadie espera un pedido en el mostrador: llama a alguien de la fila.')
+            return this.#goHome(t)
+        }
+    }
+
+    /* ---------------- carrying, with a hand ---------------- */
 
     #take(entity) {
         const t = this.things.get(entity)
-        if (!t) return
-        if (this.selected) this.#deselect()
-        gsap.killTweensOf(t.object.position)
+        if (t) gsap.killTweensOf(t.object.position)
     }
 
     /** Let go with a hand: what it counts as depends on where it was let go. */
@@ -514,16 +608,13 @@ export class ShiftSystem extends createSystem({
         if (t.kind === 'stock') return this.#releaseStock(t)
     }
 
-    #goHome(t) {
-        gsap.to(t.object.rotation, { x: 0, y: 0, z: 0, duration: 0.25 })
-        gsap.to(t.object.position, { x: t.home.x, y: t.home.y, z: t.home.z, duration: 0.4, ease: 'power2.inOut' })
-    }
-
     #releaseBox(entity, t) {
         const m = this.station.mat
         temp.copy(t.object.position)
-        if (!this.onMat && t.box.state === 'received' && Math.hypot(temp.x - m.x, temp.z - m.z) < MAT_REACH) return this.#moveToMat(entity, t)
-        if (this.onMat && this.onMat !== entity) this.#say('warn', 'Termina primero la caja que tienes abierta.')
+        if (Math.hypot(temp.x - m.x, temp.z - m.z) < MAT_REACH) {
+            if (!this.onMat) return this.#moveToMat(entity, t)
+            this.#say('warn', 'La mesa está ocupada: termina primero la caja abierta.')
+        }
         this.#goHome(t)
     }
 
@@ -547,9 +638,55 @@ export class ShiftSystem extends createSystem({
     #releaseStock(t) {
         if (this.kit) {
             t.object.getWorldPosition(temp)
-            if (temp.distanceTo(this.#worldOf(this.kit.object)) < KIT_REACH) this.#giveToKit(t)
+            if (temp.distanceTo(this.#worldOf(this.kit.object)) < KIT_REACH) return this.#giveToKit(t)
         }
         this.#goHome(t)
+    }
+
+    #goHome(t) {
+        gsap.to(t.object.rotation, { x: 0, y: 0, z: 0, duration: 0.25 })
+        gsap.to(t.object.position, { x: t.home.x, y: t.home.y, z: t.home.z, duration: 0.35, ease: 'power2.inOut', onComplete: () => this.#refreshShelf() })
+    }
+
+    /* ---------------- what happens to what is carried ---------------- */
+
+    #moveToMat(entity, t) {
+        t.onMat = true
+        t.moving = true
+        this.onMat = entity
+        const m = this.station.mat
+        const settled = () => {
+            // on the mat it stops being carried and is worked on: a new carton, free of the grab
+            // handle, so a ray or a hand can press it open
+            const object = cardboardBox()
+            object.position.copy(m)
+            object.name = t.object.name
+            this.things.delete(entity)
+            entity.destroy()
+            t.moving = false
+            this.onMat = this.#thing(object, t, { grab: false })
+            this.sound.play('box', this.#worldOf(object))
+        }
+        gsap.to(t.object.rotation, { x: 0, y: 0, z: 0, duration: 0.3, ease: 'power2.out' })
+        gsap.to(t.object.position, { x: m.x, y: m.y, z: m.z, duration: 0.35, ease: 'power2.inOut', onComplete: settled })
+        this.#offerTopBoxes()
+        this.#say('info', this.world.session ? 'Presiona la caja para quitarle la cinta.' : 'Haz clic en la caja para quitarle la cinta.')
+    }
+
+    #openBox(t) {
+        if (!this.day.openBox(t.box.id)) return
+        const { flaps, seal } = t.object.userData
+        seal.visible = false
+        this.sound.play('tape', this.#worldOf(t.object))
+        for (const hinge of flaps) gsap.to(hinge.rotation, { x: hinge.userData.side * 2.75, duration: 0.55, ease: 'power2.out' })
+        const m = this.station.mat
+        for (const { itemId, fit, position } of cartonLayout(this.supplies, t.box.items)) {
+            const object = supplyObject(this.loader, this.supplies.get(itemId), itemId, fit)
+            const home = position.clone().add(m)
+            object.position.copy(home)
+            this.#thing(object, { kind: 'item', itemId, box: t.box, home })
+        }
+        this.#say('info', `Caja de ${t.box.from}. ${this.world.session ? 'Agarra cada insumo y suéltalo en su caja del estante, a tu espalda.' : 'Mantén presionado cada insumo y llévalo a su caja del estante, a tu espalda.'}`)
     }
 
     /** An item goes into its crate, or back to its carton with a word about where it goes. */
@@ -558,19 +695,19 @@ export class ShiftSystem extends createSystem({
         if (!result.ok) {
             this.#goHome(t)
             this.sound.play('wrong', this.#worldOf(zone.crate))
-            this.#say('warn', `${SUPPLIES[t.itemId].label} no va ahí: va con ${result.wanted}.`)
+            this.#say('warn', `${SUPPLIES[t.itemId].label} no va en ${CATEGORIES[zone.categoryId].label}: va en ${result.wanted}.`)
             return
         }
         this.things.delete(entity)
         const object = t.object
         // it flies to its crate and joins what is there
-        const into = object.parent.worldToLocal(this.#worldOf(zone.crate).setY(this.#worldOf(zone.crate).y + 0.14))
-        gsap.to(object.scale, { x: 0.3, y: 0.3, z: 0.3, duration: 0.35, ease: 'power2.in' })
+        const into = object.parent.worldToLocal(this.#worldOf(zone.crate).add(temp.set(0, 0.14, 0)))
+        gsap.to(object.scale, { x: 0.3, y: 0.3, z: 0.3, duration: 0.3, ease: 'power2.in' })
         gsap.to(object.position, {
             x: into.x,
             y: into.y,
             z: into.z,
-            duration: 0.35,
+            duration: 0.3,
             ease: 'power2.in',
             onComplete: () => {
                 this.sound.play('item', this.#worldOf(zone.crate))
@@ -579,33 +716,65 @@ export class ShiftSystem extends createSystem({
         })
     }
 
-    /* ---------------- families ---------------- */
-
-    /** Their people, side by side by real width so nobody stands inside anybody. */
-    #familyGroup(order) {
-        const group = new THREE.Group()
-        const scaleOf = (id) => (id.includes('nino') ? CHILD_SCALE : PERSON_SCALE)
-        const widths = order.visitors.map((id) => this.people.get(id).size.x * scaleOf(id))
-        let x = -(widths.reduce((a, b) => a + b, 0) + 0.05 * (widths.length - 1)) / 2
-        order.visitors.forEach((id, i) => {
-            const person = this.loader.instanceSync(this.people.get(id))
-            person.scale.multiplyScalar(scaleOf(id))
-            person.position.x = x + widths[i] / 2
-            x += widths[i] + 0.05
-            group.add(person)
-            person.updateMatrixWorld(true)
-            const head = person.getObjectByName('head')
-            if (head) GuideFace.attach(person, head)
-        })
-        return group
+    #giveToKit(t) {
+        const label = SUPPLIES[t.itemId].label
+        const result = this.day.addToKit(t.itemId)
+        if (!result.ok) {
+            this.sound.play('wrong', this.#worldOf(this.kit.object))
+            if (result.reason === 'extra') this.#say('warn', `${label}: ya está completo o no está en este pedido.`)
+            if (result.reason === 'stock') this.#say('warn', `No queda ${label.toLowerCase()} en los estantes.`)
+            return this.#goHome(t)
+        }
+        const slot = this.kit.layout.findIndex((s, i) => s.itemId === t.itemId && !this.kit.used.has(i))
+        this.kit.used.add(slot)
+        const { fit, position } = this.kit.layout[slot]
+        const object = supplyObject(this.loader, this.supplies.get(t.itemId), t.itemId, fit)
+        object.position.copy(position)
+        this.kit.object.add(object)
+        this.sound.play('item', this.#worldOf(this.kit.object))
+        // the crate's sample is back in its place at once: there are more of them
+        t.object.position.copy(t.home)
+        t.object.rotation.set(0, 0, 0)
+        this.#refreshShelf()
     }
 
-    /** They walk with a small step, and stop dead still when they arrive. */
-    #walk(group, to, { duration = 2.4, delay = 0, onComplete } = {}) {
-        gsap.killTweensOf(group.position)
-        const steps = Math.max(2, Math.round(duration / 0.26))
-        gsap.to(group.position, { x: to.x, z: to.z, duration, delay, ease: 'power1.inOut', onComplete })
-        gsap.to(group.position, { y: 0.04, duration: duration / steps, delay, repeat: steps - 1, yoyo: true, ease: 'sine.inOut', onComplete: () => (group.position.y = 0) })
+    /* ---------------- people ---------------- */
+
+    /** They move as they do in the web experience: the same puppet, the same walk and the same little idle things. */
+    #person(id, position, yaw) {
+        const child = id.includes('nino')
+        const elder = id.includes('mayor')
+        const person = new GuideCharacter(this.loader.instanceSync(this.people.get(id)), [], { face: true, stoop: elder ? 0.12 : 0 })
+        person.root.scale.setScalar(child ? CHILD_SCALE : PERSON_SCALE)
+        person.place(position, yaw)
+        person.appear()
+        this.rootObject.add(person.root)
+        this.crowd.add(person)
+        return person
+    }
+
+    /** A family keeps together: the first walks, the rest go beside them. */
+    #familyPeople(order, x) {
+        const scaleOf = (id) => (id.includes('nino') ? CHILD_SCALE : PERSON_SCALE)
+        const [first, ...rest] = order.visitors
+        const leader = this.#person(first, temp.set(x, 0, ENTRY_Z).clone(), 0)
+        const members = [leader]
+        let beside = (this.people.get(first).size.x * scaleOf(first)) / 2
+        for (const id of rest) {
+            const width = this.people.get(id).size.x * scaleOf(id)
+            const person = this.#person(id, temp.set(x + beside + width / 2 + 0.05, 0, ENTRY_Z).clone(), 0)
+            person.follow(leader, { x: -(beside + width / 2 + 0.05), z: 0 }, { x: -(beside + width / 2 + 0.05) * 0.8, z: -0.25 })
+            beside += width + 0.05
+            members.push(person)
+        }
+        return { leader, members }
+    }
+
+    /** They walk there, and once there they turn to where they are told to look. */
+    #walkTo(leader, x, z, then) {
+        leader.walk([leader.position.clone(), new THREE.Vector3(x, 0, z)], { speed: WALK_SPEED }).then((arrived) => {
+            if (arrived !== false) then?.()
+        })
     }
 
     #freeSlot() {
@@ -616,26 +785,28 @@ export class ShiftSystem extends createSystem({
     /** Someone new at the back of the point, with their card over their head. */
     #familyJoins(order) {
         const slot = this.#freeSlot()
-        const group = this.#familyGroup(order)
-        group.position.set(slot, 0, ENTRY_Z)
-        const people = this.world.createTransformEntity(group, { parent: this.root })
+        const { leader, members } = this.#familyPeople(order, slot)
         const card = familyCard()
-        card.mesh.position.set(0, 1.86, 0)
-        card.mesh.scale.setScalar(1.7)
-        const entity = this.#thing(card.mesh, { kind: 'call', order }, { grab: false, parent: people })
+        card.mesh.position.set(slot, 1.9, ENTRY_Z)
+        card.mesh.scale.setScalar(1.6)
+        const entity = this.#thing(card.mesh, { kind: 'call', order }, { grab: false })
         card.refresh({ ...order, left: 1 })
-        this.families.set(order.id, { group, people, card, entity, slot, order })
-        this.#walk(group, { x: slot, z: LINE_Z })
+        this.families.set(order.id, { leader, members, card, entity, slot, order })
+        this.#walkTo(leader, slot, LINE_Z, () => (leader.targetYaw = 0))
         if (order.urgent) {
-            gsap.to(card.mesh.scale, { x: 1.85, y: 1.85, duration: 1.2, repeat: -1, yoyo: true, ease: 'sine.inOut' })
+            gsap.to(card.mesh.scale, { x: 1.78, y: 1.78, duration: 1.2, repeat: -1, yoyo: true, ease: 'sine.inOut' })
             this.sound.play('alert')
-            this.#say('alert', `${order.family}: necesitan ${this.#wants(order)} ya. Presiona su tarjeta para atenderlos.`)
-        } else if (this.day.line.length + (this.day.current ? 1 : 0) > 1) {
+            this.#say('alert', `${order.family} necesita ${this.#wants(order)} ya. Presiona su tarjeta para atenderla.`)
+        } else {
             this.sound.play('radio')
-            this.#say('radio', `Llegó ${order.family}. Son ${order.people}. Tú decides a quién atender primero.`)
+            this.#say('radio', `Llegó ${order.family}. Presiona su tarjeta cuando quieras atenderla.`)
         }
-        // with nobody else there, there is nothing to choose
-        if (!this.day.current && this.day.line.length === 1 && !this.familyAtCounter) this.day.call(order.id)
+    }
+
+    #followCards() {
+        for (const f of this.families.values()) {
+            if (f.card.mesh.parent) f.card.mesh.position.set(f.leader.position.x, 1.9, f.leader.position.z)
+        }
     }
 
     #wants(order) {
@@ -655,15 +826,24 @@ export class ShiftSystem extends createSystem({
         this.day.call(order.id)
     }
 
+    #removeCard(f) {
+        this.things.delete(f.entity)
+        gsap.killTweensOf(f.card.mesh.scale)
+        f.entity.destroy()
+        f.card.mesh.removeFromParent()
+    }
+
+    #refreshOrder(order) {
+        this.order.refresh({ order, available: (id) => this.day.available(id) })
+    }
+
     /** Called to the counter: they come, and a new carton opens on the kit mat. */
     #familyComes(order) {
         const f = this.families.get(order.id)
         f.slot = null
         this.familyAtCounter = f
-        this.things.delete(f.entity)
-        gsap.killTweensOf(f.card.mesh.scale)
-        f.entity.destroy()
-        this.#walk(f.group, { x: WORKER.x, z: COUNTER_Z }, { duration: 1.8 })
+        this.#removeCard(f)
+        this.#walkTo(f.leader, WORKER.x, COUNTER_Z, () => (f.leader.targetYaw = 0))
 
         const kitObject = cardboardBox(KIT_TAPE)
         kitObject.position.copy(this.station.kitMat)
@@ -673,33 +853,22 @@ export class ShiftSystem extends createSystem({
         const entity = this.#thing(kitObject, { kind: 'kit', order }, { grab: false })
         const units = Object.entries(order.items).flatMap(([id, q]) => Array(q).fill(id))
         this.kit = { entity, object: kitObject, layout: cartonLayout(this.supplies, units), used: new Set() }
-        this.order.refresh(order)
+        this.#refreshOrder(order)
         this.order.mesh.visible = true
-        for (const zone of this.station.zones) for (const e of zone.stock.values()) this.#makeGrabbable(e)
         if (!order.urgent) this.sound.play('radio')
-        this.#say(order.urgent ? 'alert' : 'radio', `${order.family}: ${this.#wants(order)}. Tómalo de los estantes, a tu espalda.`)
+        this.#say(order.urgent ? 'alert' : 'radio', `${order.family} necesita ${this.#wants(order)}. Está en los estantes, a tu espalda.`)
         this.#refreshAction()
     }
 
-    #giveToKit(t) {
-        const label = SUPPLIES[t.itemId].label
-        const result = this.day.addToKit(t.itemId)
-        if (!result.ok) {
-            this.sound.play('wrong', this.#worldOf(this.kit.object))
-            if (result.reason === 'extra') this.#say('warn', `${label}: ya está completo o no está en este pedido.`)
-            if (result.reason === 'stock') {
-                const more = this.day.readyToCommit ? ' Actualiza el inventario con lo que clasificaste.' : ''
-                this.#say('warn', `No queda ${label.toLowerCase()} en el inventario.${more}`)
+    #sendAway(f, x, z) {
+        const { order, leader, members } = f
+        this.#walkTo(leader, x, z, () => {
+            for (const person of members) {
+                person.root.removeFromParent()
+                this.crowd.delete(person)
             }
-            return
-        }
-        const slot = this.kit.layout.findIndex((s, i) => s.itemId === t.itemId && !this.kit.used.has(i))
-        this.kit.used.add(slot)
-        const { fit, position } = this.kit.layout[slot]
-        const object = supplyObject(this.loader, this.supplies.get(t.itemId), t.itemId, fit)
-        object.position.copy(position)
-        this.kit.object.add(object)
-        this.sound.play('item', this.#worldOf(this.kit.object))
+            this.families.delete(order.id)
+        })
     }
 
     #familyLeaves(order) {
@@ -709,49 +878,30 @@ export class ShiftSystem extends createSystem({
         // they take the kit with them
         gsap.to(kit.object.position, {
             x: WORKER.x,
-            z: COUNTER_Z + 0.55,
+            z: COUNTER_Z + 0.5,
             y: 0.72,
             duration: 0.7,
             ease: 'power2.inOut',
-            onComplete: () => kit.entity.destroy(),
-        })
-        this.#walk(f.group, { x: WORKER.x + 3, z: ENTRY_Z }, {
-            duration: 3,
-            delay: 0.7,
             onComplete: () => {
-                f.people.destroy()
-                this.families.delete(order.id)
+                kit.entity.destroy()
+                this.#sendAway(f, WORKER.x + 3, ENTRY_Z)
+                this.familyAtCounter = null
             },
         })
         this.kit = null
         this.order.mesh.visible = false
-        // the counter is free as soon as they step away; whoever is alone in line comes
-        setTimeout(() => {
-            this.familyAtCounter = null
-            const { line, current } = this.day
-            if (!current && line.length === 1) this.day.call(line[0].id)
-            else if (!current && line.length > 1) this.#say('radio', 'Hay más gente en la fila. Presiona la tarjeta de quien vas a atender.')
-            this.#refreshAction()
-        }, 1500)
         this.sound.play('done')
         const short = Object.entries(order.short ?? {})
-        if (short.length) this.#say('warn', `${order.family} se fue sin ${list(short.map(([id, n]) => `${n} de ${SUPPLIES[id].label.toLowerCase()}`))}. No había más.`)
+        if (short.length) this.#say('warn', `${order.family} se fue sin ${list(short.map(([id, n]) => `${n} de ${SUPPLIES[id].label.toLowerCase()}`))}.`)
         else this.#say('done', `${order.family} recibió todo su pedido.`)
     }
 
     /** They could not wait any more. */
     #familyGivesUp(order) {
         const f = this.families.get(order.id)
-        this.things.delete(f.entity)
-        gsap.killTweensOf(f.card.mesh.scale)
-        f.entity.destroy()
+        this.#removeCard(f)
         f.slot = null
-        this.#walk(f.group, { x: f.group.position.x, z: ENTRY_Z }, {
-            onComplete: () => {
-                f.people.destroy()
-                this.families.delete(order.id)
-            },
-        })
+        this.#sendAway(f, f.leader.position.x, ENTRY_Z)
         this.sound.play('wrong')
         this.#say('alert', `${order.family} no pudo esperar más y se fue sin nada.`)
     }
@@ -759,38 +909,18 @@ export class ShiftSystem extends createSystem({
     /* ---------------- what the day answers ---------------- */
 
     #onDay(event, detail) {
-        if (event === 'arrived') {
-            this.sound.play('done')
-            this.#offerTopBoxes()
-            this.#say('info', this.world.session ? 'Toma una caja de la izquierda del mostrador y ponla sobre la mesa azul.' : 'Presiona una caja de la izquierda para llevarla a la mesa azul.')
-        }
-        if (event === 'sorted') {
-            this.#say('info', `Bien. Quedan ${this.day.total - this.day.sortedCount} insumos por clasificar.`)
-            if (detail.box.state === 'empty') this.#clearBox(detail.box)
-        }
-        if (event === 'allSorted') {
-            this.sound.play('done')
-            this.#say('info', 'Todo está en su lugar. Falta registrarlo: lo que no está en el inventario no se puede entregar.')
-        }
-        if (event === 'committed') {
-            this.sound.play('done')
-            this.#say('done', detail.first ? 'Inventario actualizado. Ya viene gente.' : `Inventario actualizado: ${this.day.received} unidades en este turno.`)
-        }
         if (event === 'truck') {
-            this.sound.play('truck')
+            if (this.running) this.sound.play('truck')
             this.#dropBoxes(detail)
-            this.#offerTopBoxes()
-            this.#say('radio', `Otro camión: ${detail.length} cajas más. Mientras no las registres, no puedes entregar lo que traen.`)
         }
+        if (event === 'sorted' && detail.box.state === 'empty') this.#clearBox(detail.box)
         if (event === 'joined') this.#familyJoins(detail)
         if (event === 'order') this.#familyComes(detail)
         if (event === 'packed') {
-            this.order.refresh(detail.order)
+            this.#refreshOrder(detail.order)
             if (detail.complete) {
                 this.sound.play('done')
                 this.#say('info', `El pedido de ${detail.order.family} está completo.`)
-            } else if (this.day.onlyPartial) {
-                this.#say('warn', 'No queda más de lo que falta. Solo puedes entregar lo que hay.')
             }
         }
         if (event === 'impatient') {
@@ -800,8 +930,12 @@ export class ShiftSystem extends createSystem({
         if (event === 'delivered') this.#familyLeaves(detail)
         if (event === 'left') this.#familyGivesUp(detail)
         if (event === 'finished') this.#closing(detail)
-        this.#refreshBoard()
-        this.#refreshAction()
+        if (this.station) {
+            this.#refreshShelf()
+            this.#refreshAction()
+            if (this.day.current) this.#refreshOrder(this.day.current)
+            if (this.list.mesh.visible) this.#refreshList()
+        }
     }
 
     /** An emptied carton is broken down and leaves the mat free for the next one. */
@@ -812,7 +946,6 @@ export class ShiftSystem extends createSystem({
             if (this.onMat === entity) this.onMat = null
             gsap.to(t.object.scale, { y: 0.02, duration: 0.35, ease: 'power2.in', onComplete: () => entity.destroy() })
             this.sound.play('box', this.#worldOf(t.object))
-            if (this.day.boxes.some((b) => b.state === 'received')) setTimeout(() => this.#say('info', 'Caja vacía. Trae la siguiente.'), 1600)
         }
     }
 
@@ -823,20 +956,33 @@ export class ShiftSystem extends createSystem({
         this.running = false
         this.ending = true
         this.message.mesh.visible = false
+        this.list.mesh.visible = false
         const names = (orders) => list(orders.map((o) => o.family))
         const minutes = Math.max(1, Math.round(r.seconds / 60))
-        const lines = [
-            { text: `${r.people} personas recibieron algo en ${minutes} ${minutes === 1 ? 'minuto' : 'minutos'}. Registraste ${r.received} unidades.` },
-            { text: `Pedidos completos: ${r.whole.length} de ${r.orders}.` },
-        ]
-        if (r.partial.length) lines.push({ text: `Incompletos, porque no alcanzó: ${names(r.partial)}.`, color: '#F7C25C' })
-        if (r.left.length) lines.push({ text: `Se fueron sin nada: ${names(r.left)} (${r.peopleLeft} personas).`, color: '#FF9AA0' })
-        const urgent = { whole: 'La clínica móvil recibió todo a tiempo.', partial: 'La clínica móvil se llevó solo una parte.', left: 'La clínica móvil no pudo esperar.' }[r.urgent]
-        if (urgent) lines.push({ text: urgent })
-        if (r.mistakes) lines.push({ text: `Insumos puestos en la caja equivocada: ${r.mistakes}.` })
-        lines.push({ text: 'Cada donación que ves en la app pasó por este trabajo.', bold: true })
-        this.big.refresh({ title: 'Así fue tu turno', lines })
+        const lines = []
+        if (r.partial.length) lines.push({ mark: 'warn', tone: 'warn', text: `Incompletos: ${names(r.partial)}.` })
+        if (r.left.length) lines.push({ mark: 'warn', tone: 'bad', text: `Se fueron sin nada: ${names(r.left)}.` })
+        const urgent = {
+            whole: { mark: 'check', tone: 'good', text: 'La clínica móvil recibió todo a tiempo.' },
+            partial: { mark: 'warn', tone: 'warn', text: 'La clínica móvil se llevó solo una parte.' },
+            left: { mark: 'warn', tone: 'bad', text: 'La clínica móvil no pudo esperar.' },
+        }[r.urgent]
+        if (urgent) lines.push(urgent)
+        if (r.boxesLeft) lines.push({ mark: 'box', text: `Quedaron ${r.boxesLeft} ${r.boxesLeft === 1 ? 'caja' : 'cajas'} sin abrir.` })
+        if (r.mistakes) lines.push({ mark: 'warn', text: `Insumos en la caja equivocada: ${r.mistakes}.` })
+        this.big.refresh({
+            kicker: `${minutes} ${minutes === 1 ? 'minuto' : 'minutos'} de turno`,
+            title: 'Así fue tu turno',
+            stats: [
+                { value: String(r.people), label: 'personas recibieron algo', tone: 'good' },
+                { value: `${r.whole.length}/${r.orders}`, label: 'pedidos completos', tone: r.whole.length === r.orders ? 'good' : 'warn' },
+                { value: String(r.sorted), label: 'insumos ordenados' },
+            ],
+            lines,
+            note: 'Cada donación que ves en la app pasó por este trabajo.',
+        })
         this.big.mesh.visible = true
         this.sound.play('done')
+        this.#refreshAction()
     }
 }
