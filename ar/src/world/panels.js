@@ -288,6 +288,54 @@ export function matPanel(label, color) {
     return p
 }
 
+/** Floating to the left: the big green mark that lets in what is at the door, and how much it is. */
+export function receivePanel() {
+    return new Panel(0.46, 0.5, (ctx, w, h, d) => {
+        if (!d) return
+        const full = d.room === 0
+        fillRR(ctx, 2, 2, w - 4, h - 4, 64, '#FFFFFF')
+        const green = full ? '#9AA3AE' : '#1F8A4C'
+        const cx = w / 2
+        const cy = 356
+        const radius = 262
+        ctx.beginPath()
+        ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+        ctx.fillStyle = green
+        ctx.fill()
+        ctx.strokeStyle = '#FFFFFF'
+        ctx.lineWidth = 58
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.beginPath()
+        ctx.moveTo(cx - 126, cy + 8)
+        ctx.lineTo(cx - 32, cy + 104)
+        ctx.lineTo(cx + 140, cy - 96)
+        ctx.stroke()
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'alphabetic'
+        ctx.fillStyle = BRAND.navy
+        ctx.font = `800 92px ${FONT}`
+        ctx.fillText('Recibir donaciones', cx, 742)
+        const n = d.count
+        // the number first, large: that is what the person comes here to read
+        ctx.font = `800 150px ${FONT}`
+        const number = String(n)
+        const tail = full ? 'sin espacio en el mostrador' : n === 1 ? 'caja por entrar' : 'cajas por entrar'
+        const numberWidth = ctx.measureText(number).width
+        ctx.font = `700 64px ${FONT}`
+        const tailWidth = ctx.measureText(tail).width
+        const start = cx - (numberWidth + 28 + tailWidth) / 2
+        ctx.textAlign = 'left'
+        ctx.font = `800 150px ${FONT}`
+        ctx.fillStyle = full ? BRAND.muted : '#1F8A4C'
+        ctx.fillText(number, start, 930)
+        ctx.font = `700 64px ${FONT}`
+        ctx.fillStyle = full ? BRAND.muted : BRAND.navy
+        ctx.fillText(tail, start + numberWidth + 28, 930)
+        ctx.textAlign = 'start'
+    })
+}
+
 /* ---------------- people ---------------- */
 
 /** A person's order at the counter: what they asked for, what is in the kit, what is left to take. */

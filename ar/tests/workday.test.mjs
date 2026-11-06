@@ -10,6 +10,7 @@ const fakeStore = (start = SHIFT_STOCK) => {
 function started(store = fakeStore()) {
     const day = new Workday({ store })
     day.start()
+    day.receive()
     return day
 }
 
@@ -26,6 +27,23 @@ function pack(day) {
 function untilJoined(day, id) {
     for (let i = 0; i < 400 && !day.orders.find((o) => o.id === id && o.state !== 'scheduled'); i++) day.tick(1)
 }
+
+test('cartons wait at the door until they are received, and only as many as fit come in', () => {
+    const day = new Workday({ store: fakeStore() })
+    day.start()
+    assert.equal(day.boxes.length, 0)
+    assert.equal(day.incoming.length, 3)
+    assert.ok(day.todo.some((r) => r.id === 'receive'))
+    assert.equal(day.receive().length, 3)
+    assert.equal(day.incoming.length, 0)
+    assert.deepEqual(day.receive(), [])
+    day.orders.forEach((o) => (o.patience = 1e6))
+    for (let i = 0; i < 300; i++) day.tick(1)
+    assert.ok(day.incoming.length > 1)
+    assert.equal(day.receive().length, 1, 'three on the counter leave room for one')
+    assert.equal(day.room, 0)
+    assert.equal(day.unopened, 4)
+})
 
 test('a carton opens only once, and is ready from the moment it arrives', () => {
     const day = started()
@@ -64,6 +82,7 @@ test('there are always cartons to pick up, and the pile has a limit', () => {
     day.orders.forEach((o) => (o.patience = 1e6))
     for (let i = 0; i < 300; i++) {
         day.tick(1)
+        day.receive()
         assert.ok(day.unopened <= 4)
     }
     assert.ok(day.unopened >= 2)
@@ -191,6 +210,7 @@ test('the whole shift ends in a review; pressure rises and falls', () => {
     for (let guard = 0; guard < 3000 && !finished; guard++) {
         day.tick(1)
         peak = Math.max(peak, day.pressure)
+        day.receive()
         const open = day.boxes.find((b) => b.state === 'received')
         if (open && guard % 8 === 0) sortBox(day, open)
         if (!day.current && day.line.length) day.call((day.line.find((o) => o.urgent) ?? day.line[0]).id)

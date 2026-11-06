@@ -274,6 +274,7 @@ export function buildStation(root, loader, stand) {
     station.deskTop = top
     station.matZ = matZ
     station.deskFar = desk.min.z
+    station.deskMinX = desk.min.x
     station.deskMaxX = desk.max.x
     station.solids = [
         { minX: desk.min.x, maxX: desk.max.x, minZ: desk.min.z, maxZ: desk.max.z },

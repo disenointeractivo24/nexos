@@ -1,4 +1,4 @@
-import { createSystem, Grabbed, Hovered, OneHandGrabbable, Pressed, RayInteractable, VisibilityState, XRAnchor } from '@iwsdk/core'
+import { createSystem, GrabSystem, Grabbed, Hovered, OneHandGrabbable, Pressed, RayInteractable, VisibilityState, XRAnchor } from '@iwsdk/core'
 import gsap from 'gsap'
 import * as THREE from 'three'
 import { AssetLoader } from '../../src/three/AssetLoader.js'
@@ -10,7 +10,7 @@ import { ORDERS, SHIFT_STOCK, Workday } from './sim/workday.js'
 import { Sound } from './sound.js'
 import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
-import { bigBoard, buttonPanel, familyCard, fontsReady, messageBoard, orderCard, taskList } from './world/panels.js'
+import { bigBoard, buttonPanel, familyCard, fontsReady, messageBoard, orderCard, receivePanel, taskList } from './world/panels.js'
 import { buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
 
 /** The inventory this experience works on: its own point, never one the donors see. */
@@ -33,6 +33,10 @@ const WALK_SPEED = 1.5
 const HOLD_DISTANCE = 0.72
 /** How close, on screen, the pointer must be to count as over something it was let go on. */
 const DROP_NEAR = 0.2
+/** The same, for a ray in the headset: how far from it, in metres. */
+const RAY_NEAR = 0.24
+/** What is pressed, rather than carried. */
+const BUTTONS = new Set(['action', 'list', 'call', 'receive'])
 
 const temp = new THREE.Vector3()
 const temp2 = new THREE.Vector3()
@@ -72,14 +76,14 @@ export class ShiftSystem extends createSystem({
         // GSAP on the frame loop: a headset can stop the page's own animation frames
         gsap.ticker.remove(gsap.updateRoot)
 
-        this.queries.pressed.subscribe('qualify', (entity) => this.#press(entity))
+        // a press counts when it ends: hiding what is being pressed before that strands the
+        // pointer, and the next press of the trigger is lost
+        this.queries.pressed.subscribe('qualify', (entity) => this.#pressIn(entity))
+        this.queries.pressed.subscribe('disqualify', (entity) => this.#press(entity))
         this.queries.held.subscribe('qualify', (entity) => this.#take(entity))
         this.queries.held.subscribe('disqualify', (entity) => this.#release(entity))
-        const cursor = () => {
-            if (this.view) this.view.canvas.style.cursor = this.queries.hovered.entities.size ? 'pointer' : 'grab'
-        }
-        this.queries.hovered.subscribe('qualify', cursor)
-        this.queries.hovered.subscribe('disqualify', cursor)
+        this.queries.hovered.subscribe('qualify', (entity) => this.#hover(entity, true))
+        this.queries.hovered.subscribe('disqualify', (entity) => this.#hover(entity, false))
 
         this.cleanupFuncs.push(
             this.world.visibilityState.subscribe((state) => {
@@ -105,6 +109,7 @@ export class ShiftSystem extends createSystem({
         for (const person of this.crowd) person.update(delta, this.elapsed)
         this.#followCards()
         this.#carry(delta)
+        this.#markHeld()
         this.#pollButtons()
         this.#placeList(delta)
         this.cardClock += delta
@@ -255,12 +260,20 @@ export class ShiftSystem extends createSystem({
         this.big.mesh.visible = false
         hangFromRoof(this.big, top + 1.0)
         root.add(this.big.mesh)
+        // floating to the left: what is at the door, waiting to be let in. It looks at the person.
+        this.receive = receivePanel()
+        this.#thing(this.receive.mesh, { kind: 'receive' }, { grab: false })
+        const rx = this.station.deskMinX - 0.16
+        const rz = far - 0.1
+        this.receive.mesh.position.set(rx, 1.52, rz)
+        this.receive.mesh.rotation.y = Math.atan2(WORKER.x - rx, WORKER.z - rz)
+        this.#setActive(this.receive.mesh, false)
         // the buttons: the one that hands over, between the mats; the list, to one side
         this.action = buttonPanel('Empezar el turno')
         this.#thing(this.action.mesh, { kind: 'action' }, { grab: false })
         this.action.mesh.position.set(x, top + 0.045, this.station.matZ + 0.06)
         this.action.mesh.rotation.x = -0.9
-        this.action.mesh.visible = false
+        this.#setActive(this.action.mesh, false)
         this.listButton = buttonPanel('Por hacer', { width: 0.2, fill: '#011E41' })
         this.#thing(this.listButton.mesh, { kind: 'list' }, { grab: false })
         this.listButton.mesh.position.set(x + 0.86, top + 0.045, this.station.matZ + 0.06)
@@ -286,8 +299,45 @@ export class ShiftSystem extends createSystem({
         }
         const [action, label] = choose()
         this.pendingAction = action
-        this.action.mesh.visible = !!action
+        this.#setActive(this.action.mesh, !!action)
         if (action) this.action.refresh(label)
+    }
+
+    /** Hidden is also out of reach: a ray must not press, or stop at, what cannot be seen. */
+    #setActive(object, on) {
+        object.visible = on
+        object.pointerEvents = on ? 'auto' : 'none'
+    }
+
+    /** What is at the door, and whether it fits. */
+    #refreshReceive() {
+        const count = this.day.incoming.length
+        this.#setActive(this.receive.mesh, count > 0 && this.running)
+        if (count) this.receive.refresh({ count, room: this.day.room })
+    }
+
+    /** Pressable things answer the pointer; what is carried swells a little under the hand. */
+    #hover(entity, on) {
+        const t = this.things.get(entity)
+        if (this.view) {
+            const active = [...this.queries.hovered.entities].some((e) => {
+                const i = this.things.get(e)
+                return i && (BUTTONS.has(i.kind) || i.kind === 'item' || i.kind === 'stock' || i.kind === 'box')
+            })
+            this.view.canvas.style.cursor = active ? 'pointer' : 'grab'
+        }
+        if (!t || t.urgentPulse || t.moving) return
+        if (!(BUTTONS.has(t.kind) || t.kind === 'item' || t.kind === 'stock' || (t.kind === 'box' && !this.#isCovered(t)))) return
+        t.baseScale ??= t.object.scale.x
+        const k = t.baseScale * (on ? (BUTTONS.has(t.kind) ? 1.07 : 1.05) : 1)
+        gsap.to(t.object.scale, { x: k, y: k, z: k, duration: 0.12, ease: 'power2.out', overwrite: true })
+    }
+
+    /** A pressed button gives a little, so the press is felt. */
+    #giveWay(t) {
+        if (t.urgentPulse) return
+        const base = t.baseScale ?? t.object.scale.x
+        gsap.to(t.object.scale, { x: base, y: base, z: base, duration: 0.22, ease: 'back.out(2)', overwrite: true })
     }
 
     /* ---------------- the list of what to do ---------------- */
@@ -351,6 +401,15 @@ export class ShiftSystem extends createSystem({
         this.#refreshAction()
     }
 
+    /** The panel to the left: as much as fits on the counter comes in. */
+    #pressReceive() {
+        if (!this.day.room) {
+            this.sound.play('wrong')
+            return this.#say('warn', 'No hay espacio en el mostrador: abre alguna caja primero.')
+        }
+        this.day.receive()
+    }
+
     #begin() {
         // only here, not on loading the page: opening it must not change the sheet
         for (const [id, qty] of Object.entries(SHIFT_STOCK)) this.store.set(id, qty)
@@ -360,7 +419,8 @@ export class ShiftSystem extends createSystem({
         this.message.mesh.visible = true
         this.day.start()
         this.sound.play('radio')
-        this.#say('radio', 'Llegaron cajas al mostrador. Las familias vienen en camino.')
+        this.#say('radio', 'Llegó un camión. Recíbelo en el panel de la izquierda, cuando quieras.')
+        this.#refreshReceive()
         this.#refreshShelf()
         this.#refreshAction()
     }
@@ -383,7 +443,10 @@ export class ShiftSystem extends createSystem({
      * on the object even without the component, and that handle keeps the rays away from it.
      */
     #makeGrabbable(entity) {
-        if (this.world.session && !entity.hasComponent(OneHandGrabbable)) entity.addComponent(OneHandGrabbable, { rotate: true, translate: true })
+        if (!this.world.session || entity.hasComponent(OneHandGrabbable)) return
+        entity.addComponent(OneHandGrabbable, { rotate: true, translate: true })
+        // not only with a hand up close: holding the trigger on it with a ray carries it too
+        entity.object3D.pointerEventsType = 'all'
     }
 
     #isCovered(t) {
@@ -402,7 +465,8 @@ export class ShiftSystem extends createSystem({
     /** A crate on the shelf, with one of each of its supplies showing while there is any. */
     #stockCrate(zone) {
         const shelfEntity = (this.shelfEntity ??= this.world.createTransformEntity(this.station.shelf, { parent: this.root }))
-        zone.entity = this.#thing(zone.crate, { kind: 'crate', zone }, { grab: false, parent: shelfEntity })
+        // only holds things: nothing to press, and no wall to stop a ray on its way to what is inside
+        zone.entity = this.world.createTransformEntity(zone.crate, { parent: shelfEntity })
         zone.stock = new Map()
         for (const { itemId, fit, position } of crateLayout(this.supplies, zone.categoryId)) {
             const object = supplyObject(this.loader, this.supplies.get(itemId), itemId, fit)
@@ -420,7 +484,7 @@ export class ShiftSystem extends createSystem({
             zone.label.refresh(rows)
             for (const [id, entity] of zone.stock) {
                 const t = this.things.get(entity)
-                if (t !== this.holding?.t) t.object.visible = this.day.available(id) > 0
+                if (t !== this.holding?.t) this.#setActive(t.object, this.day.available(id) > 0)
             }
         }
     }
@@ -449,12 +513,18 @@ export class ShiftSystem extends createSystem({
 
     /* ---------------- pressing ---------------- */
 
-    /** Pressed: on a computer, a click only counts once it turned out not to be a drag. */
+    /** A button gives way under the finger. */
+    #pressIn(entity) {
+        const t = this.things.get(entity)
+        if (!t || !BUTTONS.has(t.kind) || t.urgentPulse) return
+        t.baseScale ??= t.object.scale.x
+        const k = t.baseScale * 0.93
+        gsap.to(t.object.scale, { x: k, y: k, z: k, duration: 0.08, overwrite: true })
+    }
+
+    /** On a computer, a click only counts if it did not turn out to be a drag. */
     #press(entity) {
-        if (this.view?.down) {
-            this.view.onClick = () => this.#act(entity)
-            return
-        }
+        if (this.view?.moved) return
         this.#act(entity)
     }
 
@@ -462,9 +532,12 @@ export class ShiftSystem extends createSystem({
     #act(entity) {
         const t = this.things.get(entity)
         if (!t || t.moving || entity.hasComponent(OneHandGrabbable)) return
+        if (BUTTONS.has(t.kind)) this.#giveWay(t)
         if (t.kind === 'action') return this.#pressAction()
         if (t.kind === 'list') return this.toggleList()
+        if (t.kind === 'receive') return this.#pressReceive()
         if (t.kind === 'box' && t.onMat) return this.#openBox(t)
+        if (t.kind === 'box' && this.#isCovered(t)) return this.#say('warn', 'Primero toma la caja de arriba.')
         if (t.kind === 'call') return this.#callFamily(t.order)
     }
 
@@ -500,9 +573,14 @@ export class ShiftSystem extends createSystem({
             if (t.kind === 'box') return !t.onMat
             return t.kind === 'item' || t.kind === 'stock'
         })
-        const hits = this.#rayAt(ndc).intersectObjects(carriable.map((t) => t.object), true)
+        const ray = this.#rayAt(ndc)
+        const hits = ray.intersectObjects(carriable.map((t) => t.object), true)
         const found = hits.length ? this.#entityOf(hits[0]) : null
         if (!found) return false
+        // a button or a closed carton in front is what was pressed, not what is behind it
+        const pressable = [...this.things.values()].filter((t) => t.object.visible && (BUTTONS.has(t.kind) || (t.kind === 'box' && t.onMat && t.box.state === 'received')))
+        const before = ray.intersectObjects(pressable.map((t) => t.object), true)[0]
+        if (before && before.distance < hits[0].distance) return false
         const { t, entity } = found
         if (t.kind === 'box' && this.#isCovered(t)) {
             this.#say('warn', 'Primero toma la caja de arriba.')
@@ -533,31 +611,62 @@ export class ShiftSystem extends createSystem({
 
     /** Where this one could be let go, if the pointer is over it. */
     #targetAt(ndc, t) {
-        const ray = this.#rayAt(ndc)
-        const onScreen = (object) => {
-            const p = this.#worldOf(object).project(this.world.camera)
-            return p.z < 1 ? Math.hypot(p.x - ndc.x, p.y - ndc.y) : Infinity
+        const raycaster = this.#rayAt(ndc)
+        // how far the pointer is from a point, where under 1 counts as over it
+        const away = (point) => {
+            const p = point.clone().project(this.world.camera)
+            return p.z < 1 ? Math.hypot(p.x - ndc.x, p.y - ndc.y) / DROP_NEAR : Infinity
         }
-        const over = (object) => ray.intersectObject(object, true).length > 0
+        return this.#targetFor(t, raycaster, away)
+    }
+
+    /** The same, along the ray of a controller or a hand. */
+    #targetAlong(hand, t) {
+        const space = this.input?.xr?.xrOrigin?.raySpaces?.[hand]
+        if (!space) return null
+        space.getWorldPosition(temp)
+        this.raycaster.ray.origin.copy(temp)
+        this.raycaster.ray.direction.set(0, 0, -1).transformDirection(space.matrixWorld)
+        const { ray } = this.raycaster
+        const away = (point) => (temp2.copy(point).sub(ray.origin).dot(ray.direction) > 0 ? ray.distanceToPoint(point) / RAY_NEAR : Infinity)
+        return this.#targetFor(t, this.raycaster, away)
+    }
+
+    /** What a carried thing would land in: what the pointer is on; failing that, the nearest in reach of it. */
+    #targetFor(t, raycaster, away) {
+        const over = (object) => raycaster.intersectObject(object, true).length > 0
+        const atKit = () => this.kit && (over(this.kit.object) || away(this.#worldOf(this.kit.object)) < 1)
         if (t.kind === 'item') {
-            // what the pointer is on; failing that, the nearest crate within reach of it
-            if (this.kit && (over(this.kit.object) || onScreen(this.kit.object) < DROP_NEAR)) return this.kit
+            if (atKit()) return this.kit
             const { zones } = this.station
-            const nearest = [...zones].sort((a, b) => onScreen(a.crate) - onScreen(b.crate))[0]
-            return zones.find((z) => over(z.crate)) ?? (onScreen(nearest.crate) < DROP_NEAR ? nearest : null)
+            const nearest = [...zones].sort((a, b) => away(this.#worldOf(a.crate)) - away(this.#worldOf(b.crate)))[0]
+            return zones.find((z) => over(z.crate)) ?? (away(this.#worldOf(nearest.crate)) < 1 ? nearest : null)
         }
-        if (t.kind === 'stock') return this.kit && (over(this.kit.object) || onScreen(this.kit.object) < DROP_NEAR) ? this.kit : null
+        if (t.kind === 'stock') return atKit() ? this.kit : null
         if (t.kind === 'box') {
-            const m = this.rootObject.localToWorld(temp2.copy(this.station.mat))
-            const p = m.clone().project(this.world.camera)
-            return p.z < 1 && Math.hypot(p.x - ndc.x, p.y - ndc.y) < DROP_NEAR * 1.6 ? this.station.mat : null
+            const m = this.rootObject.localToWorld(this.station.mat.clone())
+            return away(m) < 1.6 ? this.station.mat : null
         }
         return null
     }
 
+    /** With a ray, what it would land in swells too. */
+    #markHeld() {
+        if (!this.world.session) return
+        const [entity] = this.queries.held.entities
+        if (!entity) return this.marked && this.#mark(null)
+        const t = this.things.get(entity)
+        if (!t) return
+        this.heldHand = this.world.getSystem(GrabSystem)?.getHolderHand(entity) ?? this.heldHand
+        if (this.heldHand) this.#mark(this.#targetAlong(this.heldHand, t))
+    }
+
     /** What it would land in swells a little, to say so. */
     #markTarget(ndc) {
-        const target = this.#targetAt(ndc, this.holding.t)
+        this.#mark(this.#targetAt(ndc, this.holding.t))
+    }
+
+    #mark(target) {
         const object = target?.crate ?? target?.object ?? null
         if (object === this.marked) return
         if (this.marked) gsap.to(this.marked.scale, { x: 1, y: 1, z: 1, duration: 0.14 })
@@ -601,28 +710,33 @@ export class ShiftSystem extends createSystem({
         if (t) gsap.killTweensOf(t.object.position)
     }
 
-    /** Let go with a hand: what it counts as depends on where it was let go. */
+    /** Let go in the headset: what it counts as depends on where it, or the ray holding it, was. */
     #release(entity) {
         const t = this.things.get(entity)
+        const hand = this.heldHand
+        this.heldHand = null
+        this.#mark(null)
         if (!t) return
-        if (t.kind === 'box') return this.#releaseBox(entity, t)
-        if (t.kind === 'item') return this.#releaseItem(entity, t)
-        if (t.kind === 'stock') return this.#releaseStock(t)
+        const pointedAt = hand ? this.#targetAlong(hand, t) : null
+        if (t.kind === 'box') return this.#releaseBox(entity, t, pointedAt)
+        if (t.kind === 'item') return this.#releaseItem(entity, t, pointedAt)
+        if (t.kind === 'stock') return this.#releaseStock(t, pointedAt)
     }
 
-    #releaseBox(entity, t) {
+    #releaseBox(entity, t, pointedAt) {
         const m = this.station.mat
         temp.copy(t.object.position)
-        if (Math.hypot(temp.x - m.x, temp.z - m.z) < MAT_REACH) {
+        if (pointedAt || Math.hypot(temp.x - m.x, temp.z - m.z) < MAT_REACH) {
             if (!this.onMat) return this.#moveToMat(entity, t)
             this.#say('warn', 'La mesa está ocupada: termina primero la caja abierta.')
         }
         this.#goHome(t)
     }
 
-    #releaseItem(entity, t) {
+    #releaseItem(entity, t, pointedAt) {
         t.object.getWorldPosition(temp)
-        if (this.kit && temp.distanceTo(this.#worldOf(this.kit.object)) < KIT_REACH) return this.#packFromBox(entity, t)
+        if (this.kit && (pointedAt === this.kit || temp.distanceTo(this.#worldOf(this.kit.object)) < KIT_REACH)) return this.#packFromBox(entity, t)
+        if (pointedAt?.crate) return this.#stow(entity, t, pointedAt)
         let best = null
         let bestDist = CRATE_REACH
         for (const zone of this.station.zones) {
@@ -638,10 +752,10 @@ export class ShiftSystem extends createSystem({
         this.#goHome(t)
     }
 
-    #releaseStock(t) {
+    #releaseStock(t, pointedAt) {
         if (this.kit) {
             t.object.getWorldPosition(temp)
-            if (temp.distanceTo(this.#worldOf(this.kit.object)) < KIT_REACH) return this.#giveToKit(t)
+            if (pointedAt === this.kit || temp.distanceTo(this.#worldOf(this.kit.object)) < KIT_REACH) return this.#giveToKit(t)
         }
         this.#goHome(t)
     }
@@ -680,6 +794,8 @@ export class ShiftSystem extends createSystem({
         if (!this.day.openBox(t.box.id)) return
         const { flaps, seal } = t.object.userData
         seal.visible = false
+        // open, it has nothing more to be pressed for, and its flaps must not stop a ray on its way in
+        t.object.pointerEvents = 'none'
         this.sound.play('tape', this.#worldOf(t.object))
         for (const hinge of flaps) gsap.to(hinge.rotation, { x: hinge.userData.side * 2.75, duration: 0.55, ease: 'power2.out' })
         const m = this.station.mat
@@ -815,6 +931,7 @@ export class ShiftSystem extends createSystem({
         this.families.set(order.id, { leader, members, card, entity, slot, order })
         this.#walkTo(leader, slot, LINE_Z, () => (leader.targetYaw = 0))
         if (order.urgent) {
+            this.things.get(entity).urgentPulse = true
             gsap.to(card.mesh.scale, { x: 1.78, y: 1.78, duration: 1.2, repeat: -1, yoyo: true, ease: 'sine.inOut' })
             this.sound.play('alert')
             this.#say('alert', `${order.family} necesita ${this.#wants(order)} ya. Presiona su tarjeta para atenderla.`)
@@ -871,7 +988,7 @@ export class ShiftSystem extends createSystem({
         kitObject.userData.seal.visible = false
         for (const hinge of kitObject.userData.flaps) hinge.rotation.x = hinge.userData.side * 2.75
         kitObject.name = order.id
-        const entity = this.#thing(kitObject, { kind: 'kit', order }, { grab: false })
+        const entity = this.world.createTransformEntity(kitObject, { parent: this.root })
         const units = Object.entries(order.items).flatMap(([id, q]) => Array(q).fill(id))
         this.kit = { entity, object: kitObject, layout: cartonLayout(this.supplies, units), used: new Set() }
         this.#refreshOrder(order)
@@ -895,7 +1012,6 @@ export class ShiftSystem extends createSystem({
     #familyLeaves(order) {
         const f = this.familyAtCounter
         const { kit } = this
-        this.things.delete(kit.entity)
         // they take the kit with them
         gsap.to(kit.object.position, {
             x: WORKER.x,
@@ -930,9 +1046,14 @@ export class ShiftSystem extends createSystem({
     /* ---------------- what the day answers ---------------- */
 
     #onDay(event, detail) {
-        if (event === 'truck') {
-            if (this.running) this.sound.play('truck')
+        if (event === 'incoming' && this.running) {
+            this.sound.play('truck')
+            this.#say('radio', 'Llegó otro camión. Está en el panel de la izquierda.')
+        }
+        if (event === 'received') {
+            this.sound.play('done')
             this.#dropBoxes(detail)
+            this.#say('info', this.world.session ? 'Lleva una caja a la mesa azul: agárrala o mantén el gatillo sobre ella.' : 'Mantén presionada una caja y llévala a la mesa azul.')
         }
         if (event === 'emptied') this.#clearBox(detail)
         if (event === 'joined') this.#familyJoins(detail)
@@ -954,6 +1075,7 @@ export class ShiftSystem extends createSystem({
         if (this.station) {
             this.#refreshShelf()
             this.#refreshAction()
+            if (this.running) this.#refreshReceive()
             if (this.day.current) this.#refreshOrder(this.day.current)
             if (this.list.mesh.visible) this.#refreshList()
         }
@@ -977,6 +1099,7 @@ export class ShiftSystem extends createSystem({
         this.running = false
         this.ending = true
         this.message.mesh.visible = false
+        this.#setActive(this.receive.mesh, false)
         this.list.mesh.visible = false
         const names = (orders) => list(orders.map((o) => o.family))
         const minutes = Math.max(1, Math.round(r.seconds / 60))

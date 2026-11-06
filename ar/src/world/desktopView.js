@@ -4,7 +4,7 @@ const EYE = 1.6
 const SPEED = 1.8 // m/s, a calm walk
 const TURN = 1.5 // rad/s with the keys, or holding something at the edge of the view
 const BODY = 0.22 // how close to furniture the person can get
-const DRAG_PX = 5 // less than this between press and release is a click, not a look around
+const DRAG_PX = 8 // less than this between press and release is a click, not a look around
 const EDGE = 0.72 // from here to the edge of the view, holding something turns the person
 
 /**
@@ -31,7 +31,6 @@ export class DesktopView {
         this.down = false
         this.moved = false
         this.holding = false
-        this.onClick = null
         this.ndc = new THREE.Vector2()
         this.forward = new THREE.Vector3()
         this.side = new THREE.Vector3()
@@ -76,13 +75,8 @@ export class DesktopView {
             this.down = false
             if (this.holding) {
                 this.holding = false
-                this.onClick = null
                 this.grab.drop(this.ndc)
-                return
             }
-            const click = this.onClick
-            this.onClick = null
-            if (click && !this.moved) click()
         }
         canvas.addEventListener('pointerup', end)
         canvas.addEventListener('pointercancel', end)

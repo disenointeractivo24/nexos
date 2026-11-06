@@ -43,9 +43,11 @@ export const ARRIVALS = [
     { at: 300, id: 'pedido-4' },
 ]
 
-/** Cartons waiting: below the first a new one comes soon, at the second the pile is full. */
+/** Cartons around: below the first a new one comes soon; the second is what the counter holds. */
 const KEEP_BOXES = 2
 const MAX_BOXES = 4
+/** How many can be waiting at the door to be received. */
+const MAX_INCOMING = 6
 const TRUCK_EVERY = 35
 const TRUCK_SOON = 3
 
@@ -64,6 +66,7 @@ export class Workday {
         this.restock = restock
         this.first = first
         this.boxes = []
+        this.incoming = []
         this.boxCount = 0
         this.restocked = 0
         this.nextTruck = TRUCK_EVERY
@@ -87,18 +90,36 @@ export class Workday {
         for (const fn of this.listeners) fn(event, detail)
     }
 
-    #newBoxes(list) {
-        const boxes = list.map((b) => ({ ...b, id: `caja-${++this.boxCount}`, items: [...b.items], state: 'received', left: b.items.length }))
-        this.boxes.push(...boxes)
-        this.#emit('truck', boxes)
+    /** A truck at the door: its cartons wait there until the person receives them. */
+    #truckArrives(list) {
+        this.incoming.push(...list)
+        this.#emit('incoming', this.incoming.length)
     }
 
     /** The first truck is at the door, and the clock starts. */
     start() {
         if (this.started) return false
         this.started = true
-        this.#newBoxes(this.first)
+        this.#truckArrives(this.first)
         return true
+    }
+
+    /** Room for more on the counter, whoever brings them. */
+    get room() {
+        return Math.max(0, MAX_BOXES - this.unopened)
+    }
+
+    /**
+     * Takes in what is at the door, as much as fits on the counter.
+     * @returns the cartons that came in
+     */
+    receive() {
+        const list = this.incoming.splice(0, this.room)
+        if (!list.length) return []
+        const boxes = list.map((b) => ({ ...b, id: `caja-${++this.boxCount}`, items: [...b.items], state: 'received', left: b.items.length }))
+        this.boxes.push(...boxes)
+        this.#emit('received', boxes)
+        return boxes
     }
 
     get line() {
@@ -139,6 +160,7 @@ export class Workday {
         if (normal.length) rows.push({ id: 'line', tone: 'work', label: 'Atender a la fila', detail: normal.length === 1 ? `${normal[0].family} espera` : `${normal.length} familias esperan` })
         if (this.unsorted) rows.push({ id: 'sort', tone: 'work', label: 'Clasificar lo que abriste', detail: `${this.unsorted} ${this.unsorted === 1 ? 'insumo' : 'insumos'} en la mesa` })
         if (this.unopened) rows.push({ id: 'boxes', tone: 'work', label: 'Abrir cajas', detail: `${this.unopened} por abrir` })
+        if (this.incoming.length) rows.push({ id: 'receive', tone: 'work', label: 'Recibir donaciones', detail: `${this.incoming.length} ${this.incoming.length === 1 ? 'caja está' : 'cajas están'} por entrar` })
         const out = Object.keys(SUPPLIES).filter((id) => this.available(id) === 0)
         if (out.length) rows.push({ id: 'out', tone: 'warn', label: 'Sin existencias', detail: out.map((id) => SUPPLIES[id].label).join(', ') })
         return rows
@@ -166,10 +188,10 @@ export class Workday {
         while (this.pending.length && this.pending[0].at <= this.clock) this.#arrive(this.pending.shift())
 
         this.nextTruck -= dt
-        if (this.unopened < KEEP_BOXES) this.nextTruck = Math.min(this.nextTruck, TRUCK_SOON)
+        if (this.unopened + this.incoming.length < KEEP_BOXES) this.nextTruck = Math.min(this.nextTruck, TRUCK_SOON)
         if (this.nextTruck <= 0) {
             this.nextTruck = TRUCK_EVERY
-            if (this.unopened < MAX_BOXES) this.#newBoxes([this.restock[this.restocked++ % this.restock.length]])
+            if (this.incoming.length < MAX_INCOMING) this.#truckArrives([this.restock[this.restocked++ % this.restock.length]])
         }
 
         for (const o of this.line) {
@@ -334,7 +356,7 @@ export class Workday {
             people: delivered.reduce((n, o) => n + o.people, 0),
             peopleLeft: left.reduce((n, o) => n + o.people, 0),
             sorted: this.sortedCount,
-            boxesLeft: this.unopened,
+            boxesLeft: this.unopened + this.incoming.length,
             mistakes: this.mistakes,
             seconds: this.clock,
         }
