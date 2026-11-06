@@ -247,6 +247,11 @@ export function cardboardBox(tape = '#B8642A') {
     return g
 }
 
+/** A closed carton seen from afar, one box of board with its base at y = 0: it only rides in the truck. */
+export function plainCarton() {
+    return new THREE.Mesh(new THREE.BoxGeometry(BOX.w, BOX.h, BOX.d).translate(0, BOX.h / 2, 0), cardboard().kraft)
+}
+
 /** Where each category's crate rests: its board, and along it, seen from the person. */
 const CRATE_SPOTS = [
     ['alimentos', 2, -0.62],

@@ -288,12 +288,73 @@ export function matPanel(label, color) {
     return p
 }
 
-/** Floating to the left: the big green mark that lets in what is at the door, and how much it is. */
+/** The panel at the person's left while no truck is there: how long until the next one. */
+function drawNextTruck(ctx, w, cx, cy, radius, { seconds, gap }) {
+    ctx.lineCap = 'round'
+    ctx.lineWidth = 46
+    ctx.strokeStyle = BRAND.line
+    ctx.beginPath()
+    ctx.arc(cx, cy, radius - 23, 0, Math.PI * 2)
+    ctx.stroke()
+    // what is left of the wait: it shrinks towards the top as the truck gets closer
+    ctx.strokeStyle = BRAND.navy
+    ctx.beginPath()
+    ctx.arc(cx, cy, radius - 23, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, seconds / gap))
+    ctx.stroke()
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = BRAND.navy
+    ctx.font = `800 170px ${FONT}`
+    ctx.fillText(`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`, cx, cy + 8)
+    ctx.textBaseline = 'alphabetic'
+    ctx.font = `800 92px ${FONT}`
+    ctx.fillText('Próximo camión', cx, 742)
+    ctx.font = `700 64px ${FONT}`
+    ctx.fillStyle = BRAND.muted
+    ctx.fillText('Mientras, sigue trabajando', cx, 880)
+    ctx.textAlign = 'start'
+}
+
+/** A truck on its way in: nothing to press yet. */
+function drawTruckComing(ctx, cx, cy, radius, count) {
+    ctx.beginPath()
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+    ctx.fillStyle = BRAND.navy
+    ctx.fill()
+    ctx.fillStyle = '#FFFFFF'
+    fillRR(ctx, cx - 160, cy - 86, 200, 140, 12, '#FFFFFF')
+    fillRR(ctx, cx + 52, cy - 36, 108, 90, 18, '#FFFFFF')
+    for (const x of [cx - 96, cx + 96]) {
+        ctx.beginPath()
+        ctx.arc(x, cy + 62, 38, 0, Math.PI * 2)
+        ctx.fillStyle = '#FFFFFF'
+        ctx.fill()
+        ctx.lineWidth = 16
+        ctx.strokeStyle = BRAND.navy
+        ctx.stroke()
+    }
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'alphabetic'
+    ctx.fillStyle = BRAND.navy
+    ctx.font = `800 92px ${FONT}`
+    ctx.fillText('Camión llegando', cx, 742)
+    ctx.font = `700 64px ${FONT}`
+    ctx.fillStyle = BRAND.muted
+    ctx.fillText(`Trae ${count} ${count === 1 ? 'caja' : 'cajas'}`, cx, 880)
+    ctx.textAlign = 'start'
+}
+
+/**
+ * At the person's left, by where the truck stops: the big green mark that lets in what it
+ * brought, and how much it is. With no truck there, how long until the next one.
+ */
 export function receivePanel() {
-    return new Panel(0.46, 0.5, (ctx, w, h, d) => {
+    return new Panel(0.46, 0.44, (ctx, w, h, d) => {
         if (!d) return
-        const full = d.room === 0
         fillRR(ctx, 2, 2, w - 4, h - 4, 64, '#FFFFFF')
+        if (d.mode === 'waiting') return drawNextTruck(ctx, w, w / 2, 356, 262, d)
+        if (d.mode === 'coming') return drawTruckComing(ctx, w / 2, 356, 262, d.count)
+        const full = d.room === 0
         const green = full ? '#9AA3AE' : '#1F8A4C'
         const cx = w / 2
         const cy = 356
@@ -320,7 +381,7 @@ export function receivePanel() {
         // the number first, large: that is what the person comes here to read
         ctx.font = `800 150px ${FONT}`
         const number = String(n)
-        const tail = full ? 'sin espacio en el mostrador' : n === 1 ? 'caja por entrar' : 'cajas por entrar'
+        const tail = full ? 'sin espacio: abre una caja' : n === 1 ? 'caja por entrar' : 'cajas por entrar'
         const numberWidth = ctx.measureText(number).width
         ctx.font = `700 64px ${FONT}`
         const tailWidth = ctx.measureText(tail).width
@@ -342,6 +403,7 @@ export function receivePanel() {
 export function orderCard() {
     const HEADER = 170
     const ROW = 104
+    const FOOTER = 124
     return new Panel(
         0.44,
         0.3,
@@ -387,12 +449,21 @@ export function orderCard() {
                 ctx.fillText(out ? `${have} de ${qty} · agotado` : `${have} de ${qty}`, w - 52, y + 2)
                 ctx.textAlign = 'start'
             })
+            // the one thing to do about all this, and how long they can wait for it
+            const y = h - FOOTER
+            ctx.textBaseline = 'middle'
+            ctx.fillStyle = BRAND.navy
+            ctx.font = `800 42px ${FONT}`
+            ctx.fillText('Pon cada insumo en la caja de abajo', 52, y + 34)
+            const bar = w - 104
+            fillRR(ctx, 52, y + 72, bar, 20, 10, BRAND.line)
+            fillRR(ctx, 52, y + 72, Math.max(20, bar * d.left), 20, 10, d.left < 0.35 ? BRAND.redText : d.left < 0.65 ? BRAND.amber : BRAND.greenInk)
         },
-        { measure: (ctx, w, d) => (d ? HEADER + 24 + Object.keys(d.order.items).length * ROW + 10 : 300) }
+        { measure: (ctx, w, d) => (d ? HEADER + 24 + Object.keys(d.order.items).length * ROW + FOOTER : 300) }
     )
 }
 
-/** Over the heads of whoever is in line: who they are and how long they can still wait. Pressing it calls them. */
+/** Over the heads of whoever is in line: who they are and how long they can still wait. They come up by themselves. */
 export function familyCard() {
     const p = new Panel(0.42, 0.17, (ctx, w, h, d) => {
         if (!d) return
@@ -406,7 +477,7 @@ export function familyCard() {
         while (ctx.measureText(d.family).width > w - 240) ctx.font = `800 ${(size -= 2)}px ${FONT}`
         ctx.fillText(d.family, 198, 102)
         ctx.font = `400 40px ${FONT}`
-        ctx.fillText(d.urgent ? `${d.people} personas · urgente` : `${d.people} personas`, 198, 158)
+        ctx.fillText(d.urgent ? `Urgente · pasa primero` : `En la fila · ${d.people} personas`, 198, 158)
         // the time left, as a bar: its length says it, the colour only backs it up
         const x = 36
         const y = h - 76

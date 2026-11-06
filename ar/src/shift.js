@@ -6,12 +6,13 @@ import { GuideCharacter } from '../../src/three/GuideCharacter.js'
 import { CATEGORIES, SUPPLIES } from '../../src/data/catalog.js'
 import { InventoryStore, sheetsEndpoint } from '../../src/app/inventoryStore.js'
 import { Workable } from './components.js'
-import { ORDERS, SHIFT_STOCK, Workday } from './sim/workday.js'
+import { ORDERS, SHIFT_STOCK, TRUCK_GAP, Workday } from './sim/workday.js'
 import { Sound } from './sound.js'
 import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
 import { bigBoard, buttonPanel, familyCard, fontsReady, messageBoard, orderCard, receivePanel, taskList } from './world/panels.js'
 import { buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
+import { buildTruck } from './world/truck.js'
 
 /** The inventory this experience works on: its own point, never one the donors see. */
 const DEMO_POINT = 'demo-ar'
@@ -29,6 +30,15 @@ const LINE_Z = -3.4
 const LINE_SLOTS = [-0.95, 0.95, -2.7, 2.7]
 const ENTRY_Z = -7
 const WALK_SPEED = 1.5
+/** The truck stops just outside the tent, at the person's left, and drives along that side. */
+const TRUCK_X = -4
+const TRUCK_PARK_Z = WORKER.z + 0.2
+const TRUCK_FROM_Z = -18
+const TRUCK_TO_Z = 18
+const TRUCK_IN_SECONDS = 4.5
+const TRUCK_OUT_SECONDS = 4
+/** How far from the person, to their left, the panel of the truck floats. */
+const RECEIVE_REACH = 1
 /** What someone being carried on a computer floats at, from the eyes. */
 const HOLD_DISTANCE = 0.72
 /** How close, on screen, the pointer must be to count as over something it was let go on. */
@@ -36,7 +46,7 @@ const DROP_NEAR = 0.2
 /** The same, for a ray in the headset: how far from it, in metres. */
 const RAY_NEAR = 0.24
 /** What is pressed, rather than carried. */
-const BUTTONS = new Set(['action', 'list', 'call', 'receive'])
+const BUTTONS = new Set(['action', 'list', 'receive'])
 
 const temp = new THREE.Vector3()
 const temp2 = new THREE.Vector3()
@@ -116,7 +126,9 @@ export class ShiftSystem extends createSystem({
         if (this.cardClock > 1) {
             this.cardClock = 0
             this.#refreshCards()
+            if (this.day.current) this.#refreshOrder(this.day.current)
             if (this.list.mesh.visible) this.#refreshList()
+            if (this.running) this.#refreshReceive()
         }
     }
 
@@ -267,14 +279,15 @@ export class ShiftSystem extends createSystem({
         this.big.mesh.visible = false
         hangFromRoof(this.big, top + 1.0)
         root.add(this.big.mesh)
-        // floating to the left: what is at the door, waiting to be let in. It looks at the person.
+        // right at the person's left, with the truck behind it. It looks at the person.
         this.receive = receivePanel()
         this.#thing(this.receive.mesh, { kind: 'receive' }, { grab: false })
-        const rx = this.station.deskMinX - 0.16
-        const rz = far - 0.1
-        this.receive.mesh.position.set(rx, 1.52, rz)
-        this.receive.mesh.rotation.y = Math.atan2(WORKER.x - rx, WORKER.z - rz)
+        this.receive.mesh.position.set(x - RECEIVE_REACH, 1.3, WORKER.z)
+        this.receive.mesh.rotation.y = Math.PI / 2
         this.#setActive(this.receive.mesh, false)
+        this.truck = buildTruck()
+        this.truck.object.visible = false
+        root.add(this.truck.object)
         // the buttons: the one that hands over, between the mats; the list, to one side
         this.action = buttonPanel('Empezar el turno')
         this.#thing(this.action.mesh, { kind: 'action' }, { grab: false })
@@ -316,11 +329,48 @@ export class ShiftSystem extends createSystem({
         object.pointerEvents = on ? 'auto' : 'none'
     }
 
-    /** What is at the door, and whether it fits. */
+    /** The truck at the door and whether what it brings fits, or how long until the next. */
     #refreshReceive() {
-        const count = this.day.incoming.length
-        this.#setActive(this.receive.mesh, count > 0 && this.running)
-        if (count) this.receive.refresh({ count, room: this.day.room })
+        const { day } = this
+        const count = day.incoming.length
+        const mode = !count ? 'waiting' : this.truckParked ? 'ready' : 'coming'
+        const data = { mode, count, room: day.room, seconds: day.truckIn, gap: TRUCK_GAP }
+        this.receive.mesh.visible = this.running
+        // only with the truck there is anything to press
+        this.receive.mesh.pointerEvents = this.running && mode === 'ready' ? 'auto' : 'none'
+        const shown = JSON.stringify(data)
+        if (shown === this.receiveShown) return
+        this.receiveShown = shown
+        this.receive.refresh(data)
+    }
+
+    /** Along the side of the tent, with its wheels turning. */
+    #driveTruck(fromZ, toZ, seconds, ease, then) {
+        const { object, wheels, wheelRadius } = this.truck
+        object.visible = true
+        object.position.set(TRUCK_X, 0, fromZ)
+        gsap.to(object.position, { z: toZ, duration: seconds, ease, onComplete: then })
+        for (const wheel of wheels) gsap.to(wheel.rotation, { x: `+=${(toZ - fromZ) / wheelRadius}`, duration: seconds, ease })
+        this.sound.play('truck', this.rootObject.localToWorld(new THREE.Vector3(TRUCK_X, 1, TRUCK_PARK_Z)))
+    }
+
+    /** A truck comes in and stops by the panel. It stays until all it brought has been received. */
+    #truckComes() {
+        this.truckParked = false
+        this.truck.setCargo(this.day.incoming.length)
+        this.#driveTruck(TRUCK_FROM_Z, TRUCK_PARK_Z, TRUCK_IN_SECONDS, 'power2.out', () => {
+            this.truckParked = true
+            this.sound.play('radio')
+            this.#say('radio', 'Llegó el camión. Recibe las donaciones en el panel de tu izquierda.')
+            this.#refreshReceive()
+        })
+    }
+
+    #truckLeaves() {
+        this.truckParked = false
+        this.#driveTruck(TRUCK_PARK_Z, TRUCK_TO_Z, TRUCK_OUT_SECONDS, 'power2.in', () => {
+            this.truck.object.visible = false
+        })
     }
 
     /** Pressable things answer the pointer; what is carried swells a little under the hand. */
@@ -408,11 +458,11 @@ export class ShiftSystem extends createSystem({
         this.#refreshAction()
     }
 
-    /** The panel to the left: as much as fits on the counter comes in. */
+    /** The panel at the left: as much as fits on the counter comes in. */
     #pressReceive() {
         if (!this.day.room) {
             this.sound.play('wrong')
-            return this.#say('warn', 'No hay espacio en el mostrador: abre alguna caja primero.')
+            return this.#say('warn', 'No hay espacio en el mostrador: abre alguna caja primero. El camión te espera.')
         }
         this.day.receive()
     }
@@ -424,9 +474,8 @@ export class ShiftSystem extends createSystem({
         this.running = true
         this.big.mesh.visible = false
         this.message.mesh.visible = true
+        this.#say('radio', 'Viene un camión con donaciones, por tu izquierda.')
         this.day.start()
-        this.sound.play('radio')
-        this.#say('radio', 'Llegó un camión. Recíbelo en el panel de la izquierda, cuando quieras.')
         this.#refreshReceive()
         this.#refreshShelf()
         this.#refreshAction()
@@ -496,26 +545,47 @@ export class ShiftSystem extends createSystem({
         }
     }
 
-    /** Cartons land on the counter, in the free places of its left end, the lower ones first. */
+    /**
+     * From the truck to the free places of the counter's left end, the lower ones first, one
+     * after another. When it has given all it brought, the truck goes.
+     */
     #dropBoxes(boxes) {
         const taken = [...this.things.values()].filter((t) => t.kind === 'box' && !t.onMat).map((t) => t.home)
         const free = this.station.intake.filter((spot) => !taken.some((h) => h.distanceTo(spot) < 0.01))
+        const from = this.truck.tailgate.clone().add(this.truck.object.position)
+        const stillOnTruck = () => this.day.incoming.length
+        let flying = boxes.length
         boxes.forEach((b, i) => {
             const spot = free[i]
             if (!spot) return
             const object = cardboardBox()
-            object.position.set(spot.x, spot.y + 0.6, spot.z)
+            object.position.copy(from)
+            object.visible = false
             object.name = b.id
-            this.#thing(object, { kind: 'box', box: b, home: spot.clone() }, { grab: false })
-            gsap.to(object.position, {
-                y: spot.y,
-                duration: 0.5,
-                delay: 0.3 + i * 0.5,
-                ease: 'bounce.out',
-                onStart: () => setTimeout(() => this.sound.play('box', this.#worldOf(object)), 180),
+            const t = { kind: 'box', box: b, home: spot.clone(), moving: true }
+            this.#thing(object, t, { grab: false })
+            const path = { k: 0 }
+            gsap.to(path, {
+                k: 1,
+                duration: 0.75,
+                delay: 0.15 + i * 0.55,
+                ease: 'sine.inOut',
+                onStart: () => {
+                    object.visible = true
+                    this.truck.setCargo(stillOnTruck() + boxes.length - i - 1)
+                },
+                onUpdate: () => {
+                    object.position.lerpVectors(from, spot, path.k)
+                    object.position.y += Math.sin(path.k * Math.PI) * 0.45
+                },
+                onComplete: () => {
+                    t.moving = false
+                    this.sound.play('box', this.#worldOf(object))
+                    this.#offerTopBoxes()
+                    if (--flying === 0 && !stillOnTruck()) gsap.delayedCall(0.5, () => this.#truckLeaves())
+                },
             })
         })
-        this.#offerTopBoxes()
     }
 
     /* ---------------- pressing ---------------- */
@@ -545,7 +615,6 @@ export class ShiftSystem extends createSystem({
         if (t.kind === 'receive') return this.#pressReceive()
         if (t.kind === 'box' && t.onMat) return this.#openBox(t)
         if (t.kind === 'box' && this.#isCovered(t)) return this.#say('warn', 'Primero toma la caja de arriba.')
-        if (t.kind === 'call') return this.#callFamily(t.order)
     }
 
     #pressAction() {
@@ -705,7 +774,7 @@ export class ShiftSystem extends createSystem({
         }
         if (t.kind === 'stock') {
             if (target) return this.#giveToKit(t)
-            if (!this.kit) this.#say('info', 'Nadie espera un pedido en el mostrador: llama a alguien de la fila.')
+            if (!this.kit) this.#say('info', 'Todavía no hay nadie en el mostrador: quien llegue pasará solo.')
             return this.#goHome(t)
         }
     }
@@ -926,31 +995,33 @@ export class ShiftSystem extends createSystem({
         return LINE_SLOTS.find((x) => !taken.includes(x)) ?? LINE_SLOTS[0]
     }
 
-    /** Someone new at the back of the point, with their card over their head. */
+    /**
+     * Someone new at the back of the point, with their card over their head to read, not to
+     * press: they walk up to the counter by themselves as soon as it is their turn.
+     */
     #familyJoins(order) {
         const slot = this.#freeSlot()
         const { leader, members } = this.#familyPeople(order, slot)
         const card = familyCard()
         card.mesh.position.set(slot, 1.9, ENTRY_Z)
         card.mesh.scale.setScalar(1.6)
-        const entity = this.#thing(card.mesh, { kind: 'call', order }, { grab: false })
         card.refresh({ ...order, left: 1 })
-        this.families.set(order.id, { leader, members, card, entity, slot, order })
+        this.rootObject.add(card.mesh)
+        this.families.set(order.id, { leader, members, card, slot, order })
         this.#walkTo(leader, slot, LINE_Z, () => (leader.targetYaw = 0))
         if (order.urgent) {
-            this.things.get(entity).urgentPulse = true
             gsap.to(card.mesh.scale, { x: 1.78, y: 1.78, duration: 1.2, repeat: -1, yoyo: true, ease: 'sine.inOut' })
             this.sound.play('alert')
-            this.#say('alert', `${order.family} necesita ${this.#wants(order)} ya. Presiona su tarjeta para atenderla.`)
-        } else {
+            this.#say('alert', `${order.family} necesita ${this.#wants(order)} ya. Pasa en cuanto entregues lo de quien está en el mostrador.`)
+        } else if (this.day.current) {
             this.sound.play('radio')
-            this.#say('radio', `Llegó ${order.family}. Presiona su tarjeta cuando quieras atenderla.`)
+            this.#say('radio', `Llegó ${order.family}. Pasará cuando termines con quien está en el mostrador.`)
         }
     }
 
     #followCards() {
         for (const f of this.families.values()) {
-            if (f.card.mesh.parent) f.card.mesh.position.set(f.leader.position.x, 1.9, f.leader.position.z)
+            if (f.card) f.card.mesh.position.set(f.leader.position.x, 1.9, f.leader.position.z)
         }
     }
 
@@ -965,24 +1036,18 @@ export class ShiftSystem extends createSystem({
         }
     }
 
-    #callFamily(order) {
-        if (this.day.current || this.familyAtCounter) return this.#say('warn', 'Primero termina con quien está en el mostrador.')
-        this.sound.play('tap')
-        this.day.call(order.id)
-    }
-
     #removeCard(f) {
-        this.things.delete(f.entity)
+        if (!f.card) return
         gsap.killTweensOf(f.card.mesh.scale)
-        f.entity.destroy()
         f.card.mesh.removeFromParent()
+        f.card = null
     }
 
     #refreshOrder(order) {
-        this.order.refresh({ order, available: (id) => this.day.available(id) })
+        this.order.refresh({ order, left: Math.max(0, 1 - order.waited / order.patience), available: (id) => this.day.available(id) })
     }
 
-    /** Called to the counter: they come, and a new carton opens on the kit mat. */
+    /** It is their turn: they come up, what they ask for appears, and a new carton opens on the kit mat. */
     #familyComes(order) {
         const f = this.families.get(order.id)
         f.slot = null
@@ -992,6 +1057,7 @@ export class ShiftSystem extends createSystem({
 
         const kitObject = cardboardBox(KIT_TAPE)
         kitObject.position.copy(this.station.kitMat)
+        gsap.from(kitObject.scale, { x: 0.5, y: 0.5, z: 0.5, duration: 0.45, ease: 'back.out(2)' })
         kitObject.userData.seal.visible = false
         for (const hinge of kitObject.userData.flaps) hinge.rotation.x = hinge.userData.side * 2.75
         kitObject.name = order.id
@@ -1000,8 +1066,9 @@ export class ShiftSystem extends createSystem({
         this.kit = { entity, object: kitObject, layout: cartonLayout(this.supplies, units), used: new Set() }
         this.#refreshOrder(order)
         this.order.mesh.visible = true
-        if (!order.urgent) this.sound.play('radio')
-        this.#say(order.urgent ? 'alert' : 'radio', `${order.family} necesita ${this.#wants(order)}. Está en los estantes, a tu espalda.`)
+        gsap.fromTo(this.order.mesh.scale, { x: 0.86, y: 0.86 }, { x: 1, y: 1, duration: 0.4, ease: 'back.out(2.4)' })
+        this.sound.play('radio')
+        this.#say(order.urgent ? 'alert' : 'radio', `${order.family} pasó al mostrador. Busca lo que pide en los estantes, a tu espalda, o en las cajas que abras.`)
         this.#refreshAction()
     }
 
@@ -1036,15 +1103,22 @@ export class ShiftSystem extends createSystem({
         this.order.mesh.visible = false
         this.sound.play('done')
         const short = Object.entries(order.short ?? {})
-        if (short.length) this.#say('warn', `${order.family} se fue sin ${list(short.map(([id, n]) => `${n} de ${SUPPLIES[id].label.toLowerCase()}`))}.`)
+        if (order.gaveUp) this.#say('warn', `${order.family} no pudo esperar más y se llevó lo que había en su caja.`)
+        else if (short.length) this.#say('warn', `${order.family} se fue sin ${list(short.map(([id, n]) => `${n} de ${SUPPLIES[id].label.toLowerCase()}`))}.`)
         else this.#say('done', `${order.family} recibió todo su pedido.`)
     }
 
-    /** They could not wait any more. */
+    /** They could not wait any more, in line or with nothing yet in their carton at the counter. */
     #familyGivesUp(order) {
         const f = this.families.get(order.id)
         this.#removeCard(f)
         f.slot = null
+        if (this.familyAtCounter === f) {
+            this.familyAtCounter = null
+            this.kit.entity.destroy()
+            this.kit = null
+            this.order.mesh.visible = false
+        }
         this.#sendAway(f, f.leader.position.x, ENTRY_Z)
         this.sound.play('wrong')
         this.#say('alert', `${order.family} no pudo esperar más y se fue sin nada.`)
@@ -1053,10 +1127,7 @@ export class ShiftSystem extends createSystem({
     /* ---------------- what the day answers ---------------- */
 
     #onDay(event, detail) {
-        if (event === 'incoming' && this.running) {
-            this.sound.play('truck')
-            this.#say('radio', 'Llegó otro camión. Está en el panel de la izquierda.')
-        }
+        if (event === 'incoming') this.#truckComes()
         if (event === 'received') {
             this.sound.play('done')
             this.#dropBoxes(detail)
@@ -1108,6 +1179,8 @@ export class ShiftSystem extends createSystem({
         this.message.mesh.visible = false
         this.#setActive(this.receive.mesh, false)
         this.list.mesh.visible = false
+        // whatever it still carries goes back: the point closes for the day
+        if (this.truckParked) this.#truckLeaves()
         const names = (orders) => list(orders.map((o) => o.family))
         const minutes = Math.max(1, Math.round(r.seconds / 60))
         const lines = []
