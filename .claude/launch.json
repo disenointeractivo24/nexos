@@ -6,6 +6,12 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["vite", "--port", "5173", "--strictPort", "--open", "false"],
       "port": 5173
+    },
+    {
+      "name": "nexos-ar",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "ar", "--", "--mode", "http", "--strictPort"],
+      "port": 8081
     }
   ]
 }

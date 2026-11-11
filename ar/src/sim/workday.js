@@ -30,14 +30,28 @@ export const ORDERS = [
     { id: 'pedido-4', family: 'Familia Caicedo', people: 6, patience: 130, items: { rice: 4, cans: 1 }, visitors: ['npc-mayor', 'npc-nino-1'] },
 ]
 
-/** When each of them comes, in seconds since the shift began. */
-export const ARRIVALS = [
-    { at: 30, id: 'pedido-1' },
-    { at: 100, id: 'pedido-2' },
-    { at: 170, id: 'pedido-3' },
-    { at: 240, id: 'urgente' },
-    { at: 300, id: 'pedido-4' },
-]
+/** Who can show up at the point: the characters the scene has a model for. */
+export const VISITORS = ['npc-mayor', 'npc-joven-1', 'npc-joven-2', 'npc-nino-1', 'npc-nino-2']
+/** Whoever heads a family at the counter: no child is sent to ask for the food alone. */
+export const GROWN_UPS = ['npc-mayor', 'npc-joven-1', 'npc-joven-2']
+
+/** The families nobody wrote down, so the line does not run dry after the first few. */
+const FAMILY_NAMES = ['Córdoba', 'Lozano', 'Quiñones', 'Arboleda', 'Chará', 'Bonilla', 'Zapata', 'Murillo', 'Grueso', 'Payán', 'Riascos', 'Obando'].map((n) => `Familia ${n}`)
+
+/** What a family comes for, as likely as each thing is to be needed. */
+const ASKS = { rice: 5, water: 5, cans: 4, milk: 3, soap: 3, hygieneKit: 2, blanket: 2, medicine: 1 }
+const ASKS_FOR = { min: 2, max: 3 }
+const FAMILY_PEOPLE = { min: 2, max: 7 }
+const FAMILY_PATIENCE = { min: 120, max: 180 }
+
+/** Families in a whole shift: the point closes once all of them have been through. */
+export const SHIFT_FAMILIES = 12
+/** Places in the line: nobody new walks in while every one of them is taken. */
+export const LINE_LIMIT = 4
+/** Seconds from one family walking in to the next: there is almost always someone there. */
+export const ARRIVAL_GAP = { min: 10, max: 20 }
+/** The first family is already on their way when the point opens. */
+export const FIRST_ARRIVAL = 6
 
 /** What the counter holds. */
 const MAX_BOXES = 4
@@ -45,12 +59,19 @@ const MAX_BOXES = 4
 export const TRUCK_GAP = 40
 const FIRST_TRUCK_CARTONS = 3
 /**
- * The first time: one carton and a small order with one thing from it and one from the shelves,
- * enough to go through the whole job once. And the next truck, soon after, once it is over.
+ * The first time: one carton and an order for a single thing out of it, enough to go through
+ * the whole job once without a detour to the shelves. The rest is learnt by doing it, with the
+ * next truck and the next family already on their way.
  */
-export const GUIDED = { carton: { from: 'Barrio San Fernando', items: ['rice', 'soap', 'cans'] }, order: 'pedido-1', items: { rice: 1, water: 1 }, truckAfter: 12 }
+export const GUIDED = { carton: { from: 'Barrio San Fernando', items: ['rice', 'soap', 'cans'] }, order: 'pedido-1', items: { rice: 1 }, truckAfter: 12, nextFamily: 5 }
 /** Seconds the counter stays free between one person leaving and the next coming up. */
 const COUNTER_GAP = 3
+/**
+ * The longest a single step may be. With the headset off or the tab aside a frame can be worth
+ * minutes, and the shift would run itself: people would walk in and lose all their patience
+ * without anyone there to see it. The point waits instead.
+ */
+const MAX_STEP = 1
 
 export const categoryOf = (itemId) => SUPPLIES[itemId].category
 const clamp01 = (n) => Math.min(1, Math.max(0, n))
@@ -60,9 +81,9 @@ export class Workday {
     /**
      * @param {{ store: { add(id: string, n: number): number, get(id: string): number },
      *           first?: { from: string, items: string[] }[], random?: () => number,
-     *           orders?: typeof ORDERS, arrivals?: typeof ARRIVALS, guided?: boolean }} opts
+     *           orders?: typeof ORDERS, families?: number, guided?: boolean }} opts
      */
-    constructor({ store, first = null, random = Math.random, orders = ORDERS, arrivals = ARRIVALS, guided = false }) {
+    constructor({ store, first = null, random = Math.random, orders = ORDERS, families = SHIFT_FAMILIES, guided = false }) {
         this.store = store
         this.first = guided ? [GUIDED.carton] : first
         /** Learning: time stands still, until that first order has been handed over. */
@@ -76,8 +97,13 @@ export class Workday {
         this.counterFree = 0
         this.sortedCount = 0
         this.mistakes = 0
-        this.orders = orders.map((o) => ({ ...o, items: { ...(guided && o.id === GUIDED.order ? GUIDED.items : o.items) }, packed: {}, state: 'scheduled', waited: 0, warned: false }))
-        this.pending = [...arrivals].sort((a, b) => a.at - b.at)
+        /** The ones who were written down come first; after them, the shift keeps filling itself. */
+        const written = orders.map((o) => ({ ...o, items: guided && o.id === GUIDED.order ? GUIDED.items : o.items }))
+        const rest = Array.from({ length: Math.max(0, families - written.length) }, (_, i) => this.#family(i + 1))
+        this.orders = [...written, ...rest].map((o) => ({ ...o, items: { ...o.items }, packed: {}, state: 'scheduled', waited: 0, warned: false }))
+        /** Whoever has not walked in yet, in the order they will. */
+        this.toArrive = [...this.orders]
+        this.nextArrival = FIRST_ARRIVAL
         this.current = null
         this.clock = 0
         this.started = false
@@ -111,6 +137,33 @@ export class Workday {
     #carton() {
         const items = Array.from({ length: this.#between(CARTON_ITEMS.min, CARTON_ITEMS.max) }, () => this.#anySupply())
         return { from: NEIGHBOURHOODS[this.#between(0, NEIGHBOURHOODS.length - 1)], items }
+    }
+
+    /** One of the weighted keys of a table like {@link ASKS}. */
+    #weighted(table) {
+        const ids = Object.keys(table)
+        let pick = this.random() * ids.reduce((n, id) => n + table[id], 0)
+        return ids.find((x) => (pick -= table[x]) < 0) ?? ids[0]
+    }
+
+    /**
+     * A family nobody wrote down: who they are, how many, and what they came for. Never urgent —
+     * the mobile clinic is the one emergency of the shift, and it is written down.
+     */
+    #family(n) {
+        const items = {}
+        for (let picks = this.#between(ASKS_FOR.min, ASKS_FOR.max); picks > 0; picks--) {
+            const id = this.#weighted(ASKS)
+            items[id] = (items[id] ?? 0) + 1
+        }
+        const people = this.#between(FAMILY_PEOPLE.min, FAMILY_PEOPLE.max)
+        const visitors = [GROWN_UPS[this.#between(0, GROWN_UPS.length - 1)]]
+        // a bigger family often brings someone else along
+        if (people > 3 && this.random() < 0.6) {
+            const others = VISITORS.filter((id) => id !== visitors[0])
+            visitors.push(others[this.#between(0, others.length - 1)])
+        }
+        return { id: `familia-${n}`, family: FAMILY_NAMES[(n - 1) % FAMILY_NAMES.length], people, patience: this.#between(FAMILY_PATIENCE.min, FAMILY_PATIENCE.max), items, visitors }
     }
 
     /** A truck at the door. It stays until every carton has been received; only then does the next one get closer. */
@@ -210,11 +263,18 @@ export class Workday {
         return clamp01(0.14 * line.length + 0.04 * this.unopened + (urgent ? 0.35 : 0) + 0.2 * Math.min(this.clock / 360, 1))
     }
 
+    /** Seconds until the next family walks in; none while the line is full. */
+    get familyIn() {
+        if (!this.toArrive.length) return 0
+        return this.line.length >= LINE_LIMIT ? 0 : Math.max(0, Math.ceil(this.nextArrival))
+    }
+
     /** Time passes: people arrive and come up in turn, patience runs out, more trucks come. */
     tick(dt) {
         if (!this.started || this.isFinished || this.calm) return
+        dt = Math.min(dt, MAX_STEP)
         this.clock += dt
-        while (this.pending.length && this.pending[0].at <= this.clock) this.#arrive(this.pending.shift())
+        this.#someoneWalksIn(dt)
 
         if (!this.incoming.length) {
             this.nextTruck -= dt
@@ -231,24 +291,38 @@ export class Workday {
         this.counterFree -= dt
         if (!this.current && this.counterFree <= 0 && this.line.length) this.#comeUp()
 
-        if (!this.pending.length && !this.current && !this.line.length) {
+        if (!this.toArrive.length && !this.current && !this.line.length) {
             this.isFinished = true
             this.#emit('finished', this.review)
         }
     }
 
-    #arrive(event) {
-        const order = this.orders.find((o) => o.id === event.id)
-        if (!order) return
+    /**
+     * People keep coming on their own: nothing about a truck or a carton calls them. Each one
+     * walks in a short while after the last, and only while there is a place left in the line,
+     * so a line that is standing still fills up and then waits for room instead of piling up.
+     */
+    #someoneWalksIn(dt) {
+        if (!this.toArrive.length) return
+        this.nextArrival -= dt
+        if (this.nextArrival > 0) return
+        // with no place left, the next one waits at the door and comes in the moment one frees up
+        if (this.line.length >= LINE_LIMIT) {
+            this.nextArrival = 0
+            return
+        }
+        this.#arrive(this.toArrive.shift())
+        this.nextArrival = this.#between(ARRIVAL_GAP.min, ARRIVAL_GAP.max)
+    }
+
+    #arrive(order) {
         order.state = 'waiting'
         this.#emit('joined', order)
     }
 
     /** While learning, nobody arrives on their own: the first person comes once there is a carton open. */
     #firstComes() {
-        const first = this.pending.shift()
-        this.clock = first.at
-        this.#arrive(first)
+        this.#arrive(this.toArrive.shift())
         this.#comeUp()
     }
 
@@ -434,6 +508,7 @@ export class Workday {
         if (this.calm) {
             this.calm = false
             this.nextTruck = GUIDED.truckAfter
+            this.nextArrival = GUIDED.nextFamily
         }
         this.#emit('delivered', o)
         return o

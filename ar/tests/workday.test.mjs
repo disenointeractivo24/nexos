@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { COMPLAINS_BELOW, angerFor, complaintFor, moodFor } from '../src/sim/temper.js'
-import { ARRIVALS, GUIDED, MEDICINE_IN_CARTONS, ORDERS, SHIFT_STOCK, TRUCK_GAP, Workday, categoryOf } from '../src/sim/workday.js'
+import { ARRIVAL_GAP, GROWN_UPS, GUIDED, LINE_LIMIT, MEDICINE_IN_CARTONS, ORDERS, SHIFT_FAMILIES, SHIFT_STOCK, TRUCK_GAP, VISITORS, Workday, categoryOf } from '../src/sim/workday.js'
 
 /** A first truck that always brings the same, for the rules that are not about what comes. */
 const FIRST = [
@@ -264,18 +264,19 @@ test('the first time, nothing happens until the person does it', () => {
     assert.equal(day.current, null)
 })
 
-test('the guided order comes up on opening the carton, and can be met from the carton and the shelves', () => {
+test('the guided order comes up on opening the carton, and asks for one thing out of it', () => {
     const day = new Workday({ store: fakeStore(), guided: true })
     day.start()
     const [box] = day.receive()
     day.openBox(box.id)
     assert.equal(day.current.id, GUIDED.order)
     assert.deepEqual(day.current.items, GUIDED.items)
-    for (const id of Object.keys(GUIDED.items)) assert.ok(GUIDED.carton.items.includes(id) || SHIFT_STOCK[id] > 0, id)
+    // the whole of it comes out of the carton: no trip to the shelves the first time
+    for (const id of Object.keys(GUIDED.items)) assert.ok(GUIDED.carton.items.includes(id), id)
+    assert.equal(Object.values(GUIDED.items).reduce((n, q) => n + q, 0), 1, 'one item, one trip')
     day.tick(1000)
     assert.equal(day.current.waited, 0, 'no hurry')
     assert.ok(day.addFromBox(box.id, 'rice').ok)
-    assert.ok(day.addToKit('water').ok)
     assert.deepEqual(day.missing, {})
 })
 
@@ -299,6 +300,69 @@ test('a shift that is not guided never stands still', () => {
     assert.equal(day.calm, false)
     day.tick(1)
     assert.equal(day.clock, 1)
+})
+
+test('once the tutorial is over the next family is already on the way', () => {
+    const day = new Workday({ store: fakeStore(), guided: true })
+    day.start()
+    const [box] = day.receive()
+    day.openBox(box.id)
+    pack(day)
+    day.deliver()
+    assert.equal(day.clock, 0, 'learning costs no shift time')
+    assert.ok(GUIDED.nextFamily <= ARRIVAL_GAP.min, 'and no one has to wait a whole gap for it')
+    for (let i = 0; i < GUIDED.nextFamily; i++) day.tick(1)
+    assert.ok(day.line.length + (day.current ? 1 : 0) >= 1, 'someone is already there')
+})
+
+test('people come on their own: not a single donation has to be received for a line to form', () => {
+    const day = new Workday({ store: fakeStore(), first: FIRST })
+    day.start()
+    // the truck is left at the door the whole time: nothing is received, nothing is opened
+    for (let i = 0; i < 90; i++) day.tick(1)
+    assert.equal(day.boxes.length, 0, 'no carton was taken in')
+    assert.ok(day.line.length + (day.current ? 1 : 0) >= 3, 'and there is still a line')
+})
+
+test('the line has its places, and whoever is next waits at the door until one frees up', () => {
+    const day = started()
+    let wasFull = false
+    for (let i = 0; i < 400; i++) {
+        day.tick(1)
+        assert.ok(day.line.length <= LINE_LIMIT, `${day.line.length} waiting at once`)
+        if (day.line.length === LINE_LIMIT) {
+            wasFull = true
+            assert.equal(day.familyIn, 0, 'the next one is at the door')
+        }
+    }
+    assert.ok(wasFull, 'the line should fill up when nobody is served')
+})
+
+test('the shift does not run itself while nobody is there to see it', () => {
+    const day = started()
+    // the headset comes off, the tab goes aside: one frame worth minutes
+    day.tick(200)
+    assert.ok(day.clock <= 1, `the clock leapt to ${day.clock}`)
+    assert.equal(day.line.length + (day.current ? 1 : 0), 0, 'nobody came and went unseen')
+    // and once it is back, the shift picks up where it was
+    for (let i = 0; i < 40; i++) day.tick(1)
+    assert.ok(day.line.length + (day.current ? 1 : 0) >= 2, 'the flow carries on')
+})
+
+test('a shift is a stream of families, not only the ones written down', () => {
+    const day = new Workday({ store: fakeStore(), first: FIRST, random: seeded(7) })
+    assert.equal(day.orders.length, SHIFT_FAMILIES)
+    assert.ok(SHIFT_FAMILIES > ORDERS.length, 'more than the written ones')
+    assert.equal(new Set(day.orders.map((o) => o.id)).size, SHIFT_FAMILIES, 'each one its own')
+    for (const o of day.orders.slice(ORDERS.length)) {
+        assert.ok(o.family, 'a name')
+        assert.ok(o.people >= 1, 'how many they are')
+        assert.ok(o.patience > 0, 'how long they can wait')
+        assert.ok(Object.keys(o.items).length >= 1, 'something to ask for')
+        assert.ok(o.visitors.length >= 1 && o.visitors.every((id) => VISITORS.includes(id)), 'someone the scene can show')
+        assert.ok(GROWN_UPS.includes(o.visitors[0]), 'a grown-up at the head of it')
+        assert.ok(!o.urgent, 'the one emergency of the shift is the written one')
+    }
 })
 
 test('faces follow the bar: glad in the green, losing patience in the amber, angry in the red', () => {
@@ -486,7 +550,6 @@ test('the whole shift ends in a review; pressure rises and falls', () => {
     assert.ok(finished, 'the shift should end')
     assert.equal(day.pressure, 0)
     assert.ok(peak > 0.3)
-    assert.equal(finished.whole.length + finished.partial.length + finished.left.length, ORDERS.length)
+    assert.equal(finished.whole.length + finished.partial.length + finished.left.length, SHIFT_FAMILIES)
     assert.ok(Object.values(store.stock).every((n) => n >= 0))
-    assert.ok(ARRIVALS.length === ORDERS.length)
 })

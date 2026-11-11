@@ -8,7 +8,7 @@ import { InventoryStore, sheetsEndpoint } from '../../src/app/inventoryStore.js'
 import { Workable } from './components.js'
 import { Haptics } from './haptics.js'
 import { COMPLAINS_BELOW, complaintFor } from './sim/temper.js'
-import { ORDERS, SHIFT_STOCK, TRUCK_GAP, Workday } from './sim/workday.js'
+import { SHIFT_STOCK, TRUCK_GAP, VISITORS, Workday } from './sim/workday.js'
 import { Sound } from './sound.js'
 import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
@@ -185,11 +185,10 @@ export class ShiftSystem extends createSystem({
 
     async #prepare() {
         await fontsReady()
-        const visitors = [...new Set(ORDERS.flatMap((o) => o.visitors))]
         const [stand, supplies, people] = await Promise.all([
             this.loader.load('collection-point'),
             preloadSupplies(this.loader),
-            Promise.all(visitors.map((id) => this.loader.load(id).then((t) => [id, t]))),
+            Promise.all(VISITORS.map((id) => this.loader.load(id).then((t) => [id, t]))),
         ])
         this.stand = stand
         this.supplies = supplies
@@ -1507,7 +1506,11 @@ export class ShiftSystem extends createSystem({
         this.sayQueue = []
         // whatever it still carries goes back: the point closes for the day
         if (this.truckParked) this.#truckLeaves()
-        const names = (orders) => list(orders.map((o) => o.family))
+        // a whole shift's worth of families does not fit on the board: a few names, then the count
+        const names = (orders) => {
+            if (orders.length <= 3) return list(orders.map((o) => o.family))
+            return `${orders.slice(0, 3).map((o) => o.family).join(', ')} y ${orders.length - 3} más`
+        }
         const minutes = Math.max(1, Math.round(r.seconds / 60))
         const lines = []
         if (r.partial.length) lines.push({ mark: 'warn', tone: 'warn', text: `Incompletos: ${names(r.partial)}.` })
