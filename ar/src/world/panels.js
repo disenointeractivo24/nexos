@@ -536,31 +536,44 @@ export function orderCard() {
     )
 }
 
-/** Over the heads of whoever is in line: who they are and how long they can still wait. They come up by themselves. */
+/** Over the heads of whoever is in line: who they are and how long they can still wait, nothing more. */
 export function familyCard() {
-    const p = new Panel(0.42, 0.17, (ctx, w, h, d) => {
+    return new Panel(0.34, 0.1, (ctx, w, h, d) => {
         if (!d) return
         const ink = d.urgent ? '#FFFFFF' : BRAND.navy
-        fillRR(ctx, 2, 2, w - 4, h - 4, 48, d.urgent ? BRAND.redText : '#FFFFFF')
-        badge(ctx, 104, 118, 66, d.urgent ? 'warn' : 'person', d.urgent ? '#FFFFFF' : BRAND.navy, d.urgent ? BRAND.redText : '#FFFFFF')
+        fillRR(ctx, 2, 2, w - 4, h - 4, 40, d.urgent ? BRAND.redText : '#FFFFFF')
         ctx.textBaseline = 'alphabetic'
+        ctx.textAlign = 'center'
         ctx.fillStyle = ink
-        let size = 68
+        let size = 66
         ctx.font = `800 ${size}px ${FONT}`
-        while (ctx.measureText(d.family).width > w - 240) ctx.font = `800 ${(size -= 2)}px ${FONT}`
-        ctx.fillText(d.family, 198, 98)
-        ctx.font = `700 50px ${FONT}`
-        ctx.fillText(d.urgent ? `Urgente · pasa primero` : `En la fila · ${d.people} personas`, 198, 168)
+        while (ctx.measureText(d.family).width > w - 60) ctx.font = `800 ${(size -= 2)}px ${FONT}`
+        ctx.fillText(d.family, w / 2, 100)
+        ctx.textAlign = 'start'
         // the time left, as a bar: its length says it, the colour only backs it up
         const x = 36
-        const y = h - 76
+        const y = h - 66
         const bar = w - 72
-        fillRR(ctx, x, y, bar, 38, 19, d.urgent ? 'rgba(255,255,255,0.3)' : BRAND.line)
-        fillRR(ctx, x, y, Math.max(38, bar * d.left), 38, 19, d.urgent ? '#FFFFFF' : d.left < 0.35 ? BRAND.redText : d.left < 0.65 ? BRAND.amber : BRAND.greenInk)
+        fillRR(ctx, x, y, bar, 34, 17, d.urgent ? 'rgba(255,255,255,0.3)' : BRAND.line)
+        fillRR(ctx, x, y, Math.max(34, bar * d.left), 34, 17, d.urgent ? '#FFFFFF' : d.left < 0.35 ? BRAND.redText : d.left < 0.65 ? BRAND.amber : BRAND.greenInk)
     })
-    return p
 }
 
+/** Over the order's carton: whose it is, small. What it needs is shown by the supplies themselves. */
+export function orderTag() {
+    return new Panel(0.3, 0.06, (ctx, w, h, d) => {
+        if (!d) return
+        fillRR(ctx, 2, 2, w - 4, h - 4, h / 2, d.urgent ? BRAND.redText : BRAND.navy)
+        ctx.fillStyle = '#FFFFFF'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        let size = 58
+        ctx.font = `800 ${size}px ${FONT}`
+        while (ctx.measureText(d.family).width > w - 50) ctx.font = `800 ${(size -= 2)}px ${FONT}`
+        ctx.fillText(d.family, w / 2, h / 2 + 3)
+        ctx.textAlign = 'start'
+    })
+}
 /** What someone is complaining about, beside their head: its tail points at them. */
 export function speechBubble() {
     return new Panel(0.62, 0.22, (ctx, w, h, d) => {
@@ -595,46 +608,93 @@ export function speechBubble() {
 
 /* ---------------- the shelves ---------------- */
 
-/**
- * On the front of a crate, in its category's colours: what is in it, and how much. What ran
- * out says so, on any shelf at a glance.
- */
-export function crateLabel(title, color, tint) {
-    const p = new Panel(0.48, 0.16, (ctx, w, h, rows = []) => {
-        fillRR(ctx, 2, 2, w - 4, h - 4, 30, tint)
-        rr(ctx, 2, 2, w - 4, 104, [30, 30, 0, 0])
-        ctx.fillStyle = color
+/** What each category is at a glance, drawn white on its colour. */
+function categoryIcon(ctx, x, y, r, categoryId) {
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.fillStyle = '#FFFFFF'
+    ctx.strokeStyle = '#FFFFFF'
+    ctx.lineWidth = r * 0.16
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    const s = r
+    ctx.beginPath()
+    if (categoryId === 'agua') {
+        // a drop
+        ctx.moveTo(0, -s * 0.8)
+        ctx.bezierCurveTo(s * 0.55, -s * 0.15, s * 0.62, s * 0.2, s * 0.6, s * 0.3)
+        ctx.arc(0, s * 0.3, s * 0.6, 0, Math.PI)
+        ctx.bezierCurveTo(-s * 0.62, s * 0.2, -s * 0.55, -s * 0.15, 0, -s * 0.8)
         ctx.fill()
-        ctx.fillStyle = '#FFFFFF'
-        ctx.font = `800 60px ${FONT}`
-        ctx.textBaseline = 'middle'
-        ctx.fillText(title, 40, 58)
-        const cell = (w - 40) / Math.max(rows.length, 1)
+    } else if (categoryId === 'medicinas') {
+        // a cross
+        ctx.fillRect(-s * 0.2, -s * 0.7, s * 0.4, s * 1.4)
+        ctx.fillRect(-s * 0.7, -s * 0.2, s * 1.4, s * 0.4)
+    } else if (categoryId === 'higiene') {
+        // soap and bubbles
+        ctx.roundRect(-s * 0.7, -s * 0.05, s * 1.1, s * 0.65, s * 0.18)
+        ctx.fill()
+        for (const [bx, by, br] of [[s * 0.45, -s * 0.45, 0.22], [s * 0.05, -s * 0.55, 0.15], [s * 0.62, -s * 0.05, 0.12]]) {
+            ctx.beginPath()
+            ctx.arc(bx, by, s * br, 0, Math.PI * 2)
+            ctx.stroke()
+        }
+    } else if (categoryId === 'refugio') {
+        // a house
+        ctx.moveTo(-s * 0.75, -s * 0.05)
+        ctx.lineTo(0, -s * 0.72)
+        ctx.lineTo(s * 0.75, -s * 0.05)
+        ctx.lineTo(s * 0.55, -s * 0.05)
+        ctx.lineTo(s * 0.55, s * 0.68)
+        ctx.lineTo(-s * 0.55, s * 0.68)
+        ctx.lineTo(-s * 0.55, -s * 0.05)
+        ctx.closePath()
+        ctx.fill()
+    } else {
+        // a bowl of grain
+        ctx.arc(0, -s * 0.05, s * 0.72, 0, Math.PI)
+        ctx.closePath()
+        ctx.fill()
+        for (const gx of [-0.35, 0, 0.35]) {
+            ctx.beginPath()
+            ctx.ellipse(gx * s, -s * 0.28, s * 0.13, s * 0.2, 0, 0, Math.PI * 2)
+            ctx.fill()
+        }
+    }
+    ctx.restore()
+}
+
+/**
+ * On the front of a crate, in its category's colour: its icon, and how many there are of each
+ * supply in it, to keep count. What ran out shows as a red zero.
+ */
+export function crateLabel(title, color, tint, categoryId) {
+    const p = new Panel(0.34, 0.12, (ctx, w, h, rows = []) => {
+        fillRR(ctx, 2, 2, w - 4, h - 4, 30, color)
+        const iconW = h * 0.92
+        categoryIcon(ctx, iconW / 2 + 6, h / 2, h * 0.3, categoryId)
+        const x0 = iconW + 10
+        const cell = (w - x0 - 16) / Math.max(rows.length, 1)
         rows.forEach(({ label, count }, i) => {
-            const x = 20 + i * cell
+            const x = x0 + i * cell
             const out = count === 0
-            fillRR(ctx, x + 8, 122, cell - 16, h - 142, 20, out ? BRAND.redSoft : '#FFFFFF')
-            ctx.fillStyle = out ? BRAND.redText : BRAND.navy
+            fillRR(ctx, x + 6, 22, cell - 12, h - 44, 22, out ? BRAND.redSoft : '#FFFFFF')
             ctx.textAlign = 'center'
-            // a crate of a single supply already says its name above
-            const single = rows.length === 1
-            if (!single) {
-                let size = 48
-                ctx.font = `700 ${size}px ${FONT}`
-                while (ctx.measureText(label).width > cell - 36) ctx.font = `700 ${(size -= 2)}px ${FONT}`
-                ctx.fillText(label, x + cell / 2, 166)
-            }
-            const y = single ? 122 + (h - 142) / 2 + 4 : 268
-            let big = out ? (single ? 76 : 54) : single ? 120 : 104
-            ctx.font = `800 ${big}px ${FONT}`
-            while (out && ctx.measureText('Agotado').width > cell - 36) ctx.font = `800 ${(big -= 2)}px ${FONT}`
-            ctx.fillText(out ? 'Agotado' : String(count), x + cell / 2, y)
+            ctx.textBaseline = 'middle'
+            ctx.fillStyle = out ? BRAND.redText : BRAND.navy
+            ctx.font = `800 ${Math.round(h * 0.36)}px ${FONT}`
+            ctx.fillText(String(count), x + cell / 2, h * 0.43)
+            let size = Math.round(h * 0.15)
+            ctx.font = `700 ${size}px ${FONT}`
+            while (ctx.measureText(label).width > cell - 28 && size > 18) ctx.font = `700 ${(size -= 2)}px ${FONT}`
+            ctx.fillStyle = out ? BRAND.redText : BRAND.muted
+            ctx.fillText(label, x + cell / 2, h * 0.73)
             ctx.textAlign = 'start'
         })
     })
+    p.title = title
     return p
 }
-
 /* ---------------- opening and closing ---------------- */
 
 /**

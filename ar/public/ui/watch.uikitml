@@ -1,0 +1,21 @@
+<meta preferred-color-scheme="light" />
+<style>
+  .row { flex-direction: row; align-items: center; gap: 12; padding-top: 10; padding-bottom: 10; padding-left: 12; padding-right: 12; border-radius: 18; background-color: #F2F4F7; }
+  .dot { width: 14; height: 14; border-radius: 7; background-color: #011E41; }
+  .label { font-size: 22; font-weight: bold; color: #011E41; }
+  .detail { font-size: 18; color: #5B6573; }
+  .texts { flex-direction: column; gap: 2; flex-shrink: 1; }
+</style>
+<div id="root" width="420" flex-direction="column" gap="10" padding="18" border-radius="28" background-color="#FFFFFF">
+  <div flex-direction="row" align-items="center" justify-content="space-between">
+    <div flex-direction="row" align-items="center" gap="10">
+      <ListChecks width="28" height="28" color="#D92632" />
+      <p font-size="28" font-weight="bold" color="#011E41">Por hacer</p>
+    </div>
+    <p id="progress" font-size="20" font-weight="bold" color="#5B6573">0 de 8</p>
+  </div>
+  <div id="row0" class="row"><div id="dot0" class="dot" /><div class="texts"><p id="label0" class="label">-</p><p id="detail0" class="detail">-</p></div></div>
+  <div id="row1" class="row"><div id="dot1" class="dot" /><div class="texts"><p id="label1" class="label">-</p><p id="detail1" class="detail">-</p></div></div>
+  <div id="row2" class="row"><div id="dot2" class="dot" /><div class="texts"><p id="label2" class="label">-</p><p id="detail2" class="detail">-</p></div></div>
+  <div id="row3" class="row"><div id="dot3" class="dot" /><div class="texts"><p id="label3" class="label">-</p><p id="detail3" class="detail">-</p></div></div>
+</div>

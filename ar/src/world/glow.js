@@ -52,7 +52,7 @@ export class Glow {
         sprite.raycast = () => {}
         sprite.pointerEvents = 'none'
         sprite.renderOrder = 10
-        sprite.scale.setScalar(empty ? 0.6 : Math.max(0.3, Math.max(size.x, size.y, size.z) * 2.4))
+        sprite.scale.setScalar(empty ? 0.6 : Math.max(0.3, Math.max(size.x, size.y, size.z) * 1.5))
         this.parent.add(sprite)
         const swapped = []
         object.traverse((mesh) => {

@@ -1,0 +1,13 @@
+<meta preferred-color-scheme="light" />
+<style>
+  .icon { width: 30; height: 30; color: #FFFFFF; }
+</style>
+<div id="root" flex-direction="row" align-items="center" gap="14" padding-top="12" padding-bottom="12" padding-left="14" padding-right="26" border-radius="38" background-color="#FFFFFF">
+  <div id="badge" width="52" height="52" border-radius="26" background-color="#011E41" align-items="center" justify-content="center">
+    <Hand id="i-info" class="icon" />
+    <TriangleAlert id="i-warn" class="icon" display="none" />
+    <CircleCheck id="i-done" class="icon" display="none" />
+    <Siren id="i-alert" class="icon" display="none" />
+  </div>
+  <p id="text" font-size="30" font-weight="bold" color="#011E41">Elige tu mesa</p>
+</div>

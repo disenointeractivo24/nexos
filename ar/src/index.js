@@ -1,4 +1,4 @@
-import { SessionMode, VisibilityState, World } from '@iwsdk/core'
+import { DepthOccludable, DepthSensingSystem, SessionMode, VisibilityState, World } from '@iwsdk/core'
 import { ShiftSystem } from './shift.js'
 
 const start = document.getElementById('start')
@@ -7,17 +7,40 @@ const enterDesktop = document.getElementById('enter-desktop')
 const note = document.getElementById('note')
 const hud = document.getElementById('hud')
 
+/**
+ * Everything the headset can tell about the room, asked for and none of it required: the
+ * shift adapts to what the device grants (no planes: a hit on the surface; no hit test: a
+ * table of its own at the person's height).
+ */
 const world = await World.create(document.getElementById('scene-container'), {
     xr: {
         sessionMode: SessionMode.ImmersiveAR,
         offer: 'none',
-        // none of these is required: the shift adapts to what the device grants
-        features: { handTracking: true, anchors: true, hitTest: true, planeDetection: true, meshDetection: true },
+        features: {
+            handTracking: true,
+            anchors: true,
+            hitTest: true,
+            planeDetection: true,
+            meshDetection: true,
+            // real hands in front of what is virtual: occlusion from the headset's depth
+            depthSensing: { usage: 'gpu-optimized', format: 'float32' },
+        },
     },
     input: { canvasPointerEvents: true },
     render: { fov: 60, near: 0.01, far: 60 },
-    features: { locomotion: false, grabbing: true, sceneUnderstanding: true, physics: false, spatialUI: false },
+    features: {
+        locomotion: false,
+        // only hands: a pinch near something takes it, a pinch along the ray too
+        grabbing: { useHandPinchForGrab: true },
+        sceneUnderstanding: { showWireFrame: false },
+        environmentRaycast: true,
+        physics: { useWorker: true, updateFrequency: 72, interpolation: true },
+        camera: true,
+        spatialUI: { kit: 'horizon', preferredColorScheme: 'light' },
+    },
 })
+// occlusion is not part of World.create: it is a system of its own, with its component
+world.registerComponent(DepthOccludable).registerSystem(DepthSensingSystem, { configData: { enableOcclusion: true, enableDepthTexture: true } })
 world.registerSystem(ShiftSystem)
 const shift = world.getSystem(ShiftSystem)
 window.nexosAR = { world, shift }
@@ -30,14 +53,14 @@ const modes = { xr: !!navigator.xr, ar, vr }
 const isQuest = /OculusBrowser|Quest/i.test(navigator.userAgent)
 enterDesktop.disabled = false
 enterAr.disabled = !modes.ar && !modes.vr
-if (modes.ar) note.textContent = 'Ponte el visor y busca unos 3 metros libres a tu alrededor.'
+if (modes.ar) note.textContent = 'Ponte el visor de pie, frente a una mesa. Usarás solo tus manos.'
 else if (modes.vr) {
     enterAr.textContent = 'Entrar con el visor (sin ver tu espacio)'
-    note.textContent = 'Este navegador no ofrece ver tu espacio real, así que la carpa se verá sobre un fondo virtual. Busca unos 3 metros libres.'
+    note.textContent = 'Este navegador no muestra tu espacio real: verás una mesa virtual.'
 } else if (isQuest) {
-    note.textContent = `Este navegador de las gafas no ofrece el modo inmersivo: actualízalo en Ajustes › Sistema › Actualización de software. ${modes.xr ? 'WebXR sí, modos no.' : 'WebXR no está disponible.'} ${navigator.userAgent}`
+    note.textContent = `Este navegador de las gafas no ofrece el modo inmersivo: actualízalo en Ajustes › Sistema › Actualización de software. ${modes.xr ? 'WebXR sí, modos no.' : 'WebXR no está disponible.'}`
 } else {
-    note.textContent = 'Aquí no hay gafas: esto es un computador o un celular. Abre este enlace en el navegador de las Meta Quest, o pruébalo aquí con el mouse.'
+    note.textContent = 'Aquí no hay gafas. Abre este enlace en las Meta Quest, o pruébalo aquí con el mouse.'
 }
 
 // the SDK only logs why a session did not open; the person in the headset needs to read it
@@ -62,7 +85,7 @@ world.visibilityState.subscribe((state) => {
     start.hidden = false
     enterDesktop.hidden = true
     enterAr.textContent = shift.placed ? 'Volver al turno' : 'Entrar con el visor'
-    note.textContent = shift.placed ? 'Saliste de las gafas. Tu turno quedó en pausa, tal como lo dejaste.' : 'Saliste de las gafas antes de levantar la carpa.'
+    note.textContent = shift.placed ? 'Tu turno quedó en pausa, tal como lo dejaste.' : 'Saliste antes de elegir tu mesa.'
 })
 
 enterAr.addEventListener('click', () => {

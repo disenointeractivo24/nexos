@@ -1,0 +1,20 @@
+<meta preferred-color-scheme="light" />
+<style>
+  .stat { flex-direction: column; flex-grow: 1; padding: 14; border-radius: 18; background-color: #1B3556; gap: 2; }
+  .value { font-size: 40; font-weight: bold; color: #FFFFFF; }
+  .slabel { font-size: 17; color: #C9D3E0; }
+  .line { font-size: 22; color: #FFFFFF; }
+</style>
+<div id="root" width="560" flex-direction="column" gap="14" padding="28" border-radius="32" background-color="#011E41">
+  <p id="kicker" font-size="18" font-weight="bold" color="#F5333F">NEXOS · UN TURNO EN EL PUNTO DE ACOPIO</p>
+  <p id="title" font-size="44" font-weight="bold" color="#FFFFFF">Hoy este punto es tuyo</p>
+  <div id="stats" flex-direction="row" gap="10" display="none">
+    <div class="stat"><p id="v0" class="value">0</p><p id="l0" class="slabel">-</p></div>
+    <div class="stat"><p id="v1" class="value">0</p><p id="l1" class="slabel">-</p></div>
+    <div class="stat"><p id="v2" class="value">0</p><p id="l2" class="slabel">-</p></div>
+  </div>
+  <p id="line0" class="line">-</p>
+  <p id="line1" class="line">-</p>
+  <p id="line2" class="line">-</p>
+  <Button id="action" variant="primary" size="lg" height="68" font-size="28" margin-top="6">Empezar</Button>
+</div>

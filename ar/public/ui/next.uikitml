@@ -1,0 +1,8 @@
+<meta preferred-color-scheme="light" />
+<Button id="next" variant="positive" size="lg">
+  <ButtonIcon><Users /></ButtonIcon>
+  <ButtonLabel>
+    <p id="title">Que pase</p>
+    <ButtonLabelSubtext><p id="family">Familia</p></ButtonLabelSubtext>
+  </ButtonLabel>
+</Button>

@@ -13,12 +13,19 @@ export class Atmosphere {
         this.sky = sky
         this.sun = sun
         this.level = 0
+        this.brightness = 1
+        this.base = { sky: sky.intensity, sun: sun.intensity }
     }
 
-    update(dt, pressure) {
+    /** `room`: how bright the real room is, from the headset's cameras (1 is a lit room). */
+    update(dt, pressure, room = 1) {
         // about ten seconds to catch up: a change of mood, not an event
         this.level += (pressure - this.level) * Math.min(1, dt * 0.25)
         this.sky.color.lerpColors(CALM.sky, TENSE.sky, this.level)
         this.sun.color.lerpColors(CALM.sun, TENSE.sun, this.level)
+        // what is virtual is lit as the room is, so it does not glow in a dim one
+        this.brightness += (room - this.brightness) * Math.min(1, dt * 0.5)
+        this.sky.intensity = this.base.sky * this.brightness
+        this.sun.intensity = this.base.sun * this.brightness
     }
 }

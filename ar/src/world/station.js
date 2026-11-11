@@ -1,71 +1,31 @@
 import * as THREE from 'three'
 import { CATEGORIES, SUPPLIES } from '../../../src/data/catalog.js'
-import { crateLabel, matPanel } from './panels.js'
+import { crateLabel } from './panels.js'
 
 /**
  * Real size of each supply, in metres: its longest side. The shared models are built for a
  * close-up, so this is what puts them at the scale of the carton they come in.
  */
-const REAL_SIZE = { rice: 0.2, water: 0.3, cans: 0.14, milk: 0.2, medicine: 0.2, soap: 0.09, blanket: 0.3, hygieneKit: 0.2 }
+const REAL_SIZE = { rice: 0.2, water: 0.3, cans: 0.11, milk: 0.2, medicine: 0.16, soap: 0.09, blanket: 0.3, hygieneKit: 0.2 }
 
 /** The 40 × 30 × 30 cm carton from the catalog. */
-const BOX = { w: 0.4, h: 0.3, d: 0.3 }
-export const BOX_HEIGHT = BOX.h
-const CRATE = { w: 0.5, h: 0.2, d: 0.32 }
+export const BOX = { w: 0.4, h: 0.28, d: 0.3 }
+/** A plastic crate on the inventory shelf: what a real collection point uses, at its real size. */
+export const CRATE = { w: 0.36, h: 0.17, d: 0.28 }
 const WALL = 0.007
 /**
  * How large supplies are, everywhere they appear: the same in any carton, crate or kit. A little
  * under their real size, so that what a carton holds stays in the carton instead of towering over it.
  */
-const SUPPLY_FIT = 0.72
+const SUPPLY_FIT = 0.8
 /** How full a carton is: its contents stand on this much packing paper, so they show. */
-const FILL = 0.6
+const FILL = 0.55
 
-/** Height of the top of the shelf's boards above its feet, measured in the model. */
-const BOARD_TOP = [0.04, 0.72, 1.27, 1.82]
-
-/** How much of the real floor shows through the tent's: what is on it must stay visible. */
-const FLOOR_OPACITY = 0.42
-
-/** Underside of the tent's roof above its floor, measured. */
-const ROOF_Y = 2.65
-
-/** The person stands between the counter and the shelves, facing the counter (-Z). */
-export const WORKER = new THREE.Vector3(0.05, 0, -0.55)
-
-const materialName = (o) => [o.material].flat()[0]?.name ?? ''
-
-/**
- * The whole stand, exactly as it was modelled: its textures carry baked shadows of the desk,
- * the shelf and the stacked boxes, so none of them can move. Its floor at y = 0, its sign to
- * -Z, where the families come from. Returns where its furniture ended up.
- */
-function tentOf(loader, template) {
-    const tent = loader.instanceSync(template)
-    tent.rotation.y = Math.PI
-    tent.updateMatrixWorld(true)
-    const boxOf = (pattern) => {
-        const box = new THREE.Box3()
-        tent.traverse((o) => {
-            if (o.isMesh && pattern.test(materialName(o))) box.expandByObject(o)
-        })
-        return box
-    }
-    const floor = boxOf(/piso/i)
-    tent.position.y = -floor.max.y
-    tent.updateMatrixWorld(true)
-    tent.traverse((o) => {
-        if (!o.isMesh) return
-        if (/piso/i.test(materialName(o))) {
-            for (const m of [o.material].flat()) {
-                m.transparent = true
-                m.opacity = FLOOR_OPACITY
-                m.depthWrite = false
-            }
-        }
-        if (/techo|bombilla/i.test(materialName(o))) o.userData.roof = true
-    })
-    return { tent, desk: boxOf(/escritorio/i), shelf: boxOf(/estanteria/i) }
+const materialCache = new Map()
+const mat = (color, roughness = 0.8, metalness = 0) => {
+    const key = `${color}-${roughness}-${metalness}`
+    if (!materialCache.has(key)) materialCache.set(key, new THREE.MeshStandardMaterial({ color, roughness, metalness }))
+    return materialCache.get(key)
 }
 
 /** What one supply measures at its real size, and the factor that gives it. */
@@ -75,14 +35,20 @@ export function realSize(template, itemId) {
     return { k, w: x * k, h: y * k, d: z * k }
 }
 
-/** A supply from the shared builders, at `fit` times its real size, with its base at y = 0. */
+/**
+ * A supply from the shared builders, at `fit` times its real size. Its origin is at the middle
+ * of its volume, as a physics body needs; `userData.size` has what it measures.
+ */
 export function supplyObject(loader, template, itemId, fit = 1) {
-    const { k } = realSize(template, itemId)
+    const { k, w, h, d } = realSize(template, itemId)
     const obj = loader.instanceSync(template)
     obj.scale.setScalar(k * fit)
+    obj.position.y = (-h * fit) / 2
     const g = new THREE.Group()
     g.add(obj)
     g.name = `insumo:${itemId}`
+    g.userData.size = { w: w * fit, h: h * fit, d: d * fit }
+    g.userData.itemId = itemId
     return g
 }
 
@@ -130,8 +96,8 @@ export function packInto(sizes, width, depth, gap = 0.012) {
 }
 
 /**
- * A carton's contents, on its packing paper: where each goes, in the carton's space. A supply
- * measures the same in every carton: what does not fit beside the others goes on top of them.
+ * A carton's contents, on its packing paper: where each goes, the middle of each, in the space
+ * of the carton (origin at its middle). What does not fit beside the others goes on top.
  */
 export function cartonLayout(supplies, items) {
     const width = BOX.w - 0.03
@@ -150,11 +116,11 @@ export function cartonLayout(supplies, items) {
         else layer.push(entry)
     }
     const placed = []
-    let y = BOX.h * FILL
+    let y = BOX.h * FILL - BOX.h / 2
     for (const layer of layers) {
         const { spots } = packInto(layer, width, depth)
         layer.forEach((entry, n) => {
-            placed[entry.i] = { itemId: entry.itemId, fit: entry.fit, position: new THREE.Vector3(spots[n].x, y, spots[n].z) }
+            placed[entry.i] = { itemId: entry.itemId, fit: entry.fit, position: new THREE.Vector3(spots[n].x, y + entry.h / 2, spots[n].z) }
         })
         y += Math.max(...layer.map((entry) => entry.h)) + 0.004
     }
@@ -217,37 +183,41 @@ function cardboard() {
     return shared
 }
 
-/** Walls and bottom of one piece of cardboard, and the packing paper in it: an open box, truly hollow. */
-function hollowBox(w, h, d, { fill = FILL } = {}) {
-    const { kraft, inner, paper } = cardboard()
+/** Walls and bottom of one piece of material, and what lines its floor: an open box, truly hollow. Base at y = 0. */
+function hollowBox(w, h, d, { fill = FILL, wall = cardboard().kraft, lining = true, floor = cardboard().paper } = {}) {
     const g = new THREE.Group()
     const add = (bw, bh, bd, x, y, z) => {
-        // the outside in kraft, the inside a shade darker: the same board, seen from within
-        const wall = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), kraft)
-        wall.position.set(x, y, z)
-        g.add(wall)
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), wall)
+        mesh.position.set(x, y, z)
+        g.add(mesh)
     }
     add(w, WALL, d, 0, WALL / 2, 0)
     add(w, h, WALL, 0, h / 2, d / 2 - WALL / 2)
     add(w, h, WALL, 0, h / 2, -d / 2 + WALL / 2)
     add(WALL, h, d - WALL * 2, w / 2 - WALL / 2, h / 2, 0)
     add(WALL, h, d - WALL * 2, -w / 2 + WALL / 2, h / 2, 0)
-    const lining = new THREE.Mesh(new THREE.BoxGeometry(w - WALL * 2.2, h * 0.98, d - WALL * 2.2), new THREE.MeshStandardMaterial({ color: inner.color, roughness: 1, side: THREE.BackSide }))
-    lining.position.y = h * 0.49 + WALL / 2
-    g.add(lining)
-    const filling = new THREE.Mesh(new THREE.PlaneGeometry(w - WALL * 2, d - WALL * 2).rotateX(-Math.PI / 2), paper)
-    filling.position.y = h * fill
-    g.add(filling)
+    if (lining) {
+        const inside = new THREE.Mesh(new THREE.BoxGeometry(w - WALL * 2.2, h * 0.98, d - WALL * 2.2), new THREE.MeshStandardMaterial({ color: cardboard().inner.color, roughness: 1, side: THREE.BackSide }))
+        inside.position.y = h * 0.49 + WALL / 2
+        g.add(inside)
+    }
+    if (floor) {
+        const filling = new THREE.Mesh(new THREE.PlaneGeometry(w - WALL * 2, d - WALL * 2).rotateX(-Math.PI / 2), floor)
+        filling.position.y = h * fill
+        g.add(filling)
+    }
     return g
 }
 
 /**
  * A carton in one piece of board: the box, two flaps that close flush with its top, and
- * tape along the seam and down its ends. Its base at y = 0.
+ * tape along the seam and down its ends. Its origin at its middle, for physics; the flaps,
+ * the seal and the top's height are in `userData`.
  */
 export function cardboardBox(tape = '#B8642A') {
     const { kraft, print } = cardboard()
-    const g = hollowBox(BOX.w, BOX.h, BOX.d)
+    const body = hollowBox(BOX.w, BOX.h, BOX.d)
+    body.position.y = -BOX.h / 2
     const flaps = [-1, 1].map((side) => {
         const hinge = new THREE.Group()
         hinge.position.set(0, BOX.h, (side * BOX.d) / 2)
@@ -255,7 +225,7 @@ export function cardboardBox(tape = '#B8642A') {
         flap.position.z = (-side * BOX.d) / 4
         hinge.add(flap)
         hinge.userData.side = side
-        g.add(hinge)
+        body.add(hinge)
         return hinge
     })
     const tapeMat = new THREE.MeshStandardMaterial({ color: tape, roughness: 0.45 })
@@ -268,126 +238,132 @@ export function cardboardBox(tape = '#B8642A') {
         end.position.set((side * BOX.w) / 2 + side * 0.001, BOX.h - 0.035, 0)
         seal.add(end)
     }
-    g.add(seal)
+    body.add(seal)
     const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.1), print)
     mark.position.set(0, BOX.h * 0.42, BOX.d / 2 + 0.0015)
-    g.add(mark)
+    body.add(mark)
+    const g = new THREE.Group()
+    g.add(body)
     g.userData.flaps = flaps
     g.userData.seal = seal
+    g.userData.size = { w: BOX.w, h: BOX.h, d: BOX.d }
     return g
 }
 
-/** A closed carton seen from afar, one box of board with its base at y = 0: it only rides in the truck. */
+/** A closed carton, one box of board with its base at y = 0: it only rides on the hand truck. */
 export function plainCarton() {
     return new THREE.Mesh(new THREE.BoxGeometry(BOX.w, BOX.h, BOX.d).translate(0, BOX.h / 2, 0), cardboard().kraft)
 }
 
-/** Where each category's crate rests: its board, and along it, seen from the person. */
-const CRATE_SPOTS = [
-    ['alimentos', 2, -0.62],
-    ['agua', 2, 0],
-    ['medicinas', 2, 0.62],
-    ['higiene', 1, -0.34],
-    ['refugio', 1, 0.34],
-]
+/* ---------------- what stands in the room ---------------- */
 
-/**
- * The collection point around the person, in metres, y = 0 on the floor, facing -Z: the
- * stand as it was modelled, and what the shift needs on top of it. The counter is in front
- * (families on its far side): where the truck's cartons land on its left, then the mat where
- * a carton is opened, the button, and the mat where a kit is packed. The shelves are behind.
- */
-export function buildStation(root, loader, stand) {
-    const station = { root, zones: [] }
-    const { tent, desk, shelf } = tentOf(loader, stand)
-    root.add(tent)
-    station.tent = tent
-
-    const top = desk.max.y
-    const nearEdge = desk.max.z
-    const matZ = nearEdge - 0.32
-    station.deskTop = top
-    station.matZ = matZ
-    station.deskFar = desk.min.z
-    station.deskMinX = desk.min.x
-    station.deskMaxX = desk.max.x
-    station.solids = [
-        { minX: desk.min.x, maxX: desk.max.x, minZ: desk.min.z, maxZ: desk.max.z },
-        { minX: shelf.min.x, maxX: shelf.max.x, minZ: shelf.min.z, maxZ: shelf.max.z },
-    ]
-
-    const pad = (x, label, color) => {
-        const { mesh } = matPanel(label, color)
-        mesh.rotation.x = -Math.PI / 2
-        mesh.position.set(x, top + 0.003, matZ)
-        root.add(mesh)
-        return new THREE.Vector3(x, top + 0.004, matZ)
+/** A plain folding table for when the room has none: what a collection point would bring. Top at `top`. */
+export function virtualTable(width, depth, top) {
+    const g = new THREE.Group()
+    const board = new THREE.Mesh(new THREE.BoxGeometry(width, 0.03, depth), mat('#D9D4CA', 0.7))
+    board.position.y = top - 0.015
+    g.add(board)
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(width + 0.004, 0.012, depth + 0.004), mat('#9C978E', 0.6))
+    edge.position.y = top - 0.03
+    g.add(edge)
+    for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+            const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, top - 0.03, 10), mat('#5F646B', 0.4, 0.6))
+            leg.position.set(sx * (width / 2 - 0.06), (top - 0.03) / 2, sz * (depth / 2 - 0.06))
+            g.add(leg)
+        }
     }
-    station.mat = pad(WORKER.x - 0.43, 'Abre aquí', '#28435F') // where a carton gets opened
-    station.kitMat = pad(WORKER.x + 0.43, 'Arma el pedido', '#7A4B00') // where a kit gets packed
-
-    // where the truck's cartons land: two side by side, and on top of them
-    const intakeY = top + 0.002
-    station.intake = [
-        new THREE.Vector3(desk.min.x + 0.23, intakeY, matZ),
-        new THREE.Vector3(desk.min.x + 0.7, intakeY, matZ),
-        new THREE.Vector3(desk.min.x + 0.23, intakeY + BOX.h + 0.004, matZ),
-        new THREE.Vector3(desk.min.x + 0.7, intakeY + BOX.h + 0.004, matZ),
-    ]
-
-    // the crates, on the stand's own boards, their labels towards the person
-    const shelfGroup = new THREE.Group()
-    shelfGroup.position.set((shelf.min.x + shelf.max.x) / 2, 0, (shelf.min.z + shelf.max.z) / 2)
-    shelfGroup.rotation.y = Math.PI
-    root.add(shelfGroup)
-    station.shelf = shelfGroup
-
-    for (const [categoryId, board, along] of CRATE_SPOTS) {
-        const cat = CATEGORIES[categoryId]
-        const crate = hollowBox(CRATE.w, CRATE.h, CRATE.d, { fill: 0.55 })
-        const label = crateLabel(cat.label, cat.color, cat.tint)
-        label.mesh.position.set(0, CRATE.h * 0.46, CRATE.d / 2 + 0.002)
-        crate.add(label.mesh)
-        crate.position.set(along, BOARD_TOP[board], 0)
-        crate.name = `caja-categoria:${categoryId}`
-        shelfGroup.add(crate)
-        station.zones.push({ categoryId, crate, label })
-    }
-    return station
+    return g
 }
 
-const support = new THREE.MeshStandardMaterial({ color: '#2B2118', roughness: 0.8 })
-const rod = (radius, length) => new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 8), support)
-
-/**
- * Two cords from a panel up to the tent's roof, so no sign floats on its own. Its top edge
- * stays at `topY`, and it grows downwards when its content does.
- */
-export function hangFromRoof(panel, topY) {
-    const { mesh } = panel
-    const k = mesh.scale.y
-    const length = (ROOF_Y - topY) / k
-    const cords = [-1, 1].map((side) => {
-        const cord = rod(0.004, length)
-        cord.position.x = (side * panel.width) / 2.6
-        mesh.add(cord)
-        return cord
-    })
-    const settle = (h) => {
-        mesh.position.y = topY - (h * k) / 2
-        for (const cord of cords) cord.position.set(cord.position.x, h / 2 + length / 2, -0.002)
+/** A wooden pallet on the floor, where what is donated gets set down. Base at y = 0. */
+export const PALLET = { w: 0.9, h: 0.13, d: 0.8 }
+export function pallet() {
+    const g = new THREE.Group()
+    const wood = mat('#B48A5A', 0.9)
+    const dark = mat('#8E6A43', 0.9)
+    for (let i = 0; i < 5; i++) {
+        const slat = new THREE.Mesh(new THREE.BoxGeometry(PALLET.w, 0.02, 0.12), wood)
+        slat.position.set(0, PALLET.h - 0.01, -PALLET.d / 2 + 0.06 + (i * (PALLET.d - 0.12)) / 4)
+        g.add(slat)
     }
-    panel.onResize = settle
-    settle(panel.height)
+    for (const x of [-1, 0, 1]) {
+        const runner = new THREE.Mesh(new THREE.BoxGeometry(0.1, PALLET.h - 0.02, PALLET.d), dark)
+        runner.position.set((x * (PALLET.w - 0.1)) / 2, (PALLET.h - 0.02) / 2, 0)
+        g.add(runner)
+    }
+    return g
 }
 
-/** What a crate shows on top: one of each supply of its category, side by side. */
+/**
+ * A low metal shelf, two boards, facing +Z: the inventory, beside the person instead of behind
+ * them. Its boards' heights are given, so that the top one sits at the person's working height.
+ * Base at y = 0, centred.
+ */
+export function lowShelf(width, depth, boards) {
+    const g = new THREE.Group()
+    const steel = mat('#7E8792', 0.45, 0.55)
+    const board = mat('#C9CED4', 0.6, 0.3)
+    const height = boards[boards.length - 1] + 0.02
+    for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+            const post = new THREE.Mesh(new THREE.BoxGeometry(0.03, height, 0.03), steel)
+            post.position.set(sx * (width / 2 - 0.015), height / 2, sz * (depth / 2 - 0.015))
+            g.add(post)
+        }
+    }
+    for (const y of boards) {
+        const b = new THREE.Mesh(new THREE.BoxGeometry(width, 0.018, depth), board)
+        b.position.y = y - 0.009
+        g.add(b)
+    }
+    return g
+}
+
+/** A two-wheeled hand truck, for the volunteer to bring cartons in. Its nose plate at y = 0, facing +Z. */
+export function handTruck() {
+    const g = new THREE.Group()
+    const steel = mat('#2F3842', 0.5, 0.5)
+    for (const sx of [-1, 1]) {
+        const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 1.2, 8), steel)
+        rail.position.set(sx * 0.2, 0.6, -0.05)
+        rail.rotation.x = -0.12
+        g.add(rail)
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.06, 18).rotateZ(Math.PI / 2), mat('#1D1F22', 0.9))
+        wheel.position.set(sx * 0.26, 0.11, -0.14)
+        g.add(wheel)
+    }
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.012, 0.22), steel)
+    nose.position.set(0, 0.006, 0.08)
+    g.add(nose)
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.44, 8).rotateZ(Math.PI / 2), mat('#D92632', 0.6))
+    handle.position.set(0, 1.18, -0.13)
+    g.add(handle)
+    return g
+}
+
+/** A crate of one category, open, with its label towards the person. Base at y = 0. */
+export function categoryCrate(categoryId) {
+    const cat = CATEGORIES[categoryId]
+    const plastic = mat(cat.color, 0.55)
+    const crate = hollowBox(CRATE.w, CRATE.h, CRATE.d, { fill: 0.5, wall: plastic, lining: false, floor: mat('#3A3F45', 0.9) })
+    const label = crateLabel(cat.label, cat.color, cat.tint, categoryId)
+    label.mesh.position.set(0, CRATE.h * 0.5, CRATE.d / 2 + 0.003)
+    crate.add(label.mesh)
+    crate.name = `caja-categoria:${categoryId}`
+    return { crate, label }
+}
+
+/** What a crate shows inside: one of each supply of its category, side by side, their middles. */
 export function crateLayout(supplies, categoryId) {
     const items = Object.values(SUPPLIES)
         .filter((s) => s.category === categoryId)
         .map((s) => s.id)
     // on show, side by side: here they do give way, so that one of each fits along the crate
     const sizes = items.map((id) => realSize(supplies.get(id), id)).map((s) => ({ w: s.w * SUPPLY_FIT, d: s.d * SUPPLY_FIT }))
-    const { fit, spots } = packInto(sizes, CRATE.w - 0.04, CRATE.d - 0.04)
-    return items.map((id, i) => ({ itemId: id, fit: fit * SUPPLY_FIT, position: new THREE.Vector3(spots[i].x, CRATE.h * 0.55, spots[i].z) }))
+    const { fit, spots } = packInto(sizes, CRATE.w - 0.03, CRATE.d - 0.03)
+    return items.map((id, i) => {
+        const h = realSize(supplies.get(id), id).h * fit * SUPPLY_FIT
+        return { itemId: id, fit: fit * SUPPLY_FIT, position: new THREE.Vector3(spots[i].x, CRATE.h * 0.5 + h / 2, spots[i].z) }
+    })
 }

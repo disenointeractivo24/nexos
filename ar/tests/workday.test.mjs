@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { COMPLAINS_BELOW, angerFor, complaintFor, moodFor } from '../src/sim/temper.js'
-import { ARRIVALS, GUIDED, MEDICINE_IN_CARTONS, ORDERS, SHIFT_STOCK, TRUCK_GAP, Workday, categoryOf } from '../src/sim/workday.js'
+import { ARRIVALS, GUIDED, MEDICINE_IN_CARTONS, ORDERS, SHIFT_STOCK, START_BOXES, Workday, categoryOf } from '../src/sim/workday.js'
 
-/** A first truck that always brings the same, for the rules that are not about what comes. */
+/** Cartons that always hold the same, for the rules that are not about what comes. */
 const FIRST = [
     { from: 'Barrio San Fernando', items: ['rice', 'rice', 'water', 'water', 'cans'] },
     { from: 'Barrio El Ingenio', items: ['medicine', 'soap', 'soap', 'hygieneKit'] },
@@ -21,7 +21,6 @@ const fakeStore = (start = SHIFT_STOCK) => {
 function started(store = fakeStore()) {
     const day = new Workday({ store, first: FIRST })
     day.start()
-    day.receive()
     return day
 }
 
@@ -45,26 +44,22 @@ function untilAtCounter(day, id) {
     assert.equal(day.current?.id, id)
 }
 
-test('cartons wait at the door until they are received, and only as many as fit come in', () => {
-    const day = new Workday({ store: fakeStore(), first: FIRST, random: seeded(7) })
+test('the shift starts with every carton already there, closed, and no more come', () => {
+    const day = new Workday({ store: fakeStore(), random: seeded(7) })
+    let received = 0
+    day.on((e, d) => e === 'received' && (received += d.length))
     day.start()
-    assert.equal(day.boxes.length, 0)
-    assert.equal(day.incoming.length, 3)
-    assert.ok(day.todo.some((r) => r.id === 'receive'))
-    assert.equal(day.receive().length, 3)
-    assert.equal(day.incoming.length, 0)
-    assert.deepEqual(day.receive(), [])
+    assert.equal(day.boxes.length, START_BOXES)
+    assert.equal(received, START_BOXES)
+    assert.equal(day.unopened, START_BOXES)
+    assert.equal(day.start(), false, 'only once')
     day.orders.forEach((o) => (o.patience = 1e6))
     for (let i = 0; i < 300; i++) day.tick(1)
-    assert.ok(day.incoming.length > 1)
-    assert.equal(day.receive().length, 1, 'three on the counter leave room for one')
-    assert.equal(day.room, 0)
-    assert.equal(day.unopened, 4)
+    assert.equal(day.boxes.length, START_BOXES)
 })
-
 test('a carton opens only once, and is ready from the moment it arrives', () => {
     const day = started()
-    assert.equal(day.unopened, 3)
+    assert.equal(day.unopened, FIRST.length)
     const { id } = day.boxes[0]
     assert.equal(day.openBox(id), true)
     assert.equal(day.openBox(id), false)
@@ -92,71 +87,19 @@ test('on the shelf it counts: the inventory moves as each item is put away', () 
     assert.equal(day.unsorted, b.items.length - 1)
 })
 
-test('there are always cartons to pick up, and the pile has a limit', () => {
-    const day = started()
-    for (const b of [...day.boxes]) sortBox(day, b)
-    assert.equal(day.unopened, 0)
-    day.orders.forEach((o) => (o.patience = 1e6))
-    for (let i = 0; i < 300; i++) {
-        day.tick(1)
-        day.receive()
-        assert.ok(day.unopened <= 4)
-    }
-    assert.ok(day.unopened >= 2)
-})
-
-test('a truck stays until all it brought is received, and only then the clock runs for the next', () => {
-    const day = new Workday({ store: fakeStore(), first: FIRST, random: seeded(11) })
-    day.orders.forEach((o) => (o.patience = 1e6))
-    let arrivals = 0
-    day.on((e) => e === 'incoming' && arrivals++)
-    day.start()
-    assert.equal(arrivals, 1)
-    assert.equal(day.truckIn, 0, 'there is a truck at the door')
-    for (let i = 0; i < 200; i++) day.tick(1)
-    assert.equal(arrivals, 1, 'no second truck while the first one waits')
-    assert.equal(day.incoming.length, 3)
-    day.receive()
-    assert.equal(day.truckIn, TRUCK_GAP)
-    for (let i = 0; i < TRUCK_GAP - 1; i++) day.tick(1)
-    assert.equal(arrivals, 1)
-    assert.equal(day.truckIn, 1)
-    day.tick(1)
-    assert.equal(arrivals, 2)
-    assert.ok(day.incoming.length >= 2)
-    assert.equal(day.truckIn, 0)
-})
-
-test('with no room for all of it, what is left stays on the truck and the truck stays too', () => {
-    const day = new Workday({ store: fakeStore(), first: [...FIRST, FIRST[0], FIRST[1], FIRST[2]] })
-    day.start()
-    assert.equal(day.receive().length, 4)
-    assert.equal(day.incoming.length, 2)
-    assert.equal(day.truckIn, 0)
-    for (const b of day.boxes.slice(0, 2)) day.openBox(b.id)
-    assert.equal(day.receive().length, 2)
-    assert.equal(day.truckIn, TRUCK_GAP)
-})
-
 test('what comes in a carton is not known beforehand, and is different each time', () => {
     const load = (seed) => {
         const day = new Workday({ store: fakeStore(), random: seeded(seed) })
         day.start()
-        return day.incoming.map((b) => b.items)
+        return day.boxes.map((b) => b.items)
     }
     assert.notDeepEqual(load(1), load(2))
-    const day = new Workday({ store: fakeStore(), random: seeded(3) })
-    day.orders.forEach((o) => (o.patience = 1e6))
-    day.start()
     const seen = new Set()
-    for (let i = 0; i < 2000; i++) {
-        for (const b of day.incoming) {
-            assert.ok(b.items.length >= 2 && b.items.length <= 5)
-            for (const id of b.items) seen.add(id)
+    for (let seed = 1; seed < 40; seed++) {
+        for (const items of load(seed)) {
+            assert.ok(items.length >= 2 && items.length <= 5)
+            for (const id of items) seen.add(id)
         }
-        day.incoming.length = 0
-        day.nextTruck = 0
-        day.tick(1)
     }
     assert.ok(seen.size >= 7, `only ${[...seen]}`)
 })
@@ -187,7 +130,7 @@ test('what is urgent comes up before anyone who has been waiting longer', () => 
     untilAtCounter(day, 'pedido-1')
     day.orders.forEach((o) => (o.patience = 1e6))
     untilJoined(day, 'urgente')
-    assert.equal(day.line.length, 3)
+    assert.ok(day.line.length >= 2, 'others were waiting before it')
     day.addToKit('rice')
     day.deliver()
     untilAtCounter(day, 'urgente')
@@ -253,21 +196,19 @@ test('going back to the line does not refill anyone\'s patience', () => {
 test('the first time, nothing happens until the person does it', () => {
     const day = new Workday({ store: fakeStore(), guided: true })
     day.start()
-    assert.equal(day.incoming.length, 1)
+    assert.equal(day.boxes.length, START_BOXES)
     day.tick(1000)
     assert.equal(day.clock, 0)
     assert.equal(day.line.length + (day.current ? 1 : 0), 0)
-    const [box] = day.receive()
+    const [box] = day.boxes
     assert.deepEqual(box.items, GUIDED.carton.items)
-    day.tick(1000)
-    assert.equal(day.incoming.length, 0, 'no other truck')
     assert.equal(day.current, null)
 })
 
 test('the guided order comes up on opening the carton, and can be met from the carton and the shelves', () => {
     const day = new Workday({ store: fakeStore(), guided: true })
     day.start()
-    const [box] = day.receive()
+    const [box] = day.boxes
     day.openBox(box.id)
     assert.equal(day.current.id, GUIDED.order)
     assert.deepEqual(day.current.items, GUIDED.items)
@@ -282,14 +223,11 @@ test('the guided order comes up on opening the carton, and can be met from the c
 test('once the guided order is handed over, the day runs as any other', () => {
     const day = new Workday({ store: fakeStore(), guided: true })
     day.start()
-    const [box] = day.receive()
+    const [box] = day.boxes
     day.openBox(box.id)
     pack(day)
     day.deliver()
     assert.equal(day.calm, false)
-    assert.equal(day.truckIn, GUIDED.truckAfter)
-    for (let i = 0; i < GUIDED.truckAfter; i++) day.tick(1)
-    assert.ok(day.incoming.length >= 2, 'the next truck')
     untilAtCounter(day, 'pedido-2')
     assert.equal(day.current.items.milk, ORDERS[1].items.milk)
 })
@@ -403,13 +341,7 @@ test('there is not enough medicine for everyone who asks for it, however long th
         const day = new Workday({ store: fakeStore(), random: seeded(seed) })
         day.orders.forEach((o) => (o.patience = 1e6))
         day.start()
-        let medicine = 0
-        for (let i = 0; i < 300; i++) {
-            medicine += day.incoming.flatMap((b) => b.items).filter((id) => id === 'medicine').length
-            day.incoming.length = 0
-            day.nextTruck = 0
-            day.tick(1)
-        }
+        const medicine = day.boxes.flatMap((b) => b.items).filter((id) => id === 'medicine').length
         assert.ok(medicine <= MEDICINE_IN_CARTONS)
     }
 })
@@ -475,7 +407,6 @@ test('the whole shift ends in a review; pressure rises and falls', () => {
     for (let guard = 0; guard < 3000 && !finished; guard++) {
         day.tick(1)
         peak = Math.max(peak, day.pressure)
-        day.receive()
         const open = day.boxes.find((b) => b.state === 'received')
         if (open && guard % 8 === 0) sortBox(day, open)
         if (day.current) {

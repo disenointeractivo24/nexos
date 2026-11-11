@@ -15,7 +15,7 @@ const EDGE = 0.72 // from here to the edge of the view, holding something turns 
  */
 export class DesktopView {
     /**
-     * @param {{ grab?: { pick(ndc: THREE.Vector2): boolean, move(ndc: THREE.Vector2): void, drop(ndc: THREE.Vector2): void } }} opts
+     * @param {{ grab?: { pick(ndc: THREE.Vector2): boolean, move(ndc: THREE.Vector2): void, drop(ndc: THREE.Vector2): void, rotate?(angle: number): void } }} opts
      */
     constructor({ camera, canvas, solids, bounds, roof, grab }) {
         this.camera = camera
@@ -78,6 +78,15 @@ export class DesktopView {
                 this.grab.drop(this.ndc)
             }
         }
+        // what is held turns with the wheel, or with R: a carton can be set down any way round
+        canvas.addEventListener('wheel', (e) => {
+            if (!this.holding) return
+            e.preventDefault()
+            this.grab.rotate?.(Math.sign(e.deltaY) * 0.25)
+        }, { passive: false })
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyR' && this.holding) this.grab.rotate?.(Math.PI / 8)
+        })
         canvas.addEventListener('pointerup', end)
         canvas.addEventListener('pointercancel', end)
         window.addEventListener('keydown', (e) => this.keys.add(e.code))
