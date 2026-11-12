@@ -68,6 +68,20 @@ function tentOf(loader, template) {
     return { tent, desk: boxOf(/escritorio/i), shelf: boxOf(/estanteria/i) }
 }
 
+/**
+ * With a real room under it, the tent is in the way: the person's own desk is the counter and
+ * their own floor is the floor. Only the shelf stays — the crates stand on its boards, and it
+ * is furniture the point is supposed to have. Returns it to where its feet meet `floorY`.
+ */
+export function bareForRealRoom(station, rootY, floorY) {
+    station.tent.traverse((o) => {
+        if (o.isMesh) o.visible = /estanteria/i.test(materialName(o))
+    })
+    station.tent.position.y += floorY - (rootY + station.shelfBox.min.y)
+    station.tent.updateMatrixWorld(true)
+    station.bare = true
+}
+
 /** What one supply measures at its real size, and the factor that gives it. */
 export function realSize(template, itemId) {
     const { x, y, z } = template.size
@@ -309,6 +323,8 @@ export function buildStation(root, loader, stand) {
     station.deskTop = top
     station.matZ = matZ
     station.deskFar = desk.min.z
+    station.deskNear = nearEdge
+    station.shelfBox = shelf
     station.deskMinX = desk.min.x
     station.deskMaxX = desk.max.x
     station.solids = [

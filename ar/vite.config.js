@@ -35,7 +35,8 @@ export default defineConfig(({ mode, command }) => ({
     // options here rather than in iwsdk.config.json: that file also turns on IWSDK's managed
     // editor, which we do not use and which fails to start on some Windows machines
     // `--mode http` is for trying it on this computer only: a headset needs the HTTPS default
-    plugins: [iwsdkDev({ https: mode !== 'http', emulator: { device: 'metaQuest3', environment: 'sunlit_living_room' } }), sharedAssets(command)],
+    // a living room has nothing like the run of desks this is used on: the open office does
+    plugins: [iwsdkDev({ https: mode !== 'http', emulator: { device: 'metaQuest3', environment: 'open_office' } }), sharedAssets(command)],
     envDir: '..', // the sheet's address lives in the web experience's .env
     server: { host: '0.0.0.0', port: 8081, open: false, fs: { allow: ['..'] } },
     build: {

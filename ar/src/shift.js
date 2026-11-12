@@ -1,4 +1,4 @@
-import { createSystem, GrabSystem, Grabbed, Hovered, OneHandGrabbable, Pressed, RayInteractable, VisibilityState, XRAnchor } from '@iwsdk/core'
+import { createSystem, DepthOccludable, GrabSystem, Grabbed, Hovered, OneHandGrabbable, Pressed, RayInteractable, VisibilityState, XRAnchor, XRMesh, XRPlane } from '@iwsdk/core'
 import gsap from 'gsap'
 import * as THREE from 'three'
 import { AssetLoader } from '../../src/three/AssetLoader.js'
@@ -14,7 +14,8 @@ import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
 import { Glow } from './world/glow.js'
 import { bigBoard, buttonPanel, familyCard, fontsReady, messageBoard, nextPanel, orderCard, receivePanel, speechBubble, taskList } from './world/panels.js'
-import { buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
+import { bareForRealRoom, buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
+import { debugRoom, measure, scan } from './world/scan.js'
 import { Temper } from './world/temper.js'
 import { buildTruck } from './world/truck.js'
 
@@ -91,6 +92,9 @@ export class ShiftSystem extends createSystem({
     pressed: { required: [Workable, Pressed] },
     held: { required: [Workable, Grabbed] },
     hovered: { required: [Workable, Hovered] },
+    // what the headset reports of the real room: furniture with a label on it, and flat faces
+    meshes: { required: [XRMesh] },
+    planes: { required: [XRPlane] },
 }) {
     init() {
         this.things = new Map() // entity → { kind, ... }
@@ -285,22 +289,31 @@ export class ShiftSystem extends createSystem({
             this.cancelPlacement = null
             stop()
             this.world.scene.remove(hint.mesh)
-            // the tent's -Z along the gaze, the person's spot under their feet
+            // the real room first: a counter the person already has beats one dropped in the air
+            const room = scan(this.queries)
+            if (room?.surface) return this.#place(new THREE.Vector3(), 0, room, head.clone())
+            // nothing traced, or no table in it: the tent's -Z along the gaze, as before
             const yaw = Math.atan2(-dir.x, -dir.z)
             const offset = WORKER.clone().applyAxisAngle(temp.set(0, 1, 0), yaw)
             this.#place(new THREE.Vector3(head.x - offset.x, 0, head.z - offset.z), yaw)
+            if (session.environmentBlendMode !== 'opaque') {
+                this.#say('warn', 'No encontré ninguna mesa en el modelo de tu espacio, así que levanto la carpa. Traza el salón en Ajustes › Espacio físico para trabajar sobre tu mesa real.')
+            }
         }
         session.addEventListener('select', confirm)
     }
 
-    #place(at, yaw) {
+    #place(at, yaw, room = null, head = null) {
         this.placed = true
+        this.room = room
         const rootObject = new THREE.Group()
         rootObject.position.copy(at)
         rootObject.rotation.y = yaw
         this.root = this.world.createTransformEntity(rootObject)
         this.rootObject = rootObject
         this.station = buildStation(rootObject, this.loader, this.stand)
+        // the counter's measurements are only known once it is built, so the real room fits it after
+        if (room?.surface) this.#onRealSurface(room, head)
         if (this.world.session) {
             try {
                 this.root.addComponent(XRAnchor)
@@ -312,6 +325,51 @@ export class ShiftSystem extends createSystem({
         for (const zone of this.station.zones) this.#stockCrate(zone)
         this.#refreshShelf()
         this.#intro()
+        // ?debug=room draws what the headset reported, labels and all: the only way to see
+        // from inside the headset why a room was read the way it was
+        if (new URLSearchParams(location.search).get('debug') === 'room') this.#showRoomDebug()
+    }
+
+    /** What the room model says, drawn where it says it, with a line about what was made of it. */
+    #showRoomDebug() {
+        const found = measure(this.queries)
+        this.roomDebug?.removeFromParent()
+        this.roomDebug = debugRoom(found, this.world.scene)
+        const labels = [...new Set(found.map((m) => m.semanticLabel))].join(', ') || 'nada'
+        const surface = this.room?.surface
+        this.#say(
+            surface ? 'done' : 'warn',
+            surface
+                ? `Salón leído: ${found.length} piezas (${labels}). Mostrador de ${surface.w.toFixed(2)} m con ${surface.parts} mesas, a ${surface.top.toFixed(2)} m.`
+                : `Salón leído: ${found.length} piezas (${labels}), pero ninguna mesa. Traza el salón en Ajustes › Espacio físico.`
+        )
+    }
+
+    /**
+     * The counter, laid onto the run of desks the person actually has: turned along it, centred
+     * on it, and with its top at the real top, so what is put down rests on the table instead of
+     * hanging in the air. A run has two sides; the person works from the one they are on.
+     */
+    #onRealSurface(room, head) {
+        const { station, rootObject: root } = this
+        const deskCx = (station.deskMinX + station.deskMaxX) / 2
+        const deskCz = (station.deskFar + station.deskNear) / 2
+        const at = (yaw) => {
+            const local = temp.set(deskCx, 0, deskCz).applyAxisAngle(up.set(0, 1, 0), yaw)
+            return new THREE.Vector3(room.surface.cx - local.x, room.surface.top - station.deskTop, room.surface.cz - local.z)
+        }
+        let best = null
+        for (const yaw of [room.surface.yaw, room.surface.yaw + Math.PI]) {
+            const spot = at(yaw)
+            const worker = WORKER.clone().applyAxisAngle(up.set(0, 1, 0), yaw).add(spot)
+            const away = head ? worker.distanceTo(head) : 0
+            if (!best || away < best.away) best = { yaw, spot, away }
+        }
+        root.position.copy(best.spot)
+        root.rotation.y = best.yaw
+        root.updateMatrixWorld(true)
+        // with a real table and a real floor, the tent is in the way: only the shelf stays
+        bareForRealRoom(station, root.position.y, room.floorY)
     }
 
     /* ---------------- the room's signs ---------------- */
@@ -702,6 +760,8 @@ export class ShiftSystem extends createSystem({
         const entity = this.world.createTransformEntity(object, { parent: parent ?? this.root })
         entity.addComponent(Workable)
         entity.addComponent(RayInteractable)
+        // a real monitor, chair or person in front of it should hide it, not be drawn over
+        if (this.room) entity.addComponent(DepthOccludable)
         if (grab) this.#makeGrabbable(entity)
         this.things.set(entity, info)
         info.object = object
