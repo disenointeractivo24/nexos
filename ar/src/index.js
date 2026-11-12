@@ -63,7 +63,7 @@ async function main() {
     if (modes.ar) note.textContent = 'Ponte el visor de pie, frente a una mesa. Usarás solo tus manos.'
     else if (modes.vr) {
         enterAr.textContent = 'Entrar con el visor (sin ver tu espacio)'
-        note.textContent = 'Este navegador no muestra tu espacio real: verás una mesa virtual.'
+        note.textContent = 'Este navegador no muestra tu espacio real: marcarás tu mesa con las manos.'
     } else if (isQuest) {
         note.textContent = `Este navegador de las gafas no ofrece el modo inmersivo: actualízalo en Ajustes › Sistema › Actualización de software. ${modes.xr ? 'WebXR sí, modos no.' : 'WebXR no está disponible.'}`
     } else {
