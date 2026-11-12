@@ -8,16 +8,16 @@ import { crateLabel } from './panels.js'
  */
 const REAL_SIZE = { rice: 0.2, water: 0.3, cans: 0.11, milk: 0.2, medicine: 0.16, soap: 0.09, blanket: 0.3, hygieneKit: 0.2 }
 
-/** The 40 × 30 × 30 cm carton from the catalog. */
-export const BOX = { w: 0.4, h: 0.28, d: 0.3 }
+/** A small donation carton, 32 × 24 × 22 cm: in the headset a bigger one towered over everything. */
+export const BOX = { w: 0.32, h: 0.22, d: 0.24 }
 /** A plastic crate on the inventory shelf: what a real collection point uses, at its real size. */
-export const CRATE = { w: 0.36, h: 0.17, d: 0.28 }
+export const CRATE = { w: 0.28, h: 0.14, d: 0.22 }
 const WALL = 0.007
 /**
  * How large supplies are, everywhere they appear: the same in any carton, crate or kit. A little
  * under their real size, so that what a carton holds stays in the carton instead of towering over it.
  */
-const SUPPLY_FIT = 0.8
+const SUPPLY_FIT = 0.72
 /** How full a carton is: its contents stand on this much packing paper, so they show. */
 const FILL = 0.55
 
@@ -232,16 +232,16 @@ export function cardboardBox(tape = '#B8642A') {
     })
     const tapeMat = new THREE.MeshStandardMaterial({ color: tape, roughness: 0.45 })
     const seal = new THREE.Group()
-    const top = new THREE.Mesh(new THREE.BoxGeometry(BOX.w + 0.002, 0.0015, 0.05), tapeMat)
+    const top = new THREE.Mesh(new THREE.BoxGeometry(BOX.w + 0.002, 0.0015, 0.04), tapeMat)
     top.position.y = BOX.h + 0.0035
     seal.add(top)
     for (const side of [-1, 1]) {
-        const end = new THREE.Mesh(new THREE.BoxGeometry(0.0015, 0.07, 0.05), tapeMat)
-        end.position.set((side * BOX.w) / 2 + side * 0.001, BOX.h - 0.035, 0)
+        const end = new THREE.Mesh(new THREE.BoxGeometry(0.0015, 0.055, 0.04), tapeMat)
+        end.position.set((side * BOX.w) / 2 + side * 0.001, BOX.h - 0.0275, 0)
         seal.add(end)
     }
     body.add(seal)
-    const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.1), print)
+    const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 0.08), print)
     mark.position.set(0, BOX.h * 0.42, BOX.d / 2 + 0.0015)
     body.add(mark)
     const g = new THREE.Group()
@@ -293,6 +293,24 @@ export function pallet() {
         const runner = new THREE.Mesh(new THREE.BoxGeometry(0.1, PALLET.h - 0.02, PALLET.d), dark)
         runner.position.set((x * (PALLET.w - 0.1)) / 2, (PALLET.h - 0.02) / 2, 0)
         g.add(runner)
+    }
+    return g
+}
+
+/** A small stand for one crate: a board on four legs, its top at `height`. Base at y = 0, centred. */
+export const STAND = { w: CRATE.w + 0.04, d: CRATE.d + 0.04 }
+export function crateStand(height) {
+    const g = new THREE.Group()
+    const steel = mat('#7E8792', 0.45, 0.55)
+    const top = new THREE.Mesh(new THREE.BoxGeometry(STAND.w, 0.018, STAND.d), mat('#C9CED4', 0.6, 0.3))
+    top.position.y = height - 0.009
+    g.add(top)
+    for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.022, height - 0.018, 0.022), steel)
+            leg.position.set(sx * (STAND.w / 2 - 0.015), (height - 0.018) / 2, sz * (STAND.d / 2 - 0.015))
+            g.add(leg)
+        }
     }
     return g
 }

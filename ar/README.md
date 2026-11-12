@@ -1,4 +1,4 @@
-# NEXOS AR: un turno en el punto de acopio
+﻿# NEXOS AR: un turno en el punto de acopio
 
 Experiencia de realidad aumentada para Meta Quest 3: la persona es responsable de un centro de acopio en Cali durante un turno. Es un proyecto aparte de la web (IWSDK necesita otra versión de Three) y reutiliza sus modelos, datos e inventario.
 
@@ -11,7 +11,7 @@ npm test --prefix ar                   # las reglas del turno, sin 3D
 
 ## Con el visor
 
-Solo manos, sin controles. Al entrar, el visor marca las mesas que reconoce del cuarto: mira la tuya y pellízcala (si no hay ninguna, se pone una mesa virtual a la altura de tus manos). La primera caja está sobre la mesa; las demás, en pilas en el piso a tu derecha y en otras superficies del cuarto. Pasa el dedo por la cinta (o pellizca rápido la caja) para abrirla: lo que trae cae adentro, revuelto. Todo se guarda en el estante de la derecha. Las personas hacen fila a tu izquierda y pasan de a una a la ventanilla, en la punta izquierda de la mesa; cada pedido trae una caja verde y una orden impresa. Arma la caja, ciérrala juntando las dos aletas, pégale la orden encima y entrégala en la ventanilla. Gira la muñeca hacia tus ojos para ver qué falta. Se toma lo que está entre el pulgar y el índice (un punto verde entre los dedos avisa que hay algo al alcance); apuntando a algo lejano y pellizcando, viene a tu mano.
+Solo manos, sin controles. Al entrar, el visor marca las mesas que reconoce del cuarto: mira la tuya y pellízcala (si no reconoce ninguna, toca con un dedo dos esquinas opuestas de tu mesa y quédate quieto un momento en cada una). La primera caja está sobre la mesa; las demás, en pilas en el piso a tu derecha y en otras superficies del cuarto. Pasa el dedo por la cinta (o pellizca rápido la caja) para abrirla: adentro está lo que trae. Todo se guarda en las cajas de colores que te rodean por la derecha, cada una en su soporte. Lo que sueltas cae y se queda quieto; si se pierde, vuelve a su sitio. Una caja vacía se tira para desecharla. Las personas hacen fila a tu izquierda y pasan de a una a la ventanilla, en la punta izquierda de la mesa; cada pedido trae una caja verde y una orden impresa. Arma la caja, ciérrala juntando las dos aletas, pégale la orden encima y entrégala en la ventanilla. Mira el dorso de tu muñeca, como un reloj, para ver qué falta (no la palma: con la palma y un pellizco el visor abre su propio menú y recentra la vista). Se toma lo que está entre el pulgar y el índice (un punto verde entre los dedos avisa que hay algo al alcance); apuntando a algo lejano y pellizcando, viene a tu mano.
 Funciones de IWSDK que usa: UIKitML (`public/ui/*.uikitml`), reconocimiento de planos y mallas, raycast al entorno, física Havok, acceso a la cámara (luz del cuarto), oclusión por profundidad y agarre con las manos.
 
 ## Sin visor

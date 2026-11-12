@@ -538,7 +538,7 @@ export function orderCard() {
 
 /** Over the heads of whoever is in line: who they are and how long they can still wait, nothing more. */
 export function familyCard() {
-    return new Panel(0.34, 0.1, (ctx, w, h, d) => {
+    return new Panel(0.26, 0.075, (ctx, w, h, d) => {
         if (!d) return
         const ink = d.urgent ? '#FFFFFF' : BRAND.navy
         fillRR(ctx, 2, 2, w - 4, h - 4, 40, d.urgent ? BRAND.redText : '#FFFFFF')
@@ -561,7 +561,7 @@ export function familyCard() {
 
 /** Over the order's carton: whose it is, small. What it needs is shown by the supplies themselves. */
 export function orderTag() {
-    return new Panel(0.3, 0.06, (ctx, w, h, d) => {
+    return new Panel(0.22, 0.045, (ctx, w, h, d) => {
         if (!d) return
         // white like the other panels, edged in red when it is urgent
         fillRR(ctx, 4, 4, w - 8, h - 8, h / 2, '#FFFFFF')
@@ -674,7 +674,7 @@ function categoryIcon(ctx, x, y, r, categoryId) {
  * supply in it, to keep count. What ran out shows as a red zero.
  */
 export function crateLabel(title, color, tint, categoryId) {
-    const p = new Panel(0.34, 0.12, (ctx, w, h, rows = []) => {
+    const p = new Panel(0.27, 0.095, (ctx, w, h, rows = []) => {
         fillRR(ctx, 2, 2, w - 4, h - 4, 30, color)
         const iconW = h * 0.92
         categoryIcon(ctx, iconW / 2 + 6, h / 2, h * 0.3, categoryId)
@@ -799,7 +799,7 @@ export function bigBoard() {
  * glance. Taken by hand and stuck on the carton once it is shut, it is that carton's label.
  */
 export function orderTicket() {
-    return new Panel(0.12, 0.16, (ctx, w, h, d) => {
+    return new Panel(0.1, 0.133, (ctx, w, h, d) => {
         if (!d) return
         fillRR(ctx, 0, 0, w, h, 18, '#FFFFFF')
         // a red band across the top, with the brand

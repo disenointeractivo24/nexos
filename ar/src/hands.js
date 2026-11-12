@@ -3,9 +3,11 @@ import * as THREE from 'three'
 /** How long a pose has to be held before it counts, and how long it may be lost before it stops counting. */
 const HOLD_IN = 0.3
 const HOLD_OUT = 0.45
-/** How much the palm must face up (1 = straight up) for the hand to count as open to the sky. */
-const PALM_UP = 0.62
-/** How squarely the inside of the wrist must face the eyes to count as looking at it. */
+/**
+ * How squarely the back of the wrist must face the eyes to count as looking at it, as at a watch.
+ * Never the palm: a palm turned to the eyes and a pinch is the headset's own gesture for its menu,
+ * and held it recentres the whole view.
+ */
 const WATCH = 0.55
 /** Fingertip to thumb tip, in metres: under this it is a pinch, and past the second it is let go. */
 const PINCH = 0.02
@@ -49,9 +51,13 @@ export class Hands {
         }
     }
 
-    /** One frame: the joints of every tracked hand, in the space the scene is drawn in. */
-    read(frame, space, dt, head = null) {
+    /**
+     * One frame: the joints of every tracked hand, in the space the scene is drawn in. `origin`,
+     * if given, is where the headset's space sits in the scene (after a recentring, see shift.js).
+     */
+    read(frame, space, dt, head = null, origin = null) {
         this.head = head
+        this.origin = origin
         this.tracked = false
         for (const s of Object.values(this.sides)) {
             s.seen = false
@@ -72,6 +78,7 @@ export class Hands {
                 }
                 const p = pose.transform.position
                 side.joints[name].set(p.x, p.y, p.z)
+                if (origin) side.joints[name].applyMatrix4(origin)
             }
             if (!ok) continue
             side.seen = true
@@ -98,24 +105,25 @@ export class Hands {
                 const { position: o, orientation: q } = rayPose.transform
                 side.ray.origin.set(o.x, o.y, o.z)
                 side.ray.direction.set(0, 0, -1).applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w))
+                if (origin) side.ray.applyMatrix4(origin)
             }
-            // along the forearm, a hand's width back from the wrist and a little off the skin
+            // along the forearm, a hand's width back from the wrist, a little off the back of it, as a watch
             const back = new THREE.Vector3().subVectors(j.wrist, j['middle-finger-metacarpal']).normalize()
-            side.over.copy(j.wrist).addScaledVector(back, 0.1).addScaledVector(side.palm, 0.05)
+            side.over.copy(j.wrist).addScaledVector(back, 0.09).addScaledVector(side.palm, -0.05)
         }
         this.#settle(dt)
     }
 
     #settle(dt) {
         for (const s of Object.values(this.sides)) {
-            // the palm to the sky, or the inside of the wrist turned to the eyes, as one looks at a watch
+            // the back of the wrist turned to the eyes, as one looks at a watch
             let watching = false
             if (s.seen && this.head) {
                 const toHead = new THREE.Vector3().subVectors(this.head, s.joints.wrist)
                 const far = toHead.length()
-                watching = far < 0.7 && s.joints.wrist.y < this.head.y - 0.05 && toHead.normalize().dot(s.palm) > WATCH
+                watching = far < 0.7 && s.joints.wrist.y < this.head.y - 0.05 && toHead.normalize().dot(s.palm) < -WATCH
             }
-            const up = s.seen && !s.pinching && (s.palm.y > PALM_UP || watching)
+            const up = s.seen && !s.pinching && watching
             if (up) {
                 s.palmUpFor += dt
                 s.palmDownFor = 0
