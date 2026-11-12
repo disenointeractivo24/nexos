@@ -62,6 +62,84 @@ export function isWorktop(s, floorY = 0) {
     return h > MIN_TOP && h < MAX_TOP && s.hu * 2 > MIN_SIDE && s.hv * 2 > MIN_SIDE
 }
 
+/* ---------------- surfaces that are really one surface ---------------- */
+
+/** Tops this close together (m) are the same worktop: desks of a set are never exactly level. */
+const SAME_TOP = 0.04
+/** Turned within this of each other (rad, about 7°) counts as the same way round. */
+const SAME_TURN = 0.12
+/** And this much of a gap (m) between them still counts as pushed together. */
+const TOUCHING = 0.15
+
+/** The yaw of a surface's own `u` axis, the way {@link surfaceMarker} turns it. */
+const yawOf = (s) => Math.atan2(-s.u.z, s.u.x)
+
+/**
+ * How far apart two turns are, counting a quarter turn as the same: a rectangle laid the other
+ * way round is the same rectangle, and the headset is free to report either side as its `u`.
+ */
+function turnGap(a, b) {
+    const quarter = Math.PI / 2
+    const d = (((a - b) % quarter) + quarter) % quarter
+    return Math.min(d, quarter - d)
+}
+
+/** What a surface reaches, measured along another one's axes, as a box around that one's centre. */
+function spanOn(s, host) {
+    const d = tmp.copy(s.center).sub(host.center)
+    const du = d.dot(host.u)
+    const dv = d.dot(host.v)
+    // its own sides projected onto the host's: at a quarter turn they simply swap over
+    const hu = Math.abs(s.hu * s.u.dot(host.u)) + Math.abs(s.hv * s.v.dot(host.u))
+    const hv = Math.abs(s.hu * s.u.dot(host.v)) + Math.abs(s.hv * s.v.dot(host.v))
+    return { minU: du - hu, maxU: du + hu, minV: dv - hv, maxV: dv + hv }
+}
+
+const overlapping = (a, b, gap = TOUCHING) => a.minU - gap <= b.maxU && b.minU - gap <= a.maxU && a.minV - gap <= b.maxV && b.minV - gap <= a.maxV
+
+/** The host surface, grown to also cover `span`, which is measured on its own axes. */
+function grow(host, span) {
+    const own = spanOn(host, host)
+    const minU = Math.min(own.minU, span.minU)
+    const maxU = Math.max(own.maxU, span.maxU)
+    const minV = Math.min(own.minV, span.minV)
+    const maxV = Math.max(own.maxV, span.maxV)
+    const center = host.center
+        .clone()
+        .addScaledVector(host.u, (minU + maxU) / 2)
+        .addScaledVector(host.v, (minV + maxV) / 2)
+    return { ...host, center, hu: (maxU - minU) / 2, hv: (maxV - minV) / 2 }
+}
+
+/**
+ * The worktops that are really one worktop, joined. A room is reported piece by piece: a row of
+ * desks pushed together comes back as a table each, and the same desk can arrive twice, once as
+ * a plane and once as a mesh. Either way the person sees one counter and should get one.
+ *
+ * Only surfaces at the same height, turned the same way and touching are joined, so a desk
+ * across the aisle, a shelf above, or a table at the other end of the room each stay their own.
+ *
+ * @param {Surface[]} surfaces @returns {Surface[]} the largest first
+ */
+export function mergeSurfaces(surfaces) {
+    let runs = surfaces.map((s) => ({ ...s, parts: 1 }))
+    // joining makes a run longer, and a longer run can reach one it did not touch before
+    for (let pass = 0; pass < 6; pass++) {
+        const joined = []
+        for (const s of runs) {
+            const host = joined.find((h) => Math.abs(h.top - s.top) <= SAME_TOP && turnGap(yawOf(h), yawOf(s)) <= SAME_TURN && overlapping(spanOn(h, h), spanOn(s, h)))
+            if (!host) {
+                joined.push({ ...s })
+                continue
+            }
+            Object.assign(host, grow(host, spanOn(s, host)), { top: Math.max(host.top, s.top), parts: host.parts + s.parts })
+        }
+        if (joined.length === runs.length) break
+        runs = joined
+    }
+    return runs.sort((a, b) => b.hu * b.hv - a.hu * a.hv)
+}
+
 /**
  * What a person of this eye height works at comfortably standing: a little under the elbow.
  * Elbows are at some 0.63 of a person's height, the eyes at 0.94 of it.

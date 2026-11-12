@@ -35,7 +35,7 @@ import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
 import { Glow } from './world/glow.js'
 import { familyCard, fontsReady, orderTag, orderTicket, speechBubble } from './world/panels.js'
-import { comfortableTop, isWorktop, rayHits, surfaceAt, surfaceFromMesh, surfaceFromPlane, surfaceMarker, WorkFrame } from './world/room.js'
+import { comfortableTop, isWorktop, mergeSurfaces, rayHits, surfaceAt, surfaceFromMesh, surfaceFromPlane, surfaceMarker, WorkFrame } from './world/room.js'
 import { BODY_HIGH, BODY_LOW, FloorPlan } from './world/floorplan.js'
 import { SpatialPanel } from './world/spatialUI.js'
 import { BOX, cardboardBox, cartonLayout, categoryCrate, CRATE, crateLayout, crateStand, preloadSupplies, STAND, supplyObject, virtualTable } from './world/station.js'
@@ -349,6 +349,9 @@ export class ShiftSystem extends createSystem({
         this.hint.object.position.copy(temp).addScaledVector(temp2, 0.75).add(temp3.set(0, -0.18, 0))
         this.hint.object.lookAt(temp)
         const found = this.#surfaces()
+        // a room arrives piece by piece: desks pushed together, and the same desk as plane and
+        // as mesh. What the person sees as one counter has to be offered to them as one.
+        const surfaces = mergeSurfaces(found.filter((s) => isWorktop(s)))
         // what the headset reports, kept readable for checking a room from the console (nexosAR.shift.scan), once a second
         if (this.elapsed - (this.scanAt ?? -9) > 1) this.scanAt = this.elapsed
         if (this.scanAt === this.elapsed) this.scan = {
@@ -358,8 +361,8 @@ export class ShiftSystem extends createSystem({
             }),
             meshes: [...this.queries.meshes.entities].map((e) => `${e.getValue(XRMesh, 'semanticLabel') || '(global)'} bounded=${e.getValue(XRMesh, 'isBounded3D')} max=${[...e.getVectorView(XRMesh, 'max')].map((v) => v.toFixed(2))}`),
             surfaces: found.map((s) => `${s.label} top=${s.top.toFixed(2)} ${(s.hu * 2).toFixed(2)}x${(s.hv * 2).toFixed(2)}`),
+            counters: surfaces.map((s) => `${(s.hu * 2).toFixed(2)}x${(s.hv * 2).toFixed(2)} de ${s.parts} piezas, top=${s.top.toFixed(2)}`),
         }
-        const surfaces = found.filter((s) => isWorktop(s))
         this.candidates = surfaces
         const seen = new Set()
         for (const s of surfaces) {
