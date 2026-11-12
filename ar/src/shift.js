@@ -393,6 +393,9 @@ export class ShiftSystem extends createSystem({
 
     /** On a computer: the same, with a table of our own and a person of average height. */
     async startOnDesktop() {
+        // a second click while the first is still loading must not set up a second shift
+        if (this.startingDesktop || this.placed) return
+        this.startingDesktop = true
         await this.ready
         this.sound.unlock()
         this.#backdrop()
