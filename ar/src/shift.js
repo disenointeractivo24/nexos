@@ -206,6 +206,7 @@ export class ShiftSystem extends createSystem({
         this.#tame(delta)
         this.#tearTape(delta)
         this.#kitFlaps()
+        this.#handGrab(delta)
         this.#followGuide()
         this.#placeWatch(delta)
         this.#placeGhost()
@@ -992,11 +993,197 @@ export class ShiftSystem extends createSystem({
         return entity
     }
 
-    #makeGrabbable(entity) {
-        if (!this.world.session || entity.hasComponent(OneHandGrabbable)) return
-        entity.addComponent(OneHandGrabbable, { rotate: true, translate: true })
-        // not only with a hand up close: a pinch along the ray takes it too
-        entity.object3D.pointerEventsType = 'all'
+    /**
+     * Taking things by hand is this shift's own (see #handGrab): what is between the fingertips,
+     * not whatever is near the palm, as the SDK's grab would. Only hands: nothing to set up here.
+     */
+    #makeGrabbable() {}
+
+    /* ---------------- taking things with the fingers ---------------- */
+
+    /** What can be taken by hand now. */
+    #canTake(t) {
+        if (!t.object.visible || t.crushed) return false
+        if (t.kind === 'kit') return !!this.kit?.closed
+        return ['box', 'open', 'item', 'stock', 'label', 'flat'].includes(t.kind)
+    }
+
+    /** Half of what something measures, a little more for the smallest, so they are easy to hit. */
+    #reachBox(t) {
+        const size = t.object.userData.size ?? BOX
+        const half = (v) => Math.max(v / 2, 0.035) + 0.012
+        return new THREE.Vector3(half(size.w), half(size.h), half(size.d))
+    }
+
+    /** How far a point is from something's surface (0 inside it). */
+    #distanceTo(t, point) {
+        const local = t.object.worldToLocal(temp.copy(point))
+        const half = this.#reachBox(t)
+        return Math.hypot(Math.max(Math.abs(local.x) - half.x, 0), Math.max(Math.abs(local.y) - half.y, 0), Math.max(Math.abs(local.z) - half.z, 0))
+    }
+
+    /** The nearest thing between the fingertips, a supply before the carton it lies in. */
+    #nearestToFingers(point, taken) {
+        let best = null
+        let bestScore = 0.035
+        for (const t of this.things.values()) {
+            if (taken.has(t) || !this.#canTake(t)) continue
+            const d = this.#distanceTo(t, point)
+            const score = d + (t.kind === 'box' || t.kind === 'open' ? 0.015 : 0)
+            if (score < bestScore) {
+                bestScore = score
+                best = t
+            }
+        }
+        return best
+    }
+
+    /** The first thing the hand's ray meets, unless a panel is in front of it. */
+    #alongRay(ray, taken) {
+        const inv = new THREE.Matrix4()
+        const local = new THREE.Ray()
+        const hit = new THREE.Vector3()
+        let best = null
+        let bestDist = 5
+        for (const t of this.things.values()) {
+            if (taken.has(t) || !this.#canTake(t)) continue
+            inv.copy(t.object.matrixWorld).invert()
+            local.copy(ray).applyMatrix4(inv)
+            const half = this.#reachBox(t)
+            if (!local.intersectBox(new THREE.Box3(half.clone().negate(), half), hit)) continue
+            const d = t.object.localToWorld(hit).distanceTo(ray.origin)
+            if (d < bestDist) {
+                bestDist = d
+                best = t
+            }
+        }
+        for (const panel of [this.board, this.next, this.watch]) {
+            if (!panel?.visible) continue
+            const at = ray.intersectBox(new THREE.Box3().setFromObject(panel.object), hit)
+            if (at && at.distanceTo(ray.origin) < bestDist) return null
+        }
+        return best
+    }
+
+    #setWorldPose(object, matrix) {
+        const scale = object.scale.clone()
+        if (object.parent) object.parent.updateMatrixWorld()
+        const local = object.parent ? new THREE.Matrix4().copy(object.parent.matrixWorld).invert().multiply(matrix) : matrix
+        local.decompose(object.position, object.quaternion, temp3)
+        object.scale.copy(scale)
+    }
+
+    /**
+     * Each hand takes what is between its thumb and index fingertips when they close, and it keeps
+     * its pose in the hand exactly; pointing at something further away and pinching brings it to
+     * the hand first. Opened, the hand lets go of it right where it is.
+     */
+    #handGrab(dt) {
+        if (!this.world.session) return
+        this.handHeld ??= { left: null, right: null }
+        this.fingerMarks ??= this.#fingerMarks()
+        const taken = new Set(Object.values(this.handHeld).filter(Boolean).map((h) => h.t))
+        for (const [name, side] of Object.entries(this.hands.sides)) {
+            const held = this.handHeld[name]
+            const mark = this.fingerMarks[name]
+            const flapBusy = !!this.flapGrips?.[name]?.hinge
+            const started = side.seen && side.pinching && !side.wasPinching
+            side.wasPinching = side.seen && side.pinching
+            if (held) {
+                if (!side.seen || !side.pinching || !this.things.has(held.t.entity)) this.#letGo(name)
+                else this.#hold(held, side, dt)
+            } else if (started && !flapBusy && this.running) {
+                const near = this.#nearestToFingers(side.pinchPoint, taken)
+                const far = near ? null : side.hasRay ? this.#alongRay(side.ray, taken) : null
+                const t = near ?? far
+                if (t) this.#takeWith(name, side, t, !near)
+            }
+            // a dot between the fingertips: green when something is within reach of them
+            mark.visible = side.seen && !this.handHeld[name] && this.running
+            if (mark.visible) {
+                mark.position.copy(side.pinchPoint)
+                const reach = this.#nearestToFingers(side.pinchPoint, taken)
+                mark.material.color.set(reach ? '#2ECC71' : '#FFFFFF')
+                mark.material.opacity = reach ? 0.95 : 0.45
+                mark.scale.setScalar(reach ? 1.4 : 1)
+            }
+        }
+    }
+
+    #fingerMarks() {
+        const make = () => {
+            const dot = new THREE.Mesh(new THREE.SphereGeometry(0.006, 12, 8), new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.45, depthTest: false }))
+            dot.renderOrder = 30
+            dot.raycast = () => {}
+            dot.pointerEvents = 'none'
+            this.world.scene.add(dot)
+            return dot
+        }
+        return { left: make(), right: make() }
+    }
+
+    /** It is in this hand now: at once if it was between the fingers, after a short flight if it was pointed at. */
+    #takeWith(name, side, t, pulled) {
+        const handInv = new THREE.Matrix4().copy(side.frame).invert()
+        t.object.updateMatrixWorld(true)
+        const offset = handInv.multiply(t.object.matrixWorld.clone())
+        const held = { t, offset, track: [], pull: pulled ? 0 : 1 }
+        if (pulled) {
+            // where it will sit in the hand: just past the fingertips, turned as it was
+            const handQ = new THREE.Quaternion().setFromRotationMatrix(side.frame)
+            const objQ = t.object.getWorldQuaternion(new THREE.Quaternion())
+            const rel = handQ.clone().invert().multiply(objQ)
+            const reach = this.#reachBox(t)
+            held.target = new THREE.Matrix4().compose(new THREE.Vector3(0, 0, Math.max(reach.x, reach.z) * 0.6), rel, new THREE.Vector3(1, 1, 1))
+            held.from = t.object.matrixWorld.clone()
+        }
+        this.handHeld[name] = held
+        this.haptics.play('grab')
+        // the physics follows it from now on, as it would a hand of the SDK's
+        t.entity.addComponent(Grabbed)
+        this.sound.play('tap', this.#worldOf(t.object))
+    }
+
+    #hold(held, side, dt) {
+        const want = new THREE.Matrix4()
+        if (held.pull < 1) {
+            held.pull = Math.min(1, held.pull + dt / 0.22)
+            const to = new THREE.Matrix4().multiplyMatrices(side.frame, held.target)
+            const p0 = new THREE.Vector3()
+            const q0 = new THREE.Quaternion()
+            const p1 = new THREE.Vector3()
+            const q1 = new THREE.Quaternion()
+            const s = new THREE.Vector3()
+            held.from.decompose(p0, q0, s)
+            to.decompose(p1, q1, s)
+            const k = 1 - (1 - held.pull) ** 3
+            want.compose(p0.lerp(p1, k), q0.slerp(q1, k), new THREE.Vector3(1, 1, 1))
+            if (held.pull >= 1) held.offset = held.target
+        } else want.multiplyMatrices(side.frame, held.offset)
+        this.#setWorldPose(held.t.object, want)
+        held.t.object.updateMatrixWorld(true)
+        // where it has been lately, for the speed it leaves the hand with
+        held.track.push({ p: this.#worldOf(held.t.object), at: this.elapsed })
+        if (held.track.length > 6) held.track.shift()
+    }
+
+    /** Let go: its body starts exactly where it was let go, moving as the hand was (gently). */
+    #letGo(name) {
+        const held = this.handHeld[name]
+        this.handHeld[name] = null
+        const { t } = held
+        const entity = t.entity
+        if (!this.things.has(entity)) return
+        const object = t.object
+        const physics = this.world.getSystem(PhysicsSystem)
+        const hasBody = entity.hasComponent(PhysicsBody)
+        if (hasBody) physics?.setBodyTransform(entity, { position: object.getWorldPosition(new THREE.Vector3()), quaternion: object.getWorldQuaternion(new THREE.Quaternion()) })
+        const first = held.track[0]
+        const last = held.track[held.track.length - 1]
+        const v = first && last && last.at > first.at ? last.p.clone().sub(first.p).divideScalar(last.at - first.at) : new THREE.Vector3()
+        if (v.length() > MAX_THROW) v.setLength(MAX_THROW)
+        entity.removeComponent(Grabbed)
+        if (this.things.has(entity) && entity.hasComponent(PhysicsBody) && !entity.hasComponent(PhysicsManipulation) && v.lengthSq() > 1e-4) entity.addComponent(PhysicsManipulation, { linearVelocity: [v.x, v.y, v.z], angularVelocity: [0, 0, 0] })
     }
 
     #worldOf(object) {

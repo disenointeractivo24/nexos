@@ -7,8 +7,9 @@ const HOLD_OUT = 0.45
 const PALM_UP = 0.62
 /** How squarely the inside of the wrist must face the eyes to count as looking at it. */
 const WATCH = 0.55
-/** Fingertip to thumb tip, in metres: under this it is a pinch. */
-const PINCH = 0.022
+/** Fingertip to thumb tip, in metres: under this it is a pinch, and past the second it is let go. */
+const PINCH = 0.02
+const PINCH_OPEN = 0.035
 
 const JOINTS = ['wrist', 'thumb-tip', 'index-finger-tip', 'index-finger-metacarpal', 'middle-finger-metacarpal', 'pinky-finger-metacarpal']
 
@@ -38,6 +39,13 @@ export class Hands {
             pinching: false,
             /** Over the forearm, where the list shows. */
             over: new THREE.Vector3(),
+            /** Between the thumb and the index fingertips: where a pinch takes hold. */
+            pinchPoint: new THREE.Vector3(),
+            /** The hand as a rigid frame at the pinch point: what is held keeps its pose in it. */
+            frame: new THREE.Matrix4(),
+            /** Where the hand points, as the headset reports it. */
+            ray: new THREE.Ray(),
+            hasRay: false,
         }
     }
 
@@ -45,7 +53,10 @@ export class Hands {
     read(frame, space, dt, head = null) {
         this.head = head
         this.tracked = false
-        for (const s of Object.values(this.sides)) s.seen = false
+        for (const s of Object.values(this.sides)) {
+            s.seen = false
+            s.hasRay = false
+        }
         if (!frame || !space) return this.#settle(dt)
         for (const source of frame.session.inputSources) {
             const hand = source.hand
@@ -72,7 +83,22 @@ export class Hands {
             side.palm.crossVectors(along, across).normalize()
             // for the left hand the same cross product points out of the back of the hand
             if (source.handedness === 'left') side.palm.negate()
-            side.pinching = j['thumb-tip'].distanceTo(j['index-finger-tip']) < PINCH
+            // a pinch closes under 2 cm and only opens past 3.5: no flicker at the edge
+            const gap = j['thumb-tip'].distanceTo(j['index-finger-tip'])
+            side.pinching = side.pinching ? gap < PINCH_OPEN : gap < PINCH
+            side.pinchPoint.addVectors(j['thumb-tip'], j['index-finger-tip']).multiplyScalar(0.5)
+            // a right-handed frame from the knuckles and the length of the hand, at the pinch point
+            const z = along.clone().normalize()
+            const x = across.clone().addScaledVector(z, -across.dot(z)).normalize()
+            const y = new THREE.Vector3().crossVectors(z, x)
+            side.frame.makeBasis(x, y, z).setPosition(side.pinchPoint)
+            const rayPose = source.targetRaySpace && frame.getPose?.(source.targetRaySpace, space)
+            side.hasRay = !!rayPose
+            if (rayPose) {
+                const { position: o, orientation: q } = rayPose.transform
+                side.ray.origin.set(o.x, o.y, o.z)
+                side.ray.direction.set(0, 0, -1).applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w))
+            }
             // along the forearm, a hand's width back from the wrist and a little off the skin
             const back = new THREE.Vector3().subVectors(j.wrist, j['middle-finger-metacarpal']).normalize()
             side.over.copy(j.wrist).addScaledVector(back, 0.1).addScaledVector(side.palm, 0.05)
