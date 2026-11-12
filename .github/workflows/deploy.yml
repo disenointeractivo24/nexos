@@ -31,6 +31,18 @@ jobs:
       - run: npm run build --prefix ar
       - run: cp -r ar/dist dist/ar
 
+      # The next version of the AR experience, from the ar1 branch, published beside it at /ar1/.
+      # Pages only deploys from main: after pushing to ar1, run this workflow by hand on main.
+      - uses: actions/checkout@v4
+        with:
+          ref: ar1
+          path: ar1src
+      - run: npm install --prefix ar1src
+      - run: npm install --prefix ar1src/ar
+      - run: npm test --prefix ar1src/ar
+      - run: npm run build --prefix ar1src/ar
+      - run: cp -r ar1src/ar/dist dist/ar1
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
