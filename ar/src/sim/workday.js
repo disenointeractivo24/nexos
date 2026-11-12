@@ -11,11 +11,11 @@ import { CATEGORIES, SUPPLIES } from '../../../src/data/catalog.js'
 /** Where donations come from. */
 const NEIGHBOURHOODS = ['San Fernando', 'El Ingenio', 'La Flora', 'Meléndez', 'Aguablanca', 'Ciudad Jardín', 'San Antonio', 'Siloé', 'Granada', 'Pance'].map((n) => `Barrio ${n}`)
 
-/** How often each supply turns up in a carton: people give much more food than medicine. */
-const LIKELIHOOD = { rice: 5, water: 5, cans: 4, milk: 3, soap: 3, hygieneKit: 1.5, blanket: 1.5, medicine: 1 }
+/** How often each supply turns up in a carton: about as often each, medicine a little less. */
+const LIKELIHOOD = { rice: 2, water: 2, cans: 2, milk: 2, soap: 2, hygieneKit: 2, blanket: 2, medicine: 1.6 }
 
 /** Medicine in cartons over a whole shift, however long: never enough for everyone who asks. */
-export const MEDICINE_IN_CARTONS = 1
+export const MEDICINE_IN_CARTONS = 2
 const CARTON_ITEMS = { min: 2, max: 5 }
 
 /** The demonstration point opens each shift with this little: not everyone will get everything. */
@@ -30,7 +30,7 @@ export const ORDERS = [
     { id: 'urgente', family: 'Clínica móvil', people: 12, patience: 90, urgent: true, items: { medicine: 2, water: 2 }, visitors: ['npc-joven-1'] },
     { id: 'pedido-4', family: 'Familia Caicedo', people: 6, patience: 150, items: { rice: 4, cans: 1 }, visitors: ['npc-mayor', 'npc-nino-1'] },
     { id: 'pedido-6', family: 'Familia Hurtado', people: 3, patience: 150, items: { milk: 1, blanket: 1 }, visitors: ['npc-joven-1', 'npc-nino-2'] },
-    { id: 'pedido-7', family: 'Familia Riascos', people: 4, patience: 140, items: { water: 2, hygieneKit: 1 }, visitors: ['npc-mayor'] },
+    { id: 'pedido-7', family: 'Familia Riascos', people: 4, patience: 140, items: { medicine: 1, hygieneKit: 1 }, visitors: ['npc-mayor'] },
 ]
 
 /**

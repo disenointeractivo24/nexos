@@ -1,20 +1,32 @@
 <meta preferred-color-scheme="light" />
 <style>
-  .stat { flex-direction: column; flex-grow: 1; padding: 14; border-radius: 18; background-color: #1B3556; gap: 2; }
-  .value { font-size: 40; font-weight: bold; color: #FFFFFF; }
-  .slabel { font-size: 17; color: #C9D3E0; }
-  .line { font-size: 22; color: #FFFFFF; }
+  .stat { flex-direction: column; flex-grow: 1; flex-basis: 0; padding: 16; border-radius: 22; gap: 2; }
+  .value { font-size: 44; font-weight: bold; }
+  .slabel { font-size: 17; color: #5B6573; }
+  .line { flex-direction: row; align-items: center; gap: 12; }
+  .dot { width: 12; height: 12; border-radius: 6; background-color: #D92632; }
+  #action:hover { background-color: #B81E29; }
+  .ltext { font-size: 22; color: #011E41; flex-shrink: 1; }
 </style>
-<div id="root" width="560" flex-direction="column" gap="14" padding="28" border-radius="32" background-color="#011E41">
-  <p id="kicker" font-size="18" font-weight="bold" color="#F5333F">NEXOS · UN TURNO EN EL PUNTO DE ACOPIO</p>
-  <p id="title" font-size="44" font-weight="bold" color="#FFFFFF">Hoy este punto es tuyo</p>
-  <div id="stats" flex-direction="row" gap="10" display="none">
-    <div class="stat"><p id="v0" class="value">0</p><p id="l0" class="slabel">-</p></div>
-    <div class="stat"><p id="v1" class="value">0</p><p id="l1" class="slabel">-</p></div>
-    <div class="stat"><p id="v2" class="value">0</p><p id="l2" class="slabel">-</p></div>
+<div id="root" width="580" flex-direction="column" gap="16" padding="30" border-radius="40" background-color="#FFFFFF" border-width="3" border-color="#E3E8EF">
+  <div flex-direction="row" align-items="center" justify-content="space-between">
+    <div flex-direction="row">
+      <p font-size="30" font-weight="bold" color="#011E41">NE</p><p font-size="30" font-weight="bold" color="#D92632">X</p><p font-size="30" font-weight="bold" color="#011E41">OS</p>
+    </div>
+    <p id="kicker" font-size="15" font-weight="bold" color="#D92632" letter-spacing="1">UN TURNO EN EL PUNTO DE ACOPIO</p>
   </div>
-  <p id="line0" class="line">-</p>
-  <p id="line1" class="line">-</p>
-  <p id="line2" class="line">-</p>
-  <Button id="action" variant="primary" size="lg" height="68" font-size="28" margin-top="6">Empezar</Button>
+  <div height="6" width="72" border-radius="3" background-color="#D92632" />
+  <p id="title" font-size="46" font-weight="bold" color="#011E41">Hoy este punto es tuyo</p>
+  <div id="stats" flex-direction="row" gap="10" display="none">
+    <div class="stat" background-color="#E4F1E9"><p id="v0" class="value" color="#1E5B36">0</p><p id="l0" class="slabel">-</p></div>
+    <div class="stat" background-color="#FCEFD6"><p id="v1" class="value" color="#7A4B00">0</p><p id="l1" class="slabel">-</p></div>
+    <div class="stat" background-color="#EAF0F7"><p id="v2" class="value" color="#011E41">0</p><p id="l2" class="slabel">-</p></div>
+  </div>
+  <div id="line0" class="line"><div class="dot" /><p id="text0" class="ltext">-</p></div>
+  <div id="line1" class="line"><div class="dot" /><p id="text1" class="ltext">-</p></div>
+  <div id="line2" class="line"><div class="dot" /><p id="text2" class="ltext">-</p></div>
+  <button id="action" margin-top="8" height="76" border-radius="38" background-color="#D92632" align-items="center" justify-content="center" flex-direction="row" gap="10">
+    <p id="actionText" font-size="28" font-weight="bold" color="#FFFFFF">Empezar</p>
+    <ArrowRight width="28" height="28" color="#FFFFFF" />
+  </button>
 </div>

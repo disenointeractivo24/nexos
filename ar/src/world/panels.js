@@ -563,8 +563,13 @@ export function familyCard() {
 export function orderTag() {
     return new Panel(0.3, 0.06, (ctx, w, h, d) => {
         if (!d) return
-        fillRR(ctx, 2, 2, w - 4, h - 4, h / 2, d.urgent ? BRAND.redText : BRAND.navy)
-        ctx.fillStyle = '#FFFFFF'
+        // white like the other panels, edged in red when it is urgent
+        fillRR(ctx, 4, 4, w - 8, h - 8, h / 2, '#FFFFFF')
+        ctx.lineWidth = 8
+        ctx.strokeStyle = d.urgent ? BRAND.redText : '#E3E8EF'
+        rr(ctx, 4, 4, w - 8, h - 8, h / 2)
+        ctx.stroke()
+        ctx.fillStyle = d.urgent ? BRAND.redText : BRAND.navy
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         let size = 58
@@ -787,4 +792,58 @@ export function bigBoard() {
         },
         { measure: (ctx, w, d) => (d ? layout(ctx, w, d, false) : 400) }
     )
+}
+
+/**
+ * The printed order that comes with each family: whose it is and what goes in their carton, at a
+ * glance. Taken by hand and stuck on the carton once it is shut, it is that carton's label.
+ */
+export function orderTicket() {
+    return new Panel(0.12, 0.16, (ctx, w, h, d) => {
+        if (!d) return
+        fillRR(ctx, 0, 0, w, h, 18, '#FFFFFF')
+        // a red band across the top, with the brand
+        ctx.save()
+        rr(ctx, 0, 0, w, 64, [18, 18, 0, 0])
+        ctx.fillStyle = d.urgent ? BRAND.redText : BRAND.navy
+        ctx.fill()
+        ctx.restore()
+        ctx.fillStyle = '#FFFFFF'
+        ctx.font = `800 30px ${FONT}`
+        ctx.textBaseline = 'middle'
+        ctx.fillText(d.urgent ? 'URGENTE' : 'PEDIDO', 18, 34)
+        ctx.textAlign = 'right'
+        ctx.fillText('NEXOS', w - 18, 34)
+        ctx.textAlign = 'start'
+        ctx.fillStyle = BRAND.navy
+        let size = 34
+        ctx.font = `800 ${size}px ${FONT}`
+        while (ctx.measureText(d.family).width > w - 36) ctx.font = `800 ${(size -= 2)}px ${FONT}`
+        ctx.fillText(d.family, 18, 100)
+        ctx.strokeStyle = BRAND.line
+        ctx.lineWidth = 3
+        ctx.setLineDash([8, 8])
+        ctx.beginPath()
+        ctx.moveTo(18, 128)
+        ctx.lineTo(w - 18, 128)
+        ctx.stroke()
+        ctx.setLineDash([])
+        d.items.forEach(({ label, qty }, i) => {
+            const y = 168 + i * 46
+            fillRR(ctx, 18, y - 18, 44, 36, 10, BRAND.redSoft)
+            ctx.fillStyle = BRAND.redText
+            ctx.font = `800 26px ${FONT}`
+            ctx.textAlign = 'center'
+            ctx.fillText(String(qty), 40, y + 1)
+            ctx.textAlign = 'start'
+            ctx.fillStyle = BRAND.navy
+            ctx.font = `700 26px ${FONT}`
+            ctx.fillText(label, 74, y + 1)
+        })
+        // a few bars, as on a printed label
+        for (let x = 18; x < w - 18; x += 7 + ((x * 7) % 5)) {
+            ctx.fillStyle = BRAND.navy
+            ctx.fillRect(x, h - 52, (x % 3) + 2, 34)
+        }
+    })
 }

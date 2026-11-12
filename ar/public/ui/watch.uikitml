@@ -1,21 +1,43 @@
 <meta preferred-color-scheme="light" />
 <style>
-  .row { flex-direction: row; align-items: center; gap: 12; padding-top: 10; padding-bottom: 10; padding-left: 12; padding-right: 12; border-radius: 18; background-color: #F2F4F7; }
-  .dot { width: 14; height: 14; border-radius: 7; background-color: #011E41; }
+  .row { flex-direction: row; align-items: center; gap: 14; padding-top: 10; padding-bottom: 10; padding-left: 10; padding-right: 14; border-radius: 22; background-color: #F4F6F9; }
+  .chip { width: 46; height: 46; border-radius: 23; background-color: #011E41; align-items: center; justify-content: center; }
+  .ricon { width: 24; height: 24; color: #FFFFFF; }
   .label { font-size: 22; font-weight: bold; color: #011E41; }
   .detail { font-size: 18; color: #5B6573; }
   .texts { flex-direction: column; gap: 2; flex-shrink: 1; }
 </style>
-<div id="root" width="420" flex-direction="column" gap="10" padding="18" border-radius="28" background-color="#FFFFFF">
+<div id="root" width="440" flex-direction="column" gap="10" padding="20" border-radius="34" background-color="#FFFFFF" border-width="3" border-color="#E3E8EF">
   <div flex-direction="row" align-items="center" justify-content="space-between">
     <div flex-direction="row" align-items="center" gap="10">
-      <ListChecks width="28" height="28" color="#D92632" />
+      <div width="40" height="40" border-radius="20" background-color="#D92632" align-items="center" justify-content="center"><ListChecks width="22" height="22" color="#FFFFFF" /></div>
       <p font-size="28" font-weight="bold" color="#011E41">Por hacer</p>
     </div>
-    <p id="progress" font-size="20" font-weight="bold" color="#5B6573">0 de 8</p>
+    <p id="progress" font-size="20" font-weight="bold" color="#D92632">0 de 8</p>
   </div>
-  <div id="row0" class="row"><div id="dot0" class="dot" /><div class="texts"><p id="label0" class="label">-</p><p id="detail0" class="detail">-</p></div></div>
-  <div id="row1" class="row"><div id="dot1" class="dot" /><div class="texts"><p id="label1" class="label">-</p><p id="detail1" class="detail">-</p></div></div>
-  <div id="row2" class="row"><div id="dot2" class="dot" /><div class="texts"><p id="label2" class="label">-</p><p id="detail2" class="detail">-</p></div></div>
-  <div id="row3" class="row"><div id="dot3" class="dot" /><div class="texts"><p id="label3" class="label">-</p><p id="detail3" class="detail">-</p></div></div>
+  <div height="10" border-radius="5" background-color="#E9EDF2"><div id="bar" width="0%" height="10" border-radius="5" background-color="#1F8A4C" /></div>
+  <div id="row0" class="row">
+    <div id="chip0" class="chip">
+      <Siren id="r0-urgent" class="ricon" display="none" /><Package id="r0-order" class="ricon" display="none" /><Users id="r0-line" class="ricon" display="none" /><ListChecks id="r0-sort" class="ricon" display="none" /><PackageOpen id="r0-boxes" class="ricon" display="none" /><TriangleAlert id="r0-out" class="ricon" display="none" />
+    </div>
+    <div class="texts"><p id="label0" class="label">-</p><p id="detail0" class="detail">-</p></div>
+  </div>
+  <div id="row1" class="row">
+    <div id="chip1" class="chip">
+      <Siren id="r1-urgent" class="ricon" display="none" /><Package id="r1-order" class="ricon" display="none" /><Users id="r1-line" class="ricon" display="none" /><ListChecks id="r1-sort" class="ricon" display="none" /><PackageOpen id="r1-boxes" class="ricon" display="none" /><TriangleAlert id="r1-out" class="ricon" display="none" />
+    </div>
+    <div class="texts"><p id="label1" class="label">-</p><p id="detail1" class="detail">-</p></div>
+  </div>
+  <div id="row2" class="row">
+    <div id="chip2" class="chip">
+      <Siren id="r2-urgent" class="ricon" display="none" /><Package id="r2-order" class="ricon" display="none" /><Users id="r2-line" class="ricon" display="none" /><ListChecks id="r2-sort" class="ricon" display="none" /><PackageOpen id="r2-boxes" class="ricon" display="none" /><TriangleAlert id="r2-out" class="ricon" display="none" />
+    </div>
+    <div class="texts"><p id="label2" class="label">-</p><p id="detail2" class="detail">-</p></div>
+  </div>
+  <div id="row3" class="row">
+    <div id="chip3" class="chip">
+      <Siren id="r3-urgent" class="ricon" display="none" /><Package id="r3-order" class="ricon" display="none" /><Users id="r3-line" class="ricon" display="none" /><ListChecks id="r3-sort" class="ricon" display="none" /><PackageOpen id="r3-boxes" class="ricon" display="none" /><TriangleAlert id="r3-out" class="ricon" display="none" />
+    </div>
+    <div class="texts"><p id="label3" class="label">-</p><p id="detail3" class="detail">-</p></div>
+  </div>
 </div>

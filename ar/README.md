@@ -11,8 +11,7 @@ npm test --prefix ar                   # las reglas del turno, sin 3D
 
 ## Con el visor
 
-Solo manos, sin controles. Al entrar, el visor marca las mesas que reconoce del cuarto: mira la tuya y pellízcala (si no hay ninguna, se pone una mesa virtual a la altura de tus manos). Las cajas donadas ya están en pilas en el piso, a los lados y de tu lado de la mesa, y en otras superficies del cuarto. Pasa el dedo por la cinta (o pellizca rápido la caja) para abrirla. Lo de comer y el agua van al estante de la izquierda; medicinas, higiene y abrigo, al de la derecha. Gira la muñeca hacia tus ojos para ver qué falta. Para entregar, pásale la caja verde a la familia por encima de la mesa.
-
+Solo manos, sin controles. Al entrar, el visor marca las mesas que reconoce del cuarto: mira la tuya y pellízcala (si no hay ninguna, se pone una mesa virtual a la altura de tus manos). La primera caja está sobre la mesa; las demás, en pilas en el piso a tu derecha y en otras superficies del cuarto. Pasa el dedo por la cinta (o pellizca rápido la caja) para abrirla: lo que trae cae adentro, revuelto. Todo se guarda en el estante de la derecha. Las personas hacen fila a tu izquierda y pasan de a una a la ventanilla, en la punta izquierda de la mesa; cada pedido trae una caja verde y una orden impresa. Arma la caja, ciérrala juntando las dos aletas, pégale la orden encima y entrégala en la ventanilla. Gira la muñeca hacia tus ojos para ver qué falta.
 Funciones de IWSDK que usa: UIKitML (`public/ui/*.uikitml`), reconocimiento de planos y mallas, raycast al entorno, física Havok, acceso a la cámara (luz del cuarto), oclusión por profundidad y agarre con las manos.
 
 ## Sin visor

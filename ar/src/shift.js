@@ -34,8 +34,9 @@ import { Sound } from './sound.js'
 import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
 import { Glow } from './world/glow.js'
-import { familyCard, fontsReady, orderTag, speechBubble } from './world/panels.js'
+import { familyCard, fontsReady, orderTag, orderTicket, speechBubble } from './world/panels.js'
 import { comfortableTop, isWorktop, rayHits, surfaceAt, surfaceFromMesh, surfaceFromPlane, surfaceMarker, WorkFrame } from './world/room.js'
+import { BODY_HIGH, BODY_LOW, FloorPlan } from './world/floorplan.js'
 import { SpatialPanel } from './world/spatialUI.js'
 import { BOX, cardboardBox, cartonLayout, categoryCrate, CRATE, crateLayout, lowShelf, PALLET, pallet, preloadSupplies, supplyObject, virtualTable } from './world/station.js'
 import { Temper } from './world/temper.js'
@@ -43,10 +44,17 @@ import { Temper } from './world/temper.js'
 /** The inventory this experience works on: its own point, never one the donors see. */
 const DEMO_POINT = 'demo-ar'
 /** The categories on each side of the person: food and water to the left, the rest to the right. */
-const LEFT_SIDE = ['alimentos', 'agua']
-const RIGHT_SIDE = ['medicinas', 'higiene', 'refugio']
+/** The inventory's crates, in the order they stand on the shelf to the right: top board first. */
+const INVENTORY = ['alimentos', 'agua', 'medicinas', 'higiene', 'refugio']
 /** People at their real height, in metres. */
-const HEIGHT = { adult: 1.66, elder: 1.57, child: 1.12 }
+/**
+ * How tall the characters stand, in metres. They are dolls with big heads, kept as designed and
+ * only made smaller as a whole: at a person's real height their heads would be a metre across.
+ */
+const HEIGHT = { adult: 1.45, elder: 1.4, child: 1.05 }
+/** The room each needs around them on the floor, and how far apart they wait, for their wide heads. */
+const PERSON_RADIUS = 0.5
+const PERSON_GAP = 1.1
 const WALK_SPEED = 1.15
 /** How near (m) something must be let go of to count as put in a crate, in the kit, back in a carton. */
 const CRATE_REACH = 0.26
@@ -71,14 +79,17 @@ const COMPLAINT_PAUSE = 1.6
 const barStep = (left) => Math.round(Math.max(0, left) * 20) / 20
 const leftOf = (order) => Math.max(0, 1 - order.waited / order.patience)
 const KIT_TAPE = '#2E8B57'
+/** Every message is a white card: its kind shows in the colour of its badge, its edge and its tag. */
 const MESSAGE_LOOK = {
-    info: { fill: '#FFFFFF', badge: '#011E41', ink: '#011E41', icon: 'i-info' },
-    radio: { fill: '#FFFFFF', badge: '#011E41', ink: '#011E41', icon: 'i-info' },
-    warn: { fill: '#FCEFD6', badge: '#E39B1B', ink: '#7A4B00', icon: 'i-warn' },
-    done: { fill: '#E4F1E9', badge: '#1E5B36', ink: '#1E5B36', icon: 'i-done' },
-    alert: { fill: '#D92632', badge: '#FFFFFF', ink: '#FFFFFF', icon: 'i-alert' },
+    info: { tag: 'AHORA', accent: '#D92632', badge: '#011E41', edge: '#E3E8EF', icon: 'i-info' },
+    radio: { tag: 'AVISO', accent: '#1B3556', badge: '#1B3556', edge: '#E3E8EF', icon: 'i-info' },
+    warn: { tag: 'OJO', accent: '#B87400', badge: '#E39B1B', edge: '#F3C978', icon: 'i-warn' },
+    done: { tag: 'LISTO', accent: '#1F8A4C', badge: '#1F8A4C', edge: '#9FD3B4', icon: 'i-done' },
+    alert: { tag: 'URGENTE', accent: '#D92632', badge: '#D92632', edge: '#F08B92', icon: 'i-alert' },
 }
-const DOT = { alert: '#D92632', warn: '#E39B1B', work: '#011E41' }
+/** Each kind of task in the list on the arm: its icon and its colour. */
+const TASK_LOOK = { alert: '#D92632', warn: '#E39B1B', work: '#011E41' }
+const TASK_ICONS = ['urgent', 'order', 'line', 'sort', 'boxes', 'out']
 
 const temp = new THREE.Vector3()
 const temp2 = new THREE.Vector3()
@@ -184,6 +195,7 @@ export class ShiftSystem extends createSystem({
         this.atmosphere.update(delta, this.running ? this.day.pressure : 0, this.room)
         this.sound.ambient(this.atmosphere.level, delta)
         this.#feelings()
+        this.#keepApart()
         for (const person of this.crowd) {
             person.update(delta, this.elapsed)
             person.temper.update(delta, this.elapsed)
@@ -193,12 +205,15 @@ export class ShiftSystem extends createSystem({
         this.#carry(delta)
         this.#tame(delta)
         this.#tearTape(delta)
+        this.#kitFlaps()
         this.#followGuide()
         this.#placeWatch(delta)
         this.#placeGhost()
+        this.#followCartons()
         this.#roomLight(delta)
         this.recoverClock += delta
-        if (this.recoverClock > 0.25) {
+        // often: what lands where it cannot stay is back before it can be missed
+        if (this.recoverClock > 0.1) {
             this.recoverClock = 0
             this.#recover()
         }
@@ -215,7 +230,6 @@ export class ShiftSystem extends createSystem({
         const [supplies, people] = await Promise.all([preloadSupplies(this.loader), Promise.all(visitors.map((id) => this.loader.load(id).then((t) => [id, t])))])
         this.supplies = supplies
         this.people = new Map(people)
-        this.personHeight = new Map()
         // published: the demonstration tab of the sheet. On this computer, only this browser.
         const endpoint = import.meta.env.PROD ? sheetsEndpoint() : ''
         this.store = new InventoryStore({ pointId: DEMO_POINT, endpoint })
@@ -278,8 +292,8 @@ export class ShiftSystem extends createSystem({
         for (const entity of this.queries.meshes.entities) {
             const s = surfaceFromMesh(entity, {
                 semanticLabel: entity.getValue(XRMesh, 'semanticLabel'),
-                min: entity.getValue(XRMesh, 'min'),
-                max: entity.getValue(XRMesh, 'max'),
+                min: entity.getVectorView(XRMesh, 'min'),
+                max: entity.getVectorView(XRMesh, 'max'),
                 isBounded3D: entity.getValue(XRMesh, 'isBounded3D'),
             })
             if (s) found.push(s)
@@ -297,7 +311,18 @@ export class ShiftSystem extends createSystem({
         if (this.eyeSamples.length > 240) this.eyeSamples.shift()
         this.hint.object.position.copy(temp).addScaledVector(temp2, 0.75).add(temp3.set(0, -0.18, 0))
         this.hint.object.lookAt(temp)
-        const surfaces = this.#surfaces().filter((s) => isWorktop(s))
+        const found = this.#surfaces()
+        // what the headset reports, kept readable for checking a room from the console (nexosAR.shift.scan), once a second
+        if (this.elapsed - (this.scanAt ?? -9) > 1) this.scanAt = this.elapsed
+        if (this.scanAt === this.elapsed) this.scan = {
+            planes: [...this.queries.planes.entities].map((e) => {
+                const p = e.getValue(XRPlane, '_plane')
+                return `${p?.orientation} ${p?.semanticLabel ?? '-'} y=${e.object3D?.position.y.toFixed(2)}`
+            }),
+            meshes: [...this.queries.meshes.entities].map((e) => `${e.getValue(XRMesh, 'semanticLabel') || '(global)'} bounded=${e.getValue(XRMesh, 'isBounded3D')} max=${[...e.getVectorView(XRMesh, 'max')].map((v) => v.toFixed(2))}`),
+            surfaces: found.map((s) => `${s.label} top=${s.top.toFixed(2)} ${(s.hu * 2).toFixed(2)}x${(s.hv * 2).toFixed(2)}`),
+        }
+        const surfaces = found.filter((s) => isWorktop(s))
         this.candidates = surfaces
         const seen = new Set()
         for (const s of surfaces) {
@@ -431,7 +456,8 @@ export class ShiftSystem extends createSystem({
             rootObject.add(table)
             this.surfaceMeshes = [table]
         } else this.surfaceMeshes = []
-        this.#solid(F.at((F.minX + F.maxX) / 2, F.top - 0.025, -F.depth / 2), F.yaw, [F.maxX - F.minX, 0.05, F.depth])
+        // thick under its top, so nothing set down quickly goes through it; a hair wider than measured
+        this.#solid(F.at((F.minX + F.maxX) / 2, F.top - 0.075, -F.depth / 2), F.yaw, [F.maxX - F.minX + 0.04, 0.15, F.depth + 0.04])
         // the floor, and whatever else in the room something could be set down on
         this.#solid(F.at(0, -0.05, 0), F.yaw, [14, 0.1, 14])
         this.otherSurfaces = []
@@ -450,6 +476,12 @@ export class ShiftSystem extends createSystem({
         rootObject.add(topPick)
         this.surfaceMeshes.push(floorPick, topPick)
 
+        // the room's floor as the headset scanned it: nothing is set down or stood where something already is
+        this.plan = new FloorPlan()
+        this.plan.blockRect((F.minX + F.maxX) / 2, -F.depth / 2, (F.maxX - F.minX) / 2, F.depth / 2)
+        if (this.world.session) this.#scanInto(this.plan)
+        this.plan.finalize({ x: 0, z: 0.35 })
+
         this.#shelves()
         this.#signs()
         // only here, not on loading the page: opening it must not change the sheet
@@ -457,8 +489,136 @@ export class ShiftSystem extends createSystem({
         // only the first shift since the page opened is guided
         this.#newDay(!this.hadGuide)
         this.hadGuide = true
+        // the people's places, last: in what room the shelf and the piles have left
+        this.people3 = this.#layoutPeople()
         this.#intro()
         this.#cameraLight()
+    }
+
+    /**
+     * What the headset knows of the room, onto the floor plan: every wall, every piece of furniture
+     * and the room's own scanned mesh, wherever they stand between the ankles and above the head.
+     */
+    #scanInto(plan) {
+        const F = this.frame3
+        const v = new THREE.Vector3()
+        const l = new THREE.Vector3()
+        const inBody = (y) => y - F.floorY > BODY_LOW && y - F.floorY < BODY_HIGH
+        const onFloor = (world) => {
+            F.local(world, l)
+            return new THREE.Vector2(l.x, l.z)
+        }
+        for (const entity of this.queries.meshes.entities) {
+            const object = entity.object3D
+            if (!object?.geometry) continue
+            object.updateMatrixWorld(true)
+            const label = entity.getValue(XRMesh, 'semanticLabel') ?? ''
+            if (/floor|ceiling/i.test(label)) continue
+            if (!entity.getValue(XRMesh, 'isBounded3D')) {
+                // the room's whole mesh: each of its points that a body would bump into
+                const position = object.geometry.getAttribute('position')
+                const stride = Math.max(1, Math.ceil(position.count / 60000))
+                for (let i = 0; i < position.count; i += stride) {
+                    v.fromBufferAttribute(position, i).applyMatrix4(object.matrixWorld)
+                    if (inBody(v.y)) plan.blockPoint(...onFloor(v).toArray())
+                }
+                continue
+            }
+            // a piece of furniture: its box, if any of it is at the height of a body
+            const min = entity.getVectorView(XRMesh, 'min')
+            const max = entity.getVectorView(XRMesh, 'max')
+            const corners = [[min[0], min[2]], [max[0], min[2]], [max[0], max[2]], [min[0], max[2]]]
+            const lowY = v.set(0, min[1], 0).applyMatrix4(object.matrixWorld).y
+            const highY = v.set(0, max[1], 0).applyMatrix4(object.matrixWorld).y
+            if (Math.max(lowY, highY) - F.floorY < BODY_LOW || Math.min(lowY, highY) - F.floorY > BODY_HIGH) continue
+            plan.blockPolygon(corners.map(([x, z]) => onFloor(v.set(x, min[1], z).applyMatrix4(object.matrixWorld))))
+        }
+        for (const entity of this.queries.planes.entities) {
+            const plane = entity.getValue(XRPlane, '_plane')
+            const object = entity.object3D
+            if (!plane?.polygon || !object) continue
+            object.updateMatrixWorld(true)
+            const label = plane.semanticLabel ?? ''
+            const points = [...plane.polygon].map((p) => v.set(p.x, p.y, p.z).applyMatrix4(object.matrixWorld).clone())
+            if (plane.orientation === 'vertical') {
+                // a wall, a door, a window: a line on the floor, if it comes down to a body's height
+                if (!points.some((p) => inBody(p.y)) && !(Math.min(...points.map((p) => p.y)) - F.floorY < BODY_LOW && Math.max(...points.map((p) => p.y)) - F.floorY > BODY_HIGH)) continue
+                const flat = points.map(onFloor)
+                flat.forEach((a, i) => plan.blockSegment(a, flat[(i + 1) % flat.length], 0.12))
+                continue
+            }
+            // a horizontal surface: only what stands off the floor and below the head is in the way
+            if (/floor|ceiling/i.test(label) || !inBody(points[0].y)) continue
+            plan.blockPolygon(points.map(onFloor))
+        }
+    }
+
+    /** Whether something on the floor at (x, z) stays in sight: ahead and to the sides, never behind. */
+    #inSight(x, z) {
+        const dz = z - 0.35
+        return dz < 0.25 && Math.abs(Math.atan2(x, -dz)) < THREE.MathUtils.degToRad(115)
+    }
+
+    /** Not where the person stands: their own spot at the table stays theirs. */
+    #clearOfPerson(x, z) {
+        return Math.hypot(x, z - 0.4) > 0.6
+    }
+
+    /**
+     * Where the people go, from what the floor plan leaves free: the window just past the left end
+     * of the table, the line from it onwards, and where they come in from and leave by.
+     */
+    #layoutPeople() {
+        const F = this.frame3
+        const plan = this.plan
+        // a doll's head is nearly a metre across: each needs half that around them, and some air
+        const R = PERSON_RADIUS
+        const left = Math.min(F.minX, -0.45)
+        const windowTries = [
+            { x: left - 0.75, z: -0.25 },
+            { x: left - 0.75, z: -Math.min(F.depth, 0.9) + 0.1 },
+            { x: left - 0.75, z: 0.15 },
+            { x: left - 0.5, z: -F.depth - 0.7 },
+            { x: Math.max(F.maxX, 0.45) + 0.75, z: -F.depth - 0.4 },
+        ]
+        const usable = (x, z) => this.#inSight(x, z) && this.#clearOfPerson(x, z)
+        let window = windowTries.find((p) => plan.free(p.x, p.z, R) && usable(p.x, p.z))
+        window ??= plan.nearestFree(left - 0.75, -0.25, R, { reach: 1.8, accept: usable })
+        window ??= windowTries[0]
+        // from the window onwards, each a step further: away to the left first, then ahead, then wherever there is room
+        const dirs = [[-0.36, -0.93], [-0.7, -0.7], [0, -1], [-0.93, -0.36], [0.36, -0.93], [-1, 0], [0.7, -0.7]]
+        const slots = []
+        let prev = window
+        let lastDir = dirs[0]
+        for (let i = 0; i < 7; i++) {
+            const placed = [window, ...slots]
+            const pick = dirs
+                .map((d) => ({ d, x: prev.x + d[0] * PERSON_GAP, z: prev.z + d[1] * PERSON_GAP }))
+                .find((c) => plan.free(c.x, c.z, R) && usable(c.x, c.z) && placed.every((p) => Math.hypot(p.x - c.x, p.z - c.z) > PERSON_GAP - 0.05))
+            if (!pick) break
+            slots.push({ x: pick.x, z: pick.z })
+            prev = pick
+            lastDir = pick.d
+        }
+        // a short room: the rest wait wherever else there is floor for them, a little closer together, on the left
+        while (slots.length < 5) {
+            const placed = [window, ...slots]
+            const spot = plan.nearestFree(prev.x - 0.6, prev.z - 0.6, R, { reach: 2.8, accept: (x, z) => usable(x, z) && x < 0.3 && placed.every((p) => Math.hypot(p.x - x, p.z - z) > PERSON_GAP - 0.1) })
+            if (!spot) break
+            slots.push(spot)
+            prev = spot
+        }
+        // nowhere to queue: they wait as close to the window as there is room
+        if (!slots.length) slots.push({ x: window.x - 0.4, z: window.z - PERSON_GAP })
+        // they come in from a step past the end of the line, where there is room for it
+        const last = slots[slots.length - 1]
+        const far = { x: last.x + lastDir[0] * 1.4, z: last.z + lastDir[1] * 1.4 }
+        const entry = plan.free(far.x, far.z, R) ? far : last
+        // they leave by a way of their own, away from the window and clear of the line, so nobody
+        // going out meets anybody coming in
+        const clearOfLine = (x, z) => usable(x, z) && [...slots, entry].every((p) => Math.hypot(p.x - x, p.z - z) > 1.4) && Math.hypot(x - window.x, z - window.z) > 1.8
+        const exit = plan.nearestFree(window.x - 2.2, window.z + 0.4, R, { reach: 3, accept: clearOfLine }) ?? plan.nearestFree(window.x, window.z, R, { reach: 4, accept: clearOfLine }) ?? entry
+        return { window, slots, entry, exit }
     }
 
     /** Something that stops what falls: an invisible box, still. */
@@ -490,31 +650,60 @@ export class ShiftSystem extends createSystem({
     }
 
     /**
-     * The inventory, at either side and never behind: food and water on a low shelf to the left,
-     * health, hygiene and shelter to the right. Always the same, so it can be remembered.
+     * The inventory, on one low shelf on the person's side of the table, to the right, past the
+     * piles of cartons and turned to the person: the left is where people queue. Food and water on
+     * top, then medicine; hygiene and shelter below. Always the same, so it can be remembered.
+     * It stands where the room has space for it, the nearest such place to that one.
      */
     #shelves() {
         const F = this.frame3
         this.zones = []
         const side = (categories, sign) => {
-            // two crates a board at most: a short shelf, so it stays beside the person and not behind
-            const perBoard = 2
+            // three crates a board: the top one at the person's working height
+            const perBoard = 3
             const width = perBoard * (CRATE.w + 0.03) + 0.06
-            const edge = sign < 0 ? Math.min(F.minX, -0.45) : Math.max(F.maxX, 0.45)
-            // a little ahead to either side, past the piles of cartons on the floor
-            let x = sign * Math.max(Math.abs(edge) + 0.4, 1.0)
-            let z = -0.7
-            // a long table reaches there: the shelf stands at the person's side instead
-            if (Math.abs(x) > 1.3) {
-                x = sign * 1.35
-                z = 0
+            const depth = CRATE.d + 0.06
+            const edge = Math.max(F.maxX, 0.45)
+            const facing = (x, z) => Math.atan2(0 - x, 0.35 - z)
+            // fits: room along its whole length, in sight, and clear of the table
+            const fits = (x, z) => {
+                const yaw = facing(x, z)
+                const along = [Math.cos(yaw), -Math.sin(yaw)]
+                return [-1, -0.5, 0, 0.5, 1].every((k) => {
+                    const px = x + along[0] * k * (width / 2 - 0.1)
+                    const pz = z + along[1] * k * (width / 2 - 0.1)
+                    return this.plan.free(px, pz, depth / 2 + 0.04) && this.#inSight(px, pz) && this.#clearOfPerson(px, pz)
+                })
+            }
+            // first just past the piles at the table's right end; then further round, then further out
+            const tries = []
+            for (const reach of [0, 0.25, 0.5, 0.8]) {
+                for (const [dx, z] of [[0.95, -0.05], [0.95, -0.4], [0.75, -0.75], [1.1, 0.2], [0.6, -1.0]]) tries.push([sign * (edge + dx + reach), z - reach * 0.3])
+            }
+            let [x, z] = tries.find(([tx, tz]) => fits(tx, tz)) ?? []
+            if (x === undefined) {
+                // none of those: wherever in sight the room has room for it, the nearest to the first wish,
+                // the right preferred; never past a wall, where it could not be reached
+                const [wx, wz] = tries[0]
+                let best = null
+                for (let px = -3; px <= 3; px += 0.15) {
+                    for (let pz = -2.4; pz <= 0.6; pz += 0.15) {
+                        if (!fits(px, pz)) continue
+                        const cost = Math.hypot(px - wx, pz - wz) + (px < 0 ? 1.5 : 0)
+                        if (!best || cost < best.cost) best = { x: px, z: pz, cost }
+                    }
+                }
+                ;[x, z] = best ? [best.x, best.z] : tries[0]
             }
             const shelfTop = Math.min(this.top, 0.95)
             const lower = Math.max(0.4, shelfTop - 0.42)
-            const shelf = lowShelf(width, CRATE.d + 0.06, [lower, shelfTop])
+            const shelf = lowShelf(width, depth, [lower, shelfTop])
             shelf.position.set(x, 0, z)
             // turned to face where the person stands
-            shelf.rotation.y = Math.atan2(0 - x, 0.35 - z)
+            shelf.rotation.y = facing(x, z)
+            // from now on that floor is taken
+            this.plan.blockRect(x, z, width / 2, depth / 2, shelf.rotation.y)
+            this.plan.finalize({ x: 0, z: 0.35 })
             this.rootObject.add(shelf)
             shelf.updateMatrixWorld(true)
             const shelfEntity = this.world.createTransformEntity(shelf, { parent: this.root })
@@ -537,8 +726,7 @@ export class ShiftSystem extends createSystem({
                 this.zones.push(zone)
             })
         }
-        side(LEFT_SIDE, -1)
-        side(RIGHT_SIDE, 1)
+        side(INVENTORY, 1)
     }
 
     /** The panels: one line of what to do over the table, the list on the arm, the boards, the bubble. */
@@ -546,8 +734,9 @@ export class ShiftSystem extends createSystem({
         const D = this.depth
         // over the far half of the table, below the faces of whoever is across it
         this.message = this.#panel('./ui/message.uikitml', { width: 0.5, height: 0.08, parent: this.root })
-        this.message.object.position.set(0, this.eye - 0.34, -Math.min(D * 0.75, 0.55))
-        this.message.object.rotation.x = -0.18
+        // low over the near edge of the table, tilted up: under the line of sight to whoever is across it
+        this.message.object.position.set(0, this.top + 0.14, -0.08)
+        this.message.object.rotation.x = -0.75
         this.message.show(false)
         this.board = this.#panel('./ui/board.uikitml', { width: 0.62, height: 0.62, parent: this.root, interactive: true })
         this.board.object.position.set(0, this.eye - 0.1, -D - 0.15)
@@ -579,11 +768,11 @@ export class ShiftSystem extends createSystem({
     /** One message panel says something, in the look of its kind. */
     #message(panel, kind, text) {
         const look = MESSAGE_LOOK[kind] ?? MESSAGE_LOOK.info
-        panel.set('root', { backgroundColor: look.fill })
+        panel.set('root', { borderColor: look.edge })
         panel.set('badge', { backgroundColor: look.badge })
-        panel.set('text', { text, color: look.ink })
+        panel.set('tag', { text: look.tag, color: look.accent })
+        panel.text('text', text)
         for (const id of ['i-info', 'i-warn', 'i-done', 'i-alert']) panel.display(id, id === look.icon)
-        for (const id of ['i-info', 'i-warn', 'i-done', 'i-alert']) panel.set(id, { color: kind === 'alert' ? '#D92632' : '#FFFFFF' })
         panel.show(true)
     }
 
@@ -627,10 +816,10 @@ export class ShiftSystem extends createSystem({
         this.pendingStart = true
         const hands = !!this.world.session
         this.#board({
-            kicker: 'NEXOS · UN TURNO EN EL PUNTO DE ACOPIO',
+            kicker: 'UN TURNO EN EL PUNTO DE ACOPIO',
             title: 'Hoy este punto es tuyo',
             lines: [
-                'Abre las cajas y guarda cada cosa en su lado.',
+                'Abre las cajas y guarda todo en el estante de la derecha.',
                 hands ? 'Mira tu muñeca para ver qué falta.' : 'Con T ves qué falta.',
                 'No alcanzará para todo.',
             ],
@@ -650,9 +839,9 @@ export class ShiftSystem extends createSystem({
         })
         for (let i = 0; i < 3; i++) {
             b.display(`line${i}`, !!lines[i])
-            if (lines[i]) b.text(`line${i}`, lines[i])
+            if (lines[i]) b.text(`text${i}`, lines[i])
         }
-        b.text('action', action)
+        b.text('actionText', action)
         b.show(true)
     }
 
@@ -699,36 +888,30 @@ export class ShiftSystem extends createSystem({
     /* ---------------- the cartons about the room ---------------- */
 
     /**
-     * Where the cartons were left: in piles on the floor at either side of the table, on the
-     * person's side, and one on each other surface the room has in sight. The work table starts
-     * clear: nothing is on it until the person brings it there.
+     * Where the cartons were left. The first, the one the first shift teaches with, alone on the
+     * table, in sight from the start; the rest in piles on the floor to the person's right, beside
+     * them, and one on each other surface the room has in sight. The left stays clear: people queue there.
      */
     #pileSpots() {
         const F = this.frame3
-        const spots = []
-        // one on each other real surface in sight, two surfaces at most: never across the table, never behind
+        // on the right half of the table: the left half is where each family's carton appears, by the window
+        const spots = [{ local: new THREE.Vector3(Math.min(F.maxX - BOX.w / 2 - 0.08, 0.3), this.top, -Math.min(this.depth / 2, 0.3)), yaw: 0, column: 'table' }]
+        // one on each other real surface in sight, two surfaces at most: never across the table, behind, or where people queue
         let onSurfaces = 0
         for (const s of this.otherSurfaces ?? []) {
             const l = F.local(s.center, new THREE.Vector3())
             const height = s.top - F.floorY
-            if (onSurfaces >= 2 || height < 0.3 || height > 1.4 || l.z < -F.depth || l.z > 0.7 || Math.hypot(l.x, l.z) > 3) continue
+            if (onSurfaces >= 2 || height < 0.3 || height > 1.4 || l.z < -F.depth || l.z > 0.7 || l.x < F.minX || Math.hypot(l.x, l.z) > 3) continue
             spots.push({ local: new THREE.Vector3(l.x, height, l.z), yaw: (Math.random() - 0.5) * 0.25, column: `S${onSurfaces++}` })
         }
-        const pile = (x, z, column) => ({ x, z, base: 0, column })
-        // always on the floor, on the person's side of the table, just past its ends, left and right
-        // a long table reaches past them: the piles stand in front of its edge, never under it
-        const long = F.minX < -0.8 || F.maxX > 0.8
-        const leftX = long ? -0.75 : Math.min(F.minX, -0.45) - 0.3
-        const rightX = long ? 0.75 : Math.max(F.maxX, 0.45) + 0.3
-        const second = long ? 0.45 : -0.24
-        const columns = [pile(leftX, 0.12, 'L1'), pile(rightX, 0.12, 'R1'), pile(leftX, second, 'L2'), pile(rightX, second, 'R2')]
+        const columns = (this.pileColumns ??= this.#pileColumns())
         const height = new Map()
         let level = 0
         while (spots.length < this.day.boxes.length && level < 4) {
             for (const c of columns) {
                 if (spots.length >= this.day.boxes.length) break
-                // three high at most: the top one at the height of a hand
-                if (level >= 3) continue
+                // three high, four only when the room has no floor for more piles: the top one within reach
+                if (level >= 4) continue
                 const n = height.get(c.column) ?? 0
                 height.set(c.column, n + 1)
                 spots.push({ local: new THREE.Vector3(c.x, c.base + n * (BOX.h + 0.004), c.z), yaw: (Math.random() - 0.5) * 0.25, column: c.column })
@@ -738,12 +921,47 @@ export class ShiftSystem extends createSystem({
         return spots
     }
 
+    /**
+     * Where the piles stand on the floor: one row along the table's right end, on the person's side,
+     * between the table and the shelf. Each where the room has space for a carton, the nearest such
+     * place if not; once chosen, that floor is taken. The same for every shift.
+     */
+    #pileColumns() {
+        const F = this.frame3
+        const plan = this.plan
+        // a long table reaches past there: the piles stand in front of its edge, never under it
+        const long = F.maxX > 0.8
+        const x = long ? 0.6 : Math.max(F.maxX, 0.45) + 0.3
+        const wanted = long ? [[x, 0.55], [x + 0.44, 0.55], [x, 0.9], [x + 0.44, 0.9]] : [[x, 0.25], [x, -0.1], [x, -0.45], [x, -0.8]]
+        const columns = []
+        const apart = (px, pz) => columns.every((c) => Math.abs(c.x - px) > 0.42 || Math.abs(c.z - pz) > 0.33)
+        const ok = (px, pz) => px > F.minX && this.#inSight(px, pz) && this.#clearOfPerson(px, pz) && apart(px, pz)
+        const add = (spot) => {
+            columns.push({ x: spot.x, z: spot.z, base: 0, column: `R${columns.length + 1}` })
+            plan.blockRect(spot.x, spot.z, BOX.w / 2 + 0.02, BOX.d / 2 + 0.02)
+            plan.finalize({ x: 0, z: 0.35 })
+        }
+        for (const [wx, wz] of wanted) {
+            const spot = plan.free(wx, wz, 0.24) && ok(wx, wz) ? { x: wx, z: wz } : plan.nearestFree(wx, wz, 0.24, { reach: 1.6, accept: ok })
+            if (spot) add(spot)
+        }
+        // a crowded room: more piles wherever there is floor for them, until all the cartons fit (three a pile)
+        const needed = Math.ceil(Math.max(0, (this.day?.boxes.length ?? 10) - 1) / 3)
+        while (columns.length < needed) {
+            // to the right first; failing that, any side, as long as it is in sight and off the person's spot
+            const spot =
+                plan.nearestFree(x, 0, 0.24, { reach: 3, accept: ok }) ??
+                plan.nearestFree(x, 0, 0.24, { reach: 4, accept: (px, pz) => this.#inSight(px, pz) && this.#clearOfPerson(px, pz) && apart(px, pz) })
+            if (!spot) break
+            add(spot)
+        }
+        return columns
+    }
+
     /** The cartons appear where they were left, and settle under their own weight. */
     #spawnBoxes(boxes) {
+        // the first spot is on the table: the first carton goes there
         const spots = this.#pileSpots()
-        // the first carton (the one the first time teaches with) is on top of the left pile, free to open
-        const topLeft = spots.reduce((best, s, i) => (s.column === 'L1' && (best < 0 || s.local.y > spots[best].local.y) ? i : best), -1)
-        if (topLeft > 0) spots.unshift(spots.splice(topLeft, 1)[0])
         boxes.forEach((b, i) => {
             const spot = spots[i] ?? spots[spots.length - 1]
             const object = cardboardBox()
@@ -824,29 +1042,36 @@ export class ShiftSystem extends createSystem({
         t.held = false
         const where = this.#worldOf(t.object)
         const quick = this.elapsed - (t.takenAt ?? 0) < TAP_SECONDS && where.distanceTo(t.takenFrom ?? where) < TAP_MOVE
+        if (t.kind === 'open') return this.#watchThrow(entity)
         if (t.kind === 'box') {
             if (quick) return this.#openBox(t)
             return this.#watchThrow(entity)
         }
         if (t.kind === 'item') return this.#releaseItem(entity, t, where)
         if (t.kind === 'stock') return this.#releaseStock(t, where)
+        if (t.kind === 'label') {
+            if (this.kit && t.kit === this.kit && where.distanceTo(this.#worldOf(this.kit.object)) < 0.32) return this.#stickLabel(entity, t)
+            return this.#watchThrow(entity)
+        }
         if (t.kind === 'kit') {
             if (this.#handedOver(where)) {
-                if (this.day.canDeliver) return this.day.deliver()
-                this.#say('warn', 'La caja está vacía')
+                if (!this.kit.closed) this.#say('warn', 'Ciérrala primero: junta las dos aletas')
+                else if (!this.kit.labeled) this.#say('warn', 'Pégale su orden encima')
+                else if (this.day.canDeliver) return this.day.deliver()
+                else this.#say('warn', 'La caja está vacía')
             }
             return this.#watchThrow(entity)
         }
     }
 
-    /** Over the far edge of the table, or close to whoever is at the counter. */
+    /** Let go by the window: past the left end of the table, or close to whoever is at it. */
     #handedOver(where) {
         const f = this.familyAtCounter
         if (!f || !this.kit) return false
-        const local = this.frame3.local(where, temp3)
-        if (local.z < -this.frame3.depth + 0.1) return true
         const leader = this.rootObject.localToWorld(f.leader.position.clone())
-        return Math.hypot(where.x - leader.x, where.z - leader.z) < HAND_OVER
+        if (Math.hypot(where.x - leader.x, where.z - leader.z) < HAND_OVER) return true
+        const local = this.frame3.local(where, temp3)
+        return local.x < this.frame3.minX + 0.05 && Math.hypot(local.x - f.leader.position.x, local.z - f.leader.position.z) < 0.9
     }
 
     #releaseItem(entity, t, where) {
@@ -855,6 +1080,7 @@ export class ShiftSystem extends createSystem({
         if (zone) return this.#stow(entity, t, zone)
         const carton = this.#cartonAt(where)
         if (carton) return this.#backInCarton(entity, t, carton)
+        // anywhere else it falls where it was let go
         this.#watchThrow(entity)
     }
 
@@ -864,6 +1090,8 @@ export class ShiftSystem extends createSystem({
     }
 
     #inKit(where) {
+        // shut, it takes nothing more
+        if (this.kit.closed) return false
         const kitAt = this.#worldOf(this.kit.object)
         return Math.hypot(where.x - kitAt.x, where.z - kitAt.z) < KIT_REACH && where.y > kitAt.y - 0.12 && where.y < kitAt.y + 0.5
     }
@@ -883,16 +1111,6 @@ export class ShiftSystem extends createSystem({
         return best
     }
 
-    /** An open carton under where it was let go. */
-    #cartonAt(where) {
-        for (const t of this.things.values()) {
-            if (t.kind !== 'open') continue
-            const local = t.object.worldToLocal(temp2.copy(where))
-            if (Math.abs(local.x) < BOX.w / 2 + 0.03 && Math.abs(local.z) < BOX.d / 2 + 0.03 && local.y > -BOX.h / 2 && local.y < BOX.h / 2 + 0.3) return t
-        }
-        return null
-    }
-
     #goHome(t) {
         gsap.to(t.object.rotation, { x: 0, y: 0, z: 0, duration: 0.25 })
         gsap.to(t.object.position, { x: t.home.x, y: t.home.y, z: t.home.z, duration: 0.35, ease: 'power2.inOut', onComplete: () => this.#refreshShelf() })
@@ -905,13 +1123,13 @@ export class ShiftSystem extends createSystem({
     }
 
     #tame() {
-        const forward = this.frame3.forward
+        const right = this.frame3.right
         for (const [entity, t] of this.things) {
             if (!t.tameUntil || this.elapsed > t.tameUntil || !entity.hasComponent(PhysicsBody) || entity.hasComponent(PhysicsManipulation)) continue
             const v = entity.getVectorView(PhysicsBody, '_linearVelocity')
             const speed = Math.hypot(v[0], v[1], v[2])
-            // towards the people across the table it stops short: only their carton may go to them
-            const atPeople = t.kind !== 'kit' && v[0] * forward.x + v[2] * forward.z > 0.7
+            // towards the people queueing at the left it stops short: only their carton may go to them
+            const atPeople = t.kind !== 'kit' && -(v[0] * right.x + v[2] * right.z) > 0.7
             if (speed <= MAX_THROW && !atPeople) continue
             const k = atPeople ? 0.1 : MAX_THROW / speed
             entity.addComponent(PhysicsManipulation, { linearVelocity: [v[0] * k, Math.min(v[1] * k, 0.4), v[2] * k], angularVelocity: [0, 0, 0] })
@@ -919,19 +1137,25 @@ export class ShiftSystem extends createSystem({
     }
 
     /**
-     * Nothing gets lost: what falls out of reach, through the floor, behind the person or over
-     * among the people comes back onto the table, softly.
+     * Nothing gets lost: what falls out of reach, through the floor, behind the person, among the
+     * people, or onto the floor under or behind the table, where nobody could reach it, comes back
+     * onto the table at once, softly.
      */
     #recover() {
         const F = this.frame3
         for (const [entity, t] of this.things) {
-            if (t.held || t.kind === 'open' || !entity.hasComponent(PhysicsBody) || entity.hasComponent(Grabbed)) continue
+            if (t.held || !entity.hasComponent(PhysicsBody) || entity.hasComponent(Grabbed)) continue
             const p = this.#worldOf(t.object)
             const l = F.local(p, temp3)
             const fell = p.y < -0.4
             const far = Math.abs(l.x) > 3.2 || l.z > 1.1 || l.z < -F.depth - 2.5
-            const amongPeople = l.z < -F.depth - 0.25
-            if (!fell && !far && !amongPeople) continue
+            // where someone stands or waits: at the window or in the line
+            const amongPeople = [this.#counterSpot(), ...this.#lineSlots()].some((s) => Math.hypot(l.x - s.x, l.z - s.z) < PERSON_RADIUS)
+            // on the floor under the table or past its far edge: back the moment it lands
+            const size = t.object.userData.size
+            const onFloor = l.y < (size?.h ?? 0.2) / 2 + 0.08
+            const underTable = onFloor && l.x > F.minX - 0.05 && l.x < F.maxX + 0.05 && l.z < 0.05 && l.z > -F.depth - 1
+            if (!fell && !far && !amongPeople && !underTable) continue
             const spot = F.at(THREE.MathUtils.clamp(l.x, F.minX + 0.2, F.maxX - 0.2) * 0.5, this.top + 0.25, -Math.min(this.depth / 2, 0.3))
             this.world.getSystem(PhysicsSystem)?.setBodyTransform(entity, { position: spot, quaternion: yawQ(F.yaw) })
             this.sound.play('item', spot)
@@ -961,6 +1185,77 @@ export class ShiftSystem extends createSystem({
                 this.#openBox(t)
             }
         }
+    }
+
+    /* ---------------- shutting the family's carton ---------------- */
+
+    /** How open a flap is (0 shut, about 2.75 laid back), from where a point is next to its hinge. */
+    #flapAngle(hinge, world) {
+        const side = hinge.userData.side
+        const local = hinge.parent.worldToLocal(temp2.copy(world)).sub(hinge.position)
+        return THREE.MathUtils.clamp(Math.atan2(local.y, -side * local.z), 0, 2.9)
+    }
+
+    #setFlap(hinge, angle) {
+        hinge.rotation.x = hinge.userData.side * angle
+    }
+
+    /** Where the free edge of a flap is, in the room. */
+    #flapEdge(hinge) {
+        return hinge.localToWorld(new THREE.Vector3(0, 0, (-hinge.userData.side * BOX.d) / 2))
+    }
+
+    /**
+     * Each flap is taken by a pinch near its free edge and goes where the fingers take it. Both
+     * down, the carton is taped shut; one lifted again, it opens.
+     */
+    #kitFlaps() {
+        const kit = this.kit
+        if (!kit) return
+        const { flaps } = kit.object.userData
+        if (this.hands.tracked) {
+            this.flapGrips ??= { left: { was: false, hinge: null }, right: { was: false, hinge: null } }
+            for (const [name, side] of Object.entries(this.hands.sides)) {
+                const grip = this.flapGrips[name]
+                const pinching = side.seen && side.pinching
+                const at = side.joints['thumb-tip']
+                if (pinching && !grip.was) {
+                    grip.hinge = flaps.find((h) => this.#flapEdge(h).distanceTo(at) < 0.09) ?? null
+                    if (grip.hinge) this.haptics.play('grab')
+                }
+                if (!pinching) grip.hinge = null
+                if (grip.hinge) this.#setFlap(grip.hinge, this.#flapAngle(grip.hinge, at))
+                grip.was = pinching
+            }
+        }
+        const shut = flaps.every((h) => Math.abs(h.rotation.x) < 0.35)
+        if (shut && !kit.closed) this.#closeKit()
+        else if (!shut && kit.closed && flaps.some((h) => Math.abs(h.rotation.x) > 0.6)) this.#openKit()
+    }
+
+    #closeKit() {
+        const kit = this.kit
+        kit.closed = true
+        for (const hinge of kit.object.userData.flaps) gsap.to(hinge.rotation, { x: 0, duration: 0.15 })
+        kit.object.userData.seal.visible = true
+        this.sound.play('tape', this.#worldOf(kit.object))
+        this.haptics.play('right')
+        // shut, it can be lifted and handed over
+        this.#makeGrabbable(kit.entity)
+        this.ghost.visible = false
+    }
+
+    #openKit() {
+        this.kit.closed = false
+        this.kit.object.userData.seal.visible = false
+        this.#rebuildGhost()
+    }
+
+    /** With a mouse, a click on a flap swings it shut, or open again. */
+    #toggleFlap(hinge) {
+        const shutNow = Math.abs(hinge.rotation.x) > 0.3
+        gsap.to(hinge.rotation, { x: shutNow ? 0 : hinge.userData.side * 2.75, duration: 0.3, ease: 'power2.out' })
+        this.sound.play('tap')
     }
 
     /** Something resting on top of a carton keeps it shut. */
@@ -995,21 +1290,21 @@ export class ShiftSystem extends createSystem({
         this.things.delete(t.entity)
         t.entity.destroy()
         const open = { kind: 'open', box: t.box, slots: new Map() }
-        const entity = this.#thing(object, open, { grab: false, parent: null })
+        // open, it can still be taken anywhere (up onto the table, say), with what it holds (see #followCartons)
+        const entity = this.#thing(object, open, { parent: null })
         this.#occlude(entity)
-        entity.addComponent(PhysicsShape, { shape: 'Box', dimensions: [BOX.w, BOX.h, BOX.d], friction: 0.9 })
-        entity.addComponent(PhysicsBody, { state: PhysicsState.Static })
-        object.pointerEvents = 'none'
+        this.#dynamic(entity, BOX, { density: 0.35 })
         const { flaps, seal } = object.userData
         seal.visible = false
         this.sound.play('tape', object.position)
         for (const hinge of flaps) gsap.to(hinge.rotation, { x: hinge.userData.side * 2.75, duration: 0.55, ease: 'power2.out' })
+        // what it holds, each in its place on the packing paper, side by side
         open.layout = cartonLayout(this.supplies, t.box.items)
         open.layout.forEach(({ itemId, fit, position }, slot) => this.#itemInCarton(open, itemId, fit, position, slot))
-        this.#say('info', 'Guarda cada cosa en su lado')
+        this.#say('info', 'Guarda cada cosa en el estante')
     }
 
-    /** A supply sitting in an open carton: no weight until it is taken. */
+    /** A supply sitting in its place in an open carton: no weight until it is taken out. */
     #itemInCarton(open, itemId, fit, position, slot) {
         const object = supplyObject(this.loader, this.supplies.get(itemId), itemId, fit)
         object.position.copy(position)
@@ -1022,7 +1317,31 @@ export class ShiftSystem extends createSystem({
         return entity
     }
 
-    /** Let go over an open carton: it goes back in, in a free place. */
+    /** What sits in an open carton goes with it, each in its place, wherever the carton is taken. */
+    #followCartons() {
+        for (const open of this.things.values()) {
+            if (open.kind !== 'open' || !open.slots?.size) continue
+            for (const [slot, entity] of open.slots) {
+                const t = this.things.get(entity)
+                if (!t || t.held) continue
+                t.object.position.copy(open.layout[slot].position)
+                open.object.localToWorld(t.object.position)
+                t.object.quaternion.copy(open.object.quaternion)
+            }
+        }
+    }
+
+    /** An open carton under where something was let go. */
+    #cartonAt(where) {
+        for (const t of this.things.values()) {
+            if (t.kind !== 'open') continue
+            const local = t.object.worldToLocal(temp2.copy(where))
+            if (Math.abs(local.x) < BOX.w / 2 + 0.03 && Math.abs(local.z) < BOX.d / 2 + 0.03 && local.y > -BOX.h / 2 && local.y < BOX.h / 2 + 0.3) return t
+        }
+        return null
+    }
+
+    /** Let go over an open carton: it goes back in, in a free place, neatly. */
     #backInCarton(entity, t, carton) {
         const free = carton.layout?.findIndex((s, i) => !carton.slots.has(i)) ?? -1
         if (free < 0) return this.#watchThrow(entity)
@@ -1136,7 +1455,18 @@ export class ShiftSystem extends createSystem({
     /** Pressed on something that can be carried? Then it is in hand until let go. */
     #pick(ndc) {
         if (!this.running) return false
-        const carriable = [...this.things.values()].filter((t) => t.object.visible && t.kind !== 'open')
+        // a flap of the family's carton: it swings, nothing is carried
+        if (this.kit) {
+            const flapHit = this.#rayAt(ndc).intersectObjects(this.kit.object.userData.flaps, true)[0]
+            if (flapHit) {
+                let hinge = flapHit.object
+                while (hinge && !this.kit.object.userData.flaps.includes(hinge)) hinge = hinge.parent
+                if (hinge) this.#toggleFlap(hinge)
+                return false
+            }
+        }
+        // open, the family's carton stays where it is
+        const carriable = [...this.things.values()].filter((t) => t.object.visible && !(t.kind === 'kit' && !this.kit?.closed))
         const hits = this.#rayAt(ndc).intersectObjects(carriable.map((t) => t.object), true)
         const found = hits.length ? this.#entityOf(hits[0]) : null
         if (!found) return false
@@ -1207,7 +1537,12 @@ export class ShiftSystem extends createSystem({
         }
         if (day.calm) {
             const missing = Object.keys(day.missing)
-            if (!missing.length) return { phase: 'deliver', targets: [this.kit.object], text: 'Pásale la caja por encima de la mesa' }
+            if (!missing.length && !this.kit.closed) return { phase: 'close', targets: [this.kit.object], text: hands ? 'Ciérrala: junta las dos aletas' : 'Haz clic en las dos aletas para cerrarla' }
+            if (!missing.length && !this.kit.labeled) {
+                const label = things.find((t) => t.kind === 'label')
+                return { phase: 'label', targets: label ? [label.object] : [], text: 'Pégale la orden encima de la caja' }
+            }
+            if (!missing.length) return { phase: 'deliver', targets: [this.kit.object], text: 'Entrégala en la ventanilla, a tu izquierda' }
             let targets = []
             if (held && (held.kind === 'item' || held.kind === 'stock')) targets = missing.includes(held.itemId) ? [this.kit.object] : []
             else {
@@ -1225,7 +1560,7 @@ export class ShiftSystem extends createSystem({
         if (!left.length || day.current) return null
         let targets = left.map((t) => t.object)
         if (held?.kind === 'item') targets = [this.zones.find((z) => z.categoryId === SUPPLIES[held.itemId].category).crate]
-        return { phase: 'sort', targets, text: 'Guarda el resto: comida a la izquierda' }
+        return { phase: 'sort', targets, text: 'Guarda el resto en el estante, a tu derecha' }
     }
 
     #followGuide() {
@@ -1262,13 +1597,15 @@ export class ShiftSystem extends createSystem({
         const rows = this.day.todo.slice(0, 4)
         const { done, total } = this.day.progress
         this.watch.text('progress', `${done} de ${total}`)
+        this.watch.set('bar', { width: `${Math.round((100 * done) / Math.max(total, 1))}%` })
         for (let i = 0; i < 4; i++) {
             const row = rows[i]
             this.watch.display(`row${i}`, !!row)
             if (!row) continue
             this.watch.text(`label${i}`, row.label)
             this.watch.text(`detail${i}`, row.detail)
-            this.watch.set(`dot${i}`, { backgroundColor: DOT[row.tone] ?? DOT.work })
+            this.watch.set(`chip${i}`, { backgroundColor: TASK_LOOK[row.tone] ?? TASK_LOOK.work })
+            for (const icon of TASK_ICONS) this.watch.display(`r${i}-${icon}`, icon === row.id)
         }
     }
 
@@ -1336,6 +1673,8 @@ export class ShiftSystem extends createSystem({
             this.ghost.add(m)
         }
         this.ghost.visible = models.length > 0
+        // the tallest of them: the name goes above it, never over the things themselves
+        this.ghostHeight = Math.max(0, ...models.map((m) => m.userData.size.h))
         this.tag.refresh({ family: order.family, urgent: !!order.urgent })
         this.tag.mesh.visible = true
     }
@@ -1345,7 +1684,7 @@ export class ShiftSystem extends createSystem({
         const at = this.#worldOf(this.kit.object)
         this.ghost.position.copy(at).add(temp.set(0, BOX.h / 2 + 0.12 + Math.sin(this.elapsed * 2) * 0.01, 0))
         this.ghost.rotation.y = Math.atan2(this.head.x - at.x, this.head.z - at.z)
-        const tagY = this.ghost.visible ? 0.24 : 0.08
+        const tagY = this.ghost.visible ? 0.12 + (this.ghostHeight ?? 0.15) + 0.03 + this.tag.height / 2 : 0.08
         this.tag.mesh.position.copy(at).add(temp.set(0, BOX.h / 2 + tagY, 0))
         this.tag.mesh.lookAt(this.head)
         for (const m of this.ghost.children) m.rotation.y += 0.01
@@ -1358,10 +1697,18 @@ export class ShiftSystem extends createSystem({
         const child = id.includes('nino')
         const elder = id.includes('mayor')
         const model = this.loader.instanceSync(this.people.get(id))
-        if (!this.personHeight.has(id)) this.personHeight.set(id, new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()).y || 1)
         const height = (child ? HEIGHT.child : elder ? HEIGHT.elder : HEIGHT.adult) * (0.97 + Math.random() * 0.06)
-        const person = new GuideCharacter(model, [], { face: true, stoop: elder ? 0.12 : 0 })
-        person.root.scale.setScalar(height / this.personHeight.get(id))
+        // the character's own appearing animation sets its model's scale back to 1, which undid the
+        // asset's (people came out two and a half times too big): the model goes in a holder instead
+        const holder = new THREE.Group()
+        holder.add(model)
+        const person = new GuideCharacter(holder, [], { face: true, stoop: elder ? 0.12 : 0 })
+        // the doll as it was designed, every part in its proportion, only smaller as a whole
+        const doll = this.#dollHeight(id, person)
+        const k = height / doll
+        person.root.scale.setScalar(k)
+        // its shadow the size of the doll's feet, not of the large guide it was made for
+        person.blob.scale.setScalar(0.55)
         person.height = height
         person.place(position, yaw)
         person.temper = new Temper(person)
@@ -1371,58 +1718,146 @@ export class ShiftSystem extends createSystem({
         return person
     }
 
-    /** Where they wait: across the table, the first ones closer. */
-    #lineSlots() {
-        const D = this.depth
-        return [
-            { x: -0.5, z: -D - 1.1 },
-            { x: 0.5, z: -D - 1.15 },
-            { x: -1.0, z: -D - 1.7 },
-            { x: 0.05, z: -D - 1.75 },
-            { x: 1.05, z: -D - 1.7 },
-            { x: -0.5, z: -D - 2.3 },
-            { x: 0.55, z: -D - 2.35 },
-        ]
+    /** How tall a character's doll is, unscaled, from its feet to the top of its head. */
+    #dollHeight(id, person) {
+        if (this.dollHeights?.has(id)) return this.dollHeights.get(id)
+        person.root.updateWorldMatrix(true, true)
+        const box = new THREE.Box3()
+        person.model.traverse((mesh) => {
+            if (!mesh.isMesh) return
+            mesh.geometry.computeBoundingBox()
+            box.union(mesh.geometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld))
+        })
+        const h = box.getSize(new THREE.Vector3()).y || 1
+        ;(this.dollHeights ??= new Map()).set(id, h)
+        return h
     }
 
+    /**
+     * The window: where whoever is attended stands, just past the left end of the table, turned to
+     * the person, in floor the room leaves free (see #layoutPeople).
+     */
     #counterSpot() {
-        return { x: 0, z: -this.depth - 0.42 }
+        return this.people3.window
     }
 
-    /** A family keeps together: the first walks, the rest go beside them. */
-    #familyPeople(order, x) {
-        const [first, ...rest] = order.visitors
-        const entryZ = -this.depth - 3.4
-        const leader = this.#person(first, new THREE.Vector3(x, 0, entryZ), 0)
-        const members = [leader]
-        let beside = 0.22
-        for (const id of rest) {
-            const person = this.#person(id, new THREE.Vector3(x + beside + 0.2, 0, entryZ), 0)
-            person.follow(leader, { x: -(beside + 0.2), z: 0.05 }, { x: -(beside + 0.2) * 0.8, z: -0.2 })
-            beside += 0.4
-            members.push(person)
-        }
-        return { leader, members }
+    /**
+     * Nobody walks through anybody. Someone walking just ahead: wait until they are out of the way
+     * (of two face to face, the one who came later waits). Someone standing just ahead: go round
+     * them, stepping aside, to the side there is more room on.
+     */
+    #keepApart() {
+        // whoever waits outside is not in the room
+        const people = [...this.crowd].filter((p) => p.root.visible)
+        people.forEach((p, i) => {
+            const fx = Math.sin(p.root.rotation.y)
+            const fz = Math.cos(p.root.rotation.y)
+            let wait = false
+            let aside = 0
+            for (const [j, q] of people.entries()) {
+                if (q === p) continue
+                const dx = q.position.x - p.position.x
+                const dz = q.position.z - p.position.z
+                const d = Math.hypot(dx, dz)
+                if (d > PERSON_GAP || d < 1e-3 || (dx * fx + dz * fz) / d < 0.35) continue
+                if (q.walkAmt > 0.15) {
+                    const qAhead = -(dx * Math.sin(q.root.rotation.y) + dz * Math.cos(q.root.rotation.y)) / d
+                    // face to face: the earlier one goes on, round the other; the other waits, a step aside too
+                    const right = dx * fz - dz * fx
+                    aside = right > 0 ? -0.5 : 0.5
+                    if (!(qAhead > 0.35 && j > i)) wait = true
+                } else {
+                    // they stand: pass on the side away from them
+                    const right = dx * fz - dz * fx
+                    aside = right > 0 ? -0.55 : 0.55
+                }
+            }
+            p.hold = wait ? 0 : 1
+            p.sideWant = aside
+        })
     }
 
+    /** Where they wait: a line from the window, each spot with room and in sight. */
+    #lineSlots() {
+        return this.people3.slots
+    }
+
+    /** Where they go once done: back the way they came. */
+    #exit() {
+        const { exit } = this.people3
+        return [exit.x, exit.z]
+    }
+
+    /** The yaw that turns someone standing at (x, z) to face (tx, tz). */
+    #facing(x, z, tx, tz) {
+        return Math.atan2(tx - x, tz - z)
+    }
+
+    /** One person comes for each order, on behalf of everyone it is for: from past the end of the line. */
+    #familyPeople(order) {
+        const w = this.#counterSpot()
+        const from = this.people3.entry
+        const leader = this.#person(order.visitors[0], new THREE.Vector3(from.x, 0, from.z), this.#facing(from.x, from.z, w.x, w.z))
+        return { leader, members: [leader] }
+    }
+
+    /** They walk there around whatever is in the way, and once there do what they were told. */
     #walkTo(leader, x, z, then) {
-        leader.walk([leader.position.clone(), new THREE.Vector3(x, 0, z)], { speed: WALK_SPEED }).then((arrived) => {
+        // around the furniture, and around whoever stands in the way, leaving them their room
+        const standing = [...this.crowd].filter((p) => p !== leader && p.root.visible && !p.path).map((p) => ({ x: p.position.x, z: p.position.z }))
+        const way = this.plan ? this.plan.path({ x: leader.position.x, z: leader.position.z }, { x, z }, 0.2, standing, PERSON_GAP * 0.9) : [new THREE.Vector3(x, 0, z)]
+        leader.walk([leader.position.clone(), ...way], { speed: WALK_SPEED }).then((arrived) => {
             if (arrived !== false) then?.()
         })
     }
 
-    #freeSlot() {
-        const taken = [...this.families.values()].map((f) => f.slot)
-        return this.#lineSlots().find((s) => !taken.some((t) => t && t.x === s.x && t.z === s.z)) ?? this.#lineSlots()[0]
+    /** In line, each looks towards the window; at it, towards the person. */
+    #faceWhenThere(leader, slot) {
+        const w = this.#counterSpot()
+        const atWindow = slot.x === w.x && slot.z === w.z
+        leader.targetYaw = atWindow ? this.#facing(slot.x, slot.z, 0, 0.35) : this.#facing(slot.x, slot.z, w.x, w.z)
+    }
+
+    /**
+     * The line as a line: each waits in the place their turn gives them, the first nearest the
+     * window, and all move up when someone goes to it. Whoever has no place in the room yet waits
+     * outside, out of sight, and comes in when there is one.
+     */
+    #arrangeLine() {
+        const slots = this.#lineSlots()
+        const waiting = [...this.families.values()].filter((f) => f.order.state === 'waiting').sort((a, b) => a.joinedAt - b.joinedAt)
+        let moved = 0
+        waiting.forEach((f, i) => {
+            const slot = slots[i]
+            if (!slot) {
+                if (!f.outside) {
+                    f.outside = true
+                    f.leader.root.visible = false
+                    f.leader.place(new THREE.Vector3(this.people3.entry.x, 0, this.people3.entry.z), f.leader.root.rotation.y)
+                }
+                f.slot = null
+                return
+            }
+            if (f.outside) {
+                f.outside = false
+                f.leader.appear()
+            }
+            if (f.slot === slot) return
+            f.slot = slot
+            // moving up, one after the other from the front, each when the one ahead has left room
+            const delay = moved++ * 0.9
+            gsap.delayedCall(delay, () => {
+                if (f.slot === slot && f.order.state === 'waiting') this.#walkTo(f.leader, slot.x, slot.z, () => this.#faceWhenThere(f.leader, slot))
+            })
+        })
     }
 
     #familyJoins(order) {
-        const slot = this.#freeSlot()
-        const { leader, members } = this.#familyPeople(order, slot.x)
-        const f = { leader, members, card: null, slot, order }
+        const { leader, members } = this.#familyPeople(order)
+        const f = { leader, members, card: null, slot: null, order, joinedAt: this.elapsed }
         this.families.set(order.id, f)
         this.#giveCard(f)
-        this.#walkTo(leader, slot.x, slot.z, () => (leader.targetYaw = 0))
+        this.#arrangeLine()
         if (order.urgent) {
             this.sound.play('alert')
             this.#say('alert', `Urgente: ${order.family}`)
@@ -1448,7 +1883,7 @@ export class ShiftSystem extends createSystem({
         for (const f of this.families.values()) {
             if (!f.card) continue
             const speaking = this.speaker === f
-            f.card.mesh.visible = !speaking
+            f.card.mesh.visible = !speaking && !f.outside
             f.card.mesh.position.set(f.leader.position.x, f.leader.height + 0.2, f.leader.position.z)
             f.card.mesh.lookAt(this.head)
         }
@@ -1458,15 +1893,21 @@ export class ShiftSystem extends createSystem({
         const f = this.familyAtCounter
         this.familyAtCounter = null
         this.#dropKit()
-        f.slot = this.#freeSlot()
+        f.slot = null
         this.#giveCard(f)
-        this.#walkTo(f.leader, f.slot.x, f.slot.z, () => (f.leader.targetYaw = 0))
+        this.#arrangeLine()
     }
 
     #dropKit() {
         if (!this.kit) return
         this.things.delete(this.kit.entity)
         this.kit.entity.destroy()
+        // the order's label goes with it, wherever it was
+        for (const [entity, t] of this.things) {
+            if (t.kind !== 'label' || t.kit !== this.kit) continue
+            this.things.delete(entity)
+            entity.destroy()
+        }
         this.kit = null
         this.#rebuildGhost()
     }
@@ -1488,7 +1929,7 @@ export class ShiftSystem extends createSystem({
             else this.#placeBubble()
         }
         if (this.speaker || this.complaintIn > 0 || !this.running) return
-        const candidates = [...this.families.values()].filter((f) => (f.order.state === 'waiting' || f.order.state === 'packing') && leftOf(f.order) < COMPLAINS_BELOW && f.leader.walkAmt < 0.3)
+        const candidates = [...this.families.values()].filter((f) => (f.order.state === 'waiting' || f.order.state === 'packing') && leftOf(f.order) < COMPLAINS_BELOW && f.leader.walkAmt < 0.3 && !f.outside)
         candidates.sort((a, b) => (a === this.lastSpeaker) - (b === this.lastSpeaker) || leftOf(a.order) - leftOf(b.order))
         const next = candidates[0]
         if (!next) return
@@ -1520,32 +1961,77 @@ export class ShiftSystem extends createSystem({
         f.card = null
     }
 
-    /** Their turn: they come up to the table, and an empty carton for them appears on it. */
+    /**
+     * Their turn: they come up to the window, and their order arrives on the table: an empty
+     * carton at its left end, by the window, and the printed order beside it.
+     */
     #familyComes(order) {
         const f = this.families.get(order.id)
         f.slot = null
         this.familyAtCounter = f
         this.#removeCard(f)
+        // called from outside, they come in first
+        if (f.outside) {
+            f.outside = false
+            f.leader.appear()
+        }
         const spot = this.#counterSpot()
-        this.#walkTo(f.leader, spot.x, spot.z, () => (f.leader.targetYaw = 0))
+        this.#walkTo(f.leader, spot.x, spot.z, () => this.#faceWhenThere(f.leader, spot))
         const F = this.frame3
         const kitObject = cardboardBox(KIT_TAPE)
         kitObject.userData.seal.visible = false
         for (const hinge of kitObject.userData.flaps) hinge.rotation.x = hinge.userData.side * 2.75
         kitObject.name = order.id
-        F.at(Math.min(F.maxX - BOX.w / 2 - 0.05, 0.32), this.top + BOX.h / 2 + 0.01, -Math.min(this.depth / 2, 0.3), kitObject.position)
+        const kitX = Math.max(F.minX + BOX.w / 2 + 0.05, -0.32)
+        F.at(kitX, this.top + BOX.h / 2 + 0.01, -Math.min(this.depth / 2, 0.3), kitObject.position)
         kitObject.quaternion.copy(yawQ(F.yaw))
         gsap.from(kitObject.scale, { x: 0.5, y: 0.5, z: 0.5, duration: 0.45, ease: 'back.out(2)' })
         const t = { kind: 'kit' }
-        const entity = this.#thing(kitObject, t, { parent: null })
+        // it stays on the table, open, until both flaps are shut: only then can it be taken and handed over
+        const entity = this.#thing(kitObject, t, { parent: null, grab: false })
         this.#dynamic(entity, BOX, { density: 0.4 })
         this.#occlude(entity)
         const units = Object.entries(order.items).flatMap(([id, q]) => Array(q).fill(id))
-        this.kit = { entity, object: kitObject, layout: cartonLayout(this.supplies, units), used: new Set() }
+        this.kit = { entity, object: kitObject, layout: cartonLayout(this.supplies, units), used: new Set(), closed: false, labeled: false }
+        this.#printTicket(order, kitX + BOX.w / 2 + 0.12)
         this.#rebuildGhost()
         this.sound.play('radio')
-        if (!this.guide) this.#say(order.urgent ? 'alert' : 'radio', `Pasa ${order.family}`)
+        if (!this.guide) this.#say(order.urgent ? 'alert' : 'radio', `${order.family} está en la ventanilla`)
         this.#refreshNext()
+    }
+
+    /** The printed order, lying on the table near the person, ready to be stuck on the carton. */
+    #printTicket(order, x) {
+        const ticket = orderTicket()
+        ticket.refresh({ family: order.family, urgent: !!order.urgent, items: Object.entries(order.items).map(([id, qty]) => ({ label: SUPPLIES[id].label, qty })) })
+        const object = new THREE.Group()
+        ticket.mesh.rotation.x = -Math.PI / 2
+        object.add(ticket.mesh)
+        object.userData.size = { w: ticket.width, h: 0.006, d: ticket.height }
+        this.frame3.at(x, this.top + 0.02, -0.14, object.position)
+        object.quaternion.copy(yawQ(this.frame3.yaw))
+        const t = { kind: 'label', kit: this.kit, ticket }
+        const entity = this.#thing(object, t, { parent: null })
+        this.#dynamic(entity, object.userData.size, { density: 0.3 })
+        this.#occlude(entity)
+        gsap.from(object.scale, { x: 0.4, y: 0.4, z: 0.4, duration: 0.35, ease: 'back.out(2)' })
+    }
+
+    /** Let go on the shut carton, the order sticks on its front: now it is that family's. */
+    #stickLabel(entity, t) {
+        const kit = this.kit
+        if (!kit.closed) {
+            this.#say('warn', 'Primero cierra la caja')
+            return this.#watchThrow(entity)
+        }
+        this.things.delete(entity)
+        entity.destroy()
+        const sticker = new THREE.Mesh(t.ticket.mesh.geometry, t.ticket.mesh.material)
+        sticker.position.set(0, -0.01, BOX.d / 2 + 0.003)
+        kit.object.add(sticker)
+        kit.labeled = true
+        this.haptics.play('right')
+        this.sound.play('tape', this.#worldOf(kit.object))
     }
 
     #sendAway(f, x, z) {
@@ -1577,7 +2063,7 @@ export class ShiftSystem extends createSystem({
             person.temper.settled = short.length ? 'worried' : 'happy'
             if (!short.length) person.celebrate()
         }
-        this.#sendAway(f, 2.6, -this.depth - 3.4)
+        this.#sendAway(f, ...this.#exit())
         if (order.gaveUp) this.#say('warn', `${order.family} se cansó de esperar`)
         else if (short.length) this.#say('warn', `${order.family} se fue sin ${list(short.map(([id, n]) => `${n} ${low(id)}`))}`)
         else this.#say('done', `${order.family} recibió todo`)
@@ -1587,12 +2073,22 @@ export class ShiftSystem extends createSystem({
         const f = this.families.get(order.id)
         this.#removeCard(f)
         f.slot = null
+        // still waiting outside: they just never come in
+        if (f.outside) {
+            for (const person of f.members) {
+                person.root.removeFromParent()
+                this.crowd.delete(person)
+            }
+            this.families.delete(order.id)
+            this.sound.play('wrong')
+            return this.#say('alert', `${order.family} se fue sin nada`)
+        }
         for (const person of f.members) person.temper.settled = 'angry'
         if (this.familyAtCounter === f) {
             this.familyAtCounter = null
             this.#dropKit()
         }
-        this.#sendAway(f, f.leader.position.x, -this.depth - 3.4)
+        this.#sendAway(f, ...this.#exit())
         this.sound.play('wrong')
         this.#say('alert', `${order.family} se fue sin nada`)
     }
@@ -1604,7 +2100,11 @@ export class ShiftSystem extends createSystem({
         this.next.show(on)
         if (on) {
             this.next.text('family', next.family)
-            this.next.text('title', next.urgent ? 'Urgente' : 'Que pase')
+            this.next.text('title', next.urgent ? 'URGENTE' : 'QUE PASE')
+            const color = next.urgent ? '#D92632' : '#1F8A4C'
+            this.next.set('title', { color })
+            this.next.set('nextBadge', { backgroundColor: color })
+            this.next.set('next', { borderColor: color })
         }
     }
 
@@ -1628,13 +2128,15 @@ export class ShiftSystem extends createSystem({
             this.#rebuildGhost()
             if (detail.complete) {
                 this.sound.play('done')
-                if (!this.guide) this.#say('info', 'Completo: pásale la caja')
+                if (!this.guide) this.#say('info', 'Completo: ciérrala y pégale la orden')
             }
         }
         if (event === 'impatient') this.sound.play('radio')
         if (event === 'delivered') this.#familyLeaves(detail)
         if (event === 'left') this.#familyGivesUp(detail)
         if (event === 'finished') this.#closing(detail)
+        // whoever left the line, for the window or for good: the rest move up
+        if (this.people3 && (event === 'order' || event === 'left' || event === 'delivered')) this.#arrangeLine()
         if (this.zones) {
             this.#refreshShelf()
             if (this.watch?.visible) this.#refreshWatch()

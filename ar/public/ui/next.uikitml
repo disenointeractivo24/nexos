@@ -1,8 +1,11 @@
 <meta preferred-color-scheme="light" />
-<Button id="next" variant="positive" size="lg">
-  <ButtonIcon><Users /></ButtonIcon>
-  <ButtonLabel>
-    <p id="title">Que pase</p>
-    <ButtonLabelSubtext><p id="family">Familia</p></ButtonLabelSubtext>
-  </ButtonLabel>
-</Button>
+<style>
+  #next:hover { background-color: #E4F1E9; }
+</style>
+<button id="next" flex-direction="row" align-items="center" gap="14" padding-top="10" padding-bottom="10" padding-left="10" padding-right="26" border-radius="40" background-color="#FFFFFF" border-width="3" border-color="#1F8A4C">
+  <div id="nextBadge" width="56" height="56" border-radius="28" background-color="#1F8A4C" align-items="center" justify-content="center"><Users width="28" height="28" color="#FFFFFF" /></div>
+  <div flex-direction="column" gap="0">
+    <p id="title" font-size="16" font-weight="bold" color="#1F8A4C" letter-spacing="1">QUE PASE</p>
+    <p id="family" font-size="24" font-weight="bold" color="#011E41">Familia</p>
+  </div>
+</button>
