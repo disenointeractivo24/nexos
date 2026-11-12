@@ -63,6 +63,8 @@ const KIT_REACH = 0.24
 const HAND_OVER = 0.6
 /** Faster than this, what is let go of is slowed down: things are set down or passed, never thrown. */
 const MAX_THROW = 1.4
+/** Let go faster than this (m/s), an empty carton is thrown away rather than set down. */
+const THROW_AWAY = 1.0
 /** A pinch on a carton shorter than this, without moving it, is a tap: it opens. */
 const TAP_SECONDS = 0.32
 const TAP_MOVE = 0.04
@@ -1248,6 +1250,8 @@ export class ShiftSystem extends createSystem({
         const first = held.track[0]
         const last = held.track[held.track.length - 1]
         const v = first && last && last.at > first.at ? last.p.clone().sub(first.p).divideScalar(last.at - first.at) : new THREE.Vector3()
+        // how it left the hand, untamed: an empty carton thrown hard enough is thrown away
+        t.releaseVelocity = v.clone()
         if (v.length() > MAX_THROW) v.setLength(MAX_THROW)
         entity.removeComponent(Grabbed)
         if (this.things.has(entity) && entity.hasComponent(PhysicsBody) && !entity.hasComponent(PhysicsManipulation) && v.lengthSq() > 1e-4) entity.addComponent(PhysicsManipulation, { linearVelocity: [v.x, v.y, v.z], angularVelocity: [0, 0, 0] })
@@ -1298,7 +1302,11 @@ export class ShiftSystem extends createSystem({
         t.held = false
         const where = this.#worldOf(t.object)
         const quick = this.elapsed - (t.takenAt ?? 0) < TAP_SECONDS && where.distanceTo(t.takenFrom ?? where) < TAP_MOVE
-        if (t.kind === 'open') return this.#watchThrow(entity)
+        if (t.kind === 'open') {
+            // only an empty one, and only thrown, not set down
+            if (t.empty && (t.releaseVelocity?.length() ?? 0) > THROW_AWAY) return this.#discard(t)
+            return this.#watchThrow(entity)
+        }
         if (t.kind === 'box') {
             if (quick) return this.#openBox(t)
             return this.#watchThrow(entity)
@@ -1414,6 +1422,12 @@ export class ShiftSystem extends createSystem({
             const atHome = t.home && p.distanceTo(t.home) < 0.35
             const underTable = onFloor && !atHome && ((l.x > F.minX - 0.05 && l.x < F.maxX + 0.05 && l.z < 0.05) || l.z < -F.depth - 0.05)
             if (!fell && !far && !amongPeople && !underTable) continue
+            // an empty carton lost is a carton thrown away: it does not come back
+            if (t.kind === 'open' && t.empty) {
+                t.releaseVelocity = null
+                this.#discard(t)
+                continue
+            }
             this.#sendHome(entity, t)
         }
     }
@@ -1769,6 +1783,10 @@ export class ShiftSystem extends createSystem({
         const { object } = this.holding.t
         const local = object.parent.worldToLocal(temp.copy(this.holdTarget))
         object.position.lerp(local, 1 - Math.exp(-dt * 22))
+        // where it has been lately, for the speed it is let go with
+        const track = (this.holding.track ??= [])
+        track.push({ p: this.#worldOf(object), at: this.elapsed })
+        if (track.length > 6) track.shift()
     }
 
     /**
@@ -1777,8 +1795,12 @@ export class ShiftSystem extends createSystem({
      */
     #dropAt(ndc) {
         if (!this.holding) return
-        const { entity, t, moved } = this.holding
+        const { entity, t, moved, track = [] } = this.holding
         this.holding = null
+        // the mouse's flick, as a hand's throw
+        const first = track[0]
+        const last = track[track.length - 1]
+        t.releaseVelocity = first && last && last.at > first.at ? last.p.clone().sub(first.p).divideScalar(last.at - first.at) : new THREE.Vector3()
         if (!moved) {
             entity.removeComponent(Grabbed)
             // a click: a carton opens, whatever else was picked goes back on its own
@@ -2424,14 +2446,24 @@ export class ShiftSystem extends createSystem({
         }
     }
 
-    /** An emptied carton is folded away, and leaves its place free. */
+    /** An emptied carton stays where it is: the person throws it away (see #discard). */
     #clearBox(box) {
-        for (const [entity, t] of this.things) {
+        for (const t of this.things.values()) {
             if (t.kind !== 'open' || t.box !== box) continue
-            this.things.delete(entity)
-            gsap.to(t.object.scale, { y: 0.05, duration: 0.35, ease: 'power2.in', onComplete: () => entity.destroy() })
-            this.sound.play('box', this.#worldOf(t.object))
+            t.empty = true
+            if (!this.guide) this.#say('info', this.world.session ? 'Caja vacía: lánzala para desecharla' : 'Caja vacía: arrástrala y suéltala con impulso')
         }
+    }
+
+    /** An empty carton thrown away: it flies on as it was thrown, shrinking until it is gone. */
+    #discard(t) {
+        const entity = t.entity
+        this.things.delete(entity)
+        const v = t.releaseVelocity
+        if (v && entity.hasComponent(PhysicsBody) && !entity.hasComponent(PhysicsManipulation)) entity.addComponent(PhysicsManipulation, { linearVelocity: [v.x, v.y, v.z], angularVelocity: [1.5, 0.5, 0] })
+        this.sound.play('box', this.#worldOf(t.object))
+        this.haptics.play('right')
+        gsap.to(t.object.scale, { x: 0.01, y: 0.01, z: 0.01, duration: 0.45, delay: 0.15, ease: 'power2.in', onComplete: () => entity.destroy() })
     }
 
     /* ---------------- closing ---------------- */
