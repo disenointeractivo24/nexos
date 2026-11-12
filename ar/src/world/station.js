@@ -251,6 +251,37 @@ export function cardboardBox(tape = '#B8642A') {
 }
 
 /** A closed carton, one box of board with its base at y = 0: it only rides on the hand truck. */
+/** An emptied carton crushed flat: its board folded in two, origin at its middle. */
+export const FLAT = { w: 0.52, h: 0.03, d: 0.36 }
+export function flatCarton() {
+    const { kraft, print } = cardboard()
+    const g = new THREE.Group()
+    for (const [y, tilt] of [[-0.007, 0], [0.007, 0.03]]) {
+        const layer = new THREE.Mesh(new THREE.BoxGeometry(FLAT.w, 0.012, FLAT.d), kraft)
+        layer.position.y = y
+        layer.rotation.z = tilt
+        g.add(layer)
+    }
+    const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.1).rotateX(-Math.PI / 2), print)
+    mark.position.y = FLAT.h / 2 + 0.002
+    g.add(mark)
+    g.userData.size = { ...FLAT }
+    return g
+}
+
+/** Where crushed cartons go: a pallet on the floor, the flat ones piling up on it. Base at y = 0. */
+export function recyclePile() {
+    const g = pallet()
+    g.scale.set(0.7, 1, 0.6)
+    const sheets = new THREE.Group()
+    sheets.position.y = PALLET.h
+    // the pallet is scaled; the sheets keep their own size
+    sheets.scale.set(1 / 0.7, 1, 1 / 0.6)
+    g.add(sheets)
+    g.userData.sheets = sheets
+    return g
+}
+
 export function plainCarton() {
     return new THREE.Mesh(new THREE.BoxGeometry(BOX.w, BOX.h, BOX.d).translate(0, BOX.h / 2, 0), cardboard().kraft)
 }

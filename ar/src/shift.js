@@ -38,7 +38,7 @@ import { familyCard, fontsReady, orderTag, orderTicket, speechBubble } from './w
 import { comfortableTop, isWorktop, rayHits, surfaceAt, surfaceFromMesh, surfaceFromPlane, surfaceMarker, WorkFrame } from './world/room.js'
 import { BODY_HIGH, BODY_LOW, FloorPlan } from './world/floorplan.js'
 import { SpatialPanel } from './world/spatialUI.js'
-import { BOX, cardboardBox, cartonLayout, categoryCrate, CRATE, crateLayout, lowShelf, PALLET, pallet, preloadSupplies, supplyObject, virtualTable } from './world/station.js'
+import { BOX, cardboardBox, cartonLayout, categoryCrate, CRATE, crateLayout, FLAT, flatCarton, lowShelf, PALLET, preloadSupplies, recyclePile, supplyObject, virtualTable } from './world/station.js'
 import { Temper } from './world/temper.js'
 
 /** The inventory this experience works on: its own point, never one the donors see. */
@@ -210,6 +210,7 @@ export class ShiftSystem extends createSystem({
         this.#placeWatch(delta)
         this.#placeGhost()
         this.#followCartons()
+        this.#crushBoxes()
         this.#roomLight(delta)
         this.recoverClock += delta
         // often: what lands where it cannot stay is back before it can be missed
@@ -491,6 +492,7 @@ export class ShiftSystem extends createSystem({
         this.hadGuide = true
         // the people's places, last: in what room the shelf and the piles have left
         this.people3 = this.#layoutPeople()
+        this.#recycleSpot()
         this.#intro()
         this.#cameraLight()
     }
@@ -1043,6 +1045,10 @@ export class ShiftSystem extends createSystem({
         const where = this.#worldOf(t.object)
         const quick = this.elapsed - (t.takenAt ?? 0) < TAP_SECONDS && where.distanceTo(t.takenFrom ?? where) < TAP_MOVE
         if (t.kind === 'open') return this.#watchThrow(entity)
+        if (t.kind === 'flat') {
+            if (this.#recycleFlat(entity, where)) return
+            return this.#watchThrow(entity)
+        }
         if (t.kind === 'box') {
             if (quick) return this.#openBox(t)
             return this.#watchThrow(entity)
@@ -1501,8 +1507,9 @@ export class ShiftSystem extends createSystem({
         this.holding = null
         if (!moved) {
             entity.removeComponent(Grabbed)
-            // a click: a carton opens, whatever else was picked goes back on its own
+            // a click: a carton opens, an empty one folds flat, whatever else was picked goes back on its own
             if (t.kind === 'box') this.#openBox(t)
+            if (t.kind === 'open' && t.empty && !t.crushed) this.#crush(t)
             return
         }
         const ray = this.#rayAt(ndc)
@@ -2144,14 +2151,108 @@ export class ShiftSystem extends createSystem({
         }
     }
 
-    /** An emptied carton is folded away, and leaves its place free. */
+    /** An emptied carton stays where it is, empty: it is the person who crushes it (see #crushBoxes). */
     #clearBox(box) {
-        for (const [entity, t] of this.things) {
+        for (const t of this.things.values()) {
             if (t.kind !== 'open' || t.box !== box) continue
-            this.things.delete(entity)
-            gsap.to(t.object.scale, { y: 0.05, duration: 0.35, ease: 'power2.in', onComplete: () => entity.destroy() })
-            this.sound.play('box', this.#worldOf(t.object))
+            t.empty = true
+            if (!this.guide) this.#say('info', this.hands.tracked || this.world.session ? 'Caja vacía: aplástala con las dos manos' : 'Caja vacía: haz clic para doblarla')
         }
+    }
+
+    /* ---------------- crushing what is empty, and recycling it ---------------- */
+
+    /** Where the crushed cartons go: a pallet on the floor, past the piles, where the room has space. */
+    #recycleSpot() {
+        const plan = this.plan
+        const last = this.pileColumns?.[this.pileColumns.length - 1] ?? { x: 1, z: -0.5 }
+        const ok = (x, z) => this.#inSight(x, z) && this.#clearOfPerson(x, z) && [this.#counterSpot(), ...this.#lineSlots()].every((s) => Math.hypot(s.x - x, s.z - z) > 1)
+        const spot = plan.nearestFree(last.x + 0.3, last.z - 0.6, 0.38, { reach: 2.5, accept: ok }) ?? plan.nearestFree(0.9, -1.2, 0.3, { reach: 3, accept: ok }) ?? { x: last.x, z: last.z - 0.7 }
+        const pile = recyclePile()
+        pile.position.set(spot.x, 0, spot.z)
+        pile.rotation.y = Math.atan2(0 - spot.x, 0.35 - spot.z)
+        this.rootObject.add(pile)
+        plan.blockRect(spot.x, spot.z, 0.34, 0.26, pile.rotation.y)
+        plan.finalize({ x: 0, z: 0.35 })
+        this.#solid(this.rootObject.localToWorld(new THREE.Vector3(spot.x, PALLET.h / 2, spot.z)), this.frame3.yaw + pile.rotation.y, [0.63, PALLET.h, 0.48])
+        this.recycle = { object: pile, count: 0 }
+    }
+
+    /**
+     * Two open hands, one on each side of an empty carton, palms in: as they come together the
+     * board gives way. Far enough in, it folds flat; let go before, it springs back.
+     */
+    #crushBoxes() {
+        if (!this.running) return
+        const { left, right } = this.hands.sides
+        for (const t of this.things.values()) {
+            if (t.kind !== 'open' || !t.empty || t.crushed) continue
+            const body = t.object.children[0]
+            let squeeze = 1
+            if (left.seen && right.seen && !left.pinching && !right.pinching) {
+                const a = t.object.worldToLocal(temp.copy(left.joints['middle-finger-metacarpal']))
+                const b = t.object.worldToLocal(temp2.copy(right.joints['middle-finger-metacarpal']))
+                const around = (p) => Math.abs(p.z) < BOX.d / 2 + 0.12 && Math.abs(p.y) < BOX.h / 2 + 0.15
+                // one hand at each end of the carton, on opposite sides
+                if (around(a) && around(b) && a.x * b.x < 0 && Math.min(Math.abs(a.x), Math.abs(b.x)) > 0.03) squeeze = THREE.MathUtils.clamp(Math.abs(a.x - b.x) / BOX.w, 0.3, 1)
+            }
+            if (squeeze < 0.98) {
+                t.squeezing = true
+                body.scale.x = squeeze
+                // a bit past half: it gives in and folds
+                if (squeeze < 0.62) this.#crush(t)
+            } else if (t.squeezing) {
+                t.squeezing = false
+                gsap.to(body.scale, { x: 1, duration: 0.35, ease: 'elastic.out(1, 0.5)' })
+            }
+        }
+    }
+
+    /** Folded flat: the carton becomes a sheet of board, to be taken to the recycling. */
+    #crush(t) {
+        t.crushed = true
+        const at = this.#worldOf(t.object)
+        const yaw = new THREE.Euler().setFromQuaternion(t.object.getWorldQuaternion(new THREE.Quaternion()), 'YXZ').y
+        this.sound.play('box', at)
+        this.haptics.play('right')
+        const body = t.object.children[0]
+        gsap.to(body.scale, {
+            x: 0.25,
+            y: 0.12,
+            duration: 0.22,
+            ease: 'power2.in',
+            onComplete: () => {
+                this.things.delete(t.entity)
+                t.entity.destroy()
+                const flat = flatCarton()
+                flat.position.copy(at)
+                flat.position.y -= BOX.h / 2 - FLAT.h
+                flat.quaternion.copy(yawQ(yaw))
+                const entity = this.#thing(flat, { kind: 'flat' }, { parent: null })
+                this.#dynamic(entity, FLAT, { density: 0.3 })
+                this.#occlude(entity)
+                if (!this.guide) this.#say('done', 'Llévala a la pila de reciclaje')
+            },
+        })
+    }
+
+    /** Let go on the recycling pallet: it lies flat on the pile, which grows. */
+    #recycleFlat(entity, where) {
+        const pile = this.recycle
+        if (!pile) return false
+        const at = pile.object.getWorldPosition(new THREE.Vector3())
+        if (Math.hypot(where.x - at.x, where.z - at.z) > 0.6 || where.y > at.y + 1.4) return false
+        this.things.delete(entity)
+        entity.destroy()
+        const sheet = flatCarton()
+        sheet.position.set((Math.random() - 0.5) * 0.04, pile.count * FLAT.h + FLAT.h / 2, (Math.random() - 0.5) * 0.04)
+        sheet.rotation.y = (Math.random() - 0.5) * 0.3
+        pile.object.userData.sheets.add(sheet)
+        gsap.from(sheet.position, { y: sheet.position.y + 0.25, duration: 0.3, ease: 'bounce.out' })
+        pile.count++
+        this.sound.play('box', at)
+        this.haptics.play('right')
+        return true
     }
 
     /* ---------------- closing ---------------- */
