@@ -1,4 +1,4 @@
-import { DepthOccludable, DepthSensingSystem, SessionMode, VisibilityState, World } from '@iwsdk/core'
+import { DepthOccludable, DepthSensingSystem, Grabbed, SessionMode, VisibilityState, World } from '@iwsdk/core'
 import { ShiftSystem } from './shift.js'
 
 const start = document.getElementById('start')
@@ -37,8 +37,10 @@ async function main() {
         render: { fov: 60, near: 0.01, far: 60 },
         features: {
             locomotion: false,
-            // only hands: a pinch near something takes it, a pinch along the ray too
-            grabbing: { useHandPinchForGrab: true },
+            // the SDK's grab is off: taking things by hand is the shift's own (see #handGrab in
+            // shift.js), one thing per hand. The SDK's system only listened to the same pinch for
+            // grabbable components no entity here has, a second reader of every pinch for nothing.
+            grabbing: false,
             sceneUnderstanding: { showWireFrame: false },
             environmentRaycast: true,
             physics: { useWorker: true, updateFrequency: 72, interpolation: true },
@@ -48,9 +50,27 @@ async function main() {
     })
     // occlusion is not part of World.create: it is a system of its own, with its component
     world.registerComponent(DepthOccludable).registerSystem(DepthSensingSystem, { configData: { enableOcclusion: true, enableDepthTexture: true } })
+    // what is held is marked Grabbed, so the physics follows the hand: without the SDK's grab
+    // system, the component is registered here
+    if (!Grabbed.bitmask) world.registerComponent(Grabbed)
     world.registerSystem(ShiftSystem)
     const shift = world.getSystem(ShiftSystem)
-    window.nexosAR = { world, shift }
+    window.nexosAR = { world, shift, report: () => shift.report() }
+
+    // ?debug shows the debug view (G toggles it on a computer); ?calibrar draws the zones again
+    const params = new URLSearchParams(location.search)
+    let calibrate = params.has('calibrar')
+    try {
+        calibrate ||= sessionStorage.getItem('nexos-ar1-calibrar') === '1'
+        sessionStorage.removeItem('nexos-ar1-calibrar')
+    } catch {
+        // private browsing: ?calibrar still works
+    }
+    shift.forceCalibration = calibrate
+    if (params.has('debug')) shift.setDebug(true)
+    window.addEventListener('keydown', (e) => {
+        if (e.code === 'KeyG') shift.setDebug(!shift.debugOn)
+    })
 
     // capability detection, in words that say what to do about it. Asked again now that all is
     // loaded: the page's first question (see index.html) only serves to report early.

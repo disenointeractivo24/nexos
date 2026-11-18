@@ -70,6 +70,27 @@ export class FloorPlan {
         points.forEach((a, i) => this.blockSegment(a, points[(i + 1) % points.length], this.cell / 2))
     }
 
+    /**
+     * The experience's own area (see layout.js): every cell outside it counts as taken, so whatever
+     * stands on the floor (shelves, piles, people, and the ways people walk) keeps its whole body
+     * inside, never only its centre. `poly` is a list of { x, z } in the frame.
+     */
+    keepInside(poly) {
+        const p = new THREE.Vector2()
+        const outline = poly.map((q) => new THREE.Vector2(q.x, q.z))
+        for (let i = 0; i < this.blocked.length; i++) {
+            this.#center(i, p)
+            if (!inside(outline, p)) this.blocked[i] = 1
+        }
+        outline.forEach((a, i) => this.blockSegment(a, outline[(i + 1) % outline.length], this.cell / 2))
+    }
+
+    /** Whether a cell is taken, for the debug view. */
+    isBlocked(x, z) {
+        const i = this.#index(x, z)
+        return i < 0 || !!this.blocked[i]
+    }
+
     /** A rectangle centred at (x, z), with half sizes and a turn (yaw, radians) in the frame. */
     blockRect(x, z, hw, hd, yaw = 0) {
         const c = Math.cos(yaw)

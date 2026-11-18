@@ -5,18 +5,25 @@ const MIN_TOP = 0.45
 const MAX_TOP = 1.25
 /** Surfaces too small to set a carton on are left out. */
 const MIN_SIDE = 0.35
-/** What the headset may call a surface one works on. */
-const WORKTOPS = /table|desk|counter|mesa|other|storage|shelf/i
-const NOT_WORKTOPS = /floor|ceiling|wall|door|window|bed|couch|screen|lamp|plant/i
+/**
+ * The labels a headset gives (Meta Quest takes them from the person's Space Setup; other devices
+ * may give none). Only a table, desk or counter is offered as a table: a cabinet, a box marked
+ * "other" or a screen's volume can be at table height too, and cartons ended up floating on them.
+ * A plane with no label at all is still offered, as the headset may simply not label anything.
+ */
+const WORKTOPS = /table|desk|counter|mesa/i
+const NOT_WORKTOPS = /floor|ceiling|wall|door|window|bed|couch|screen|lamp|plant|other|storage|shelf/i
 
 const up = new THREE.Vector3(0, 1, 0)
 const tmp = new THREE.Vector3()
 const tmpQ = new THREE.Quaternion()
+const tmpM = new THREE.Matrix4()
+const IDENTITY = new THREE.Matrix4()
 
 /**
  * A flat horizontal rectangle in the room: its centre on the top, its own two horizontal axes
- * and how far it reaches along each (half sizes).
- * @typedef {{ center: THREE.Vector3, u: THREE.Vector3, v: THREE.Vector3, hu: number, hv: number, top: number, label: string, real: boolean }} Surface
+ * and how far it reaches along each (half sizes). `id` says where it came from (debug view).
+ * @typedef {{ id?: string, center: THREE.Vector3, u: THREE.Vector3, v: THREE.Vector3, hu: number, hv: number, top: number, label: string, real: boolean, source?: string }} Surface
  */
 
 /** Yaw only: whatever a plane's pose says, a worktop is taken as level. */
@@ -29,31 +36,62 @@ function axesOf(quaternion) {
     return { u, v }
 }
 
-/** A detected plane, if it is one to work on. */
-export function surfaceFromPlane(entity, plane) {
+/**
+ * A detected plane, if it is one to work on. Its rectangle comes from the plane's own polygon: the
+ * SDK draws each plane as a box centred on the plane's origin, but the polygon need not be centred
+ * there, and taking the box's centre put the table off by that much.
+ * `toScene` takes the headset's space into the scene's (see worldLock.js): identity until it moves.
+ */
+export function surfaceFromPlane(entity, plane, toScene = IDENTITY) {
     const object = entity.object3D
-    if (!object || plane?.orientation !== 'horizontal') return null
+    if (!object || plane?.orientation !== 'horizontal' || !plane.polygon?.length) return null
     const label = plane.semanticLabel ?? ''
-    if (NOT_WORKTOPS.test(label)) return null
-    const params = object.geometry?.parameters
-    if (!params) return null
-    const top = object.position.y
-    const { u, v } = axesOf(object.quaternion)
-    return { center: object.position.clone(), u, v, hu: params.width / 2, hv: params.depth / 2, top, label, real: true }
+    if (NOT_WORKTOPS.test(label) || (label && !WORKTOPS.test(label))) return null
+    object.updateMatrixWorld(true)
+    const m = tmpM.multiplyMatrices(toScene, object.matrixWorld)
+    let minX = Infinity
+    let maxX = -Infinity
+    let minZ = Infinity
+    let maxZ = -Infinity
+    for (const p of plane.polygon) {
+        minX = Math.min(minX, p.x)
+        maxX = Math.max(maxX, p.x)
+        minZ = Math.min(minZ, p.z)
+        maxZ = Math.max(maxZ, p.z)
+    }
+    const center = new THREE.Vector3((minX + maxX) / 2, 0, (minZ + maxZ) / 2).applyMatrix4(m)
+    const { u, v } = axesOf(tmpQ.setFromRotationMatrix(m))
+    return { id: `plano#${entity.index}`, center, u, v, hu: (maxX - minX) / 2, hv: (maxZ - minZ) / 2, top: center.y, label: label || 'sin etiqueta', real: true, source: 'plano' }
 }
 
 /** A detected piece of furniture (a mesh with bounds), if its top is one to work on. */
-export function surfaceFromMesh(entity, { semanticLabel, min, max, isBounded3D }) {
+export function surfaceFromMesh(entity, { semanticLabel, min, max, isBounded3D }, toScene = IDENTITY) {
     const object = entity.object3D
     if (!object || !isBounded3D) return null
     if (NOT_WORKTOPS.test(semanticLabel) || !WORKTOPS.test(semanticLabel)) return null
     object.updateMatrixWorld(true)
+    const m = tmpM.multiplyMatrices(toScene, object.matrixWorld)
     // the top face of its box, centred, in the room
     const local = new THREE.Vector3((min[0] + max[0]) / 2, max[1], (min[2] + max[2]) / 2)
-    const center = local.applyMatrix4(object.matrixWorld)
-    object.getWorldQuaternion(tmpQ)
-    const { u, v } = axesOf(tmpQ)
-    return { center, u, v, hu: (max[0] - min[0]) / 2, hv: (max[2] - min[2]) / 2, top: center.y, label: semanticLabel, real: true }
+    const center = local.applyMatrix4(m)
+    const { u, v } = axesOf(tmpQ.setFromRotationMatrix(m))
+    return { id: `volumen#${entity.index}`, center, u, v, hu: (max[0] - min[0]) / 2, hv: (max[2] - min[2]) / 2, top: center.y, label: semanticLabel, real: true, source: 'volumen' }
+}
+
+/**
+ * One table, one surface. A headset can report the same table twice, as a plane and as the top of
+ * a volume: kept twice, the second copy got cartons of its own as if it were another table. Two
+ * different tables, even side by side, have centres far apart and stay two.
+ */
+export function dedupeSurfaces(surfaces) {
+    const kept = []
+    const planesFirst = [...surfaces].sort((a, b) => (a.source === 'plano' ? 0 : 1) - (b.source === 'plano' ? 0 : 1))
+    for (const s of planesFirst) {
+        const twin = kept.find((k) => Math.hypot(k.center.x - s.center.x, k.center.z - s.center.z) < Math.max(0.12, Math.min(k.hu, k.hv, s.hu, s.hv) * 0.5) && Math.abs(k.top - s.top) < 0.06)
+        if (twin) (twin.merged ??= []).push(s.id)
+        else kept.push(s)
+    }
+    return kept
 }
 
 /** Whether one can stand at it and work. */
