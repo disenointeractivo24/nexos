@@ -116,76 +116,55 @@ export function mainTable(frame) {
 }
 
 /**
- * What is used until the person draws their own (see the calibration in shift.js), shaped as the
- * plan of the room: the area runs from the far edge of the table back past where the person stands,
- * a little beyond each end of the table; the shelves stand on the floor to the person's right,
- * beside and behind them, never on another table.
+ * The zones, decided by the app alone from the chosen table: nothing is drawn by the person and
+ * nothing is saved. The area is the floor around the table, from its far edge back well past where
+ * the person stands; what the room's scan knows (walls, furniture, the next desks) takes its floor
+ * away and only what can be walked to from the person's spot counts (see FloorPlan.finalize). The
+ * cartons go only on this one table. The shelves' zone is chosen afterwards with pickShelfZone.
  */
-export function defaultLayout(frame) {
-    const left = Math.min(frame.minX, -0.6) - 1.8
-    const right = Math.max(frame.maxX, 0.6) + 1.1
+export function autoLayout(frame) {
+    const left = Math.min(frame.minX, -0.6) - 2.4
+    const right = Math.max(frame.maxX, 0.6) + 2.4
     const far = -frame.depth - 0.02
-    const back = 2.2
-    // in a row of desks the next one starts where this ends: to the right, the area begins at the
-    // table's near edge. To the left there is room for the window and the line (walls and furniture
-    // the headset knows of still take their floor away).
-    return {
-        area: [
-            { x: left, z: far },
-            { x: frame.maxX + 0.02, z: far },
-            { x: frame.maxX + 0.02, z: 0.02 },
-            { x: right, z: 0.02 },
-            { x: right, z: back },
-            { x: left, z: back },
-        ],
-        shelfZone: rectFromCorners({ x: 0.45, z: 0.04 }, { x: Math.min(right - 0.02, 1.45), z: 1.5 }),
-        tables: [mainTable(frame)],
-        source: 'propuesta',
-    }
+    const back = 2.8
+    const area = [
+        { x: left, z: far },
+        { x: right, z: far },
+        { x: right, z: back },
+        { x: left, z: back },
+    ]
+    return { area, shelfZone: shelfZoneCandidates(frame)[0], tables: [mainTable(frame)], source: 'automática' }
 }
 
-/** Plain data that can be saved, always with the chosen table first and as it was measured now. */
-export function serializeLayout(layout) {
-    return JSON.stringify({ v: 1, area: layout.area, shelfZone: layout.shelfZone, extraTables: layout.tables.filter((t) => t.id !== 'mesa-1'), savedAt: new Date().toISOString() })
+/**
+ * Where the shelves may stand, in order of preference: to the person's right and behind (the left
+ * is the window and the line), then right behind them, then wider and wider. All on the person's
+ * side of the table, never on it.
+ */
+export function shelfZoneCandidates(frame) {
+    const r = Math.max(frame.maxX, 0.6)
+    const l = Math.min(frame.minX, -0.6)
+    return [
+        rectFromCorners({ x: 0.45, z: 0.04 }, { x: r + 1.0, z: 1.5 }),
+        rectFromCorners({ x: 0.2, z: 0.04 }, { x: r + 1.8, z: 2.0 }),
+        rectFromCorners({ x: -1.2, z: 0.9 }, { x: 1.6, z: 2.6 }),
+        rectFromCorners({ x: 0.2, z: 0.04 }, { x: r + 2.3, z: 2.7 }),
+        rectFromCorners({ x: l - 2.3, z: 0.6 }, { x: r + 2.3, z: 2.7 }),
+    ]
 }
 
-/** A saved layout, on this table as measured now; null if there is none or it does not make sense. */
-export function parseLayout(text, frame) {
-    try {
-        const data = JSON.parse(text)
-        const okPoly = (p) => Array.isArray(p) && p.length >= 3 && p.every((q) => Number.isFinite(q.x) && Number.isFinite(q.z))
-        if (data?.v !== 1 || !okPoly(data.area) || !okPoly(data.shelfZone)) return null
-        const extra = (data.extraTables ?? []).filter((t) => ['cx', 'cz', 'hw', 'hd', 'yaw', 'top'].every((k) => Number.isFinite(t[k])))
-        return { area: data.area, shelfZone: data.shelfZone, tables: [mainTable(frame), ...extra], source: 'guardada' }
-    } catch {
-        return null
+/**
+ * The first candidate zone where all `count` stands fit on free floor (see packStands); if none
+ * holds them all, the one that holds the most. Returns the zone and the spots.
+ */
+export function pickShelfZone(layout, candidates, count, size, options = {}) {
+    let best = null
+    for (const zone of candidates) {
+        const spots = packStands({ ...layout, shelfZone: zone }, count, size, options)
+        if (!best || spots.length > best.spots.length) best = { zone, spots }
+        if (spots.length >= count) break
     }
-}
-
-export function loadLayout(frame, storage = globalThis.localStorage) {
-    try {
-        const text = storage?.getItem(LAYOUT_KEY)
-        return text ? parseLayout(text, frame) : null
-    } catch {
-        return null
-    }
-}
-
-export function saveLayout(layout, storage = globalThis.localStorage) {
-    try {
-        storage?.setItem(LAYOUT_KEY, serializeLayout(layout))
-        return true
-    } catch {
-        return false
-    }
-}
-
-export function forgetLayout(storage = globalThis.localStorage) {
-    try {
-        storage?.removeItem(LAYOUT_KEY)
-    } catch {
-        // nothing saved, nothing to forget
-    }
+    return best
 }
 
 /** What is wrong with a layout before anything is placed with it, in words for the person. */

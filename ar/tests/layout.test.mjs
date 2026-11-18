@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-    defaultLayout,
+    autoLayout,
     layoutProblems,
     mainTable,
     packOnTables,
     packStands,
-    parseLayout,
+    pickShelfZone,
     pointInPolygon,
     polygonInside,
     polygonsOverlap,
     rectFromCorners,
     rectPoly,
-    serializeLayout,
+    shelfZoneCandidates,
     tablePoly,
 } from '../src/world/layout.js'
 import { FloorPlan } from '../src/world/floorplan.js'
@@ -43,18 +43,29 @@ test('two tables side by side touch but do not overlap', () => {
     assert.ok(polygonsOverlap(tablePoly(a, 0.01), tablePoly(b)))
 })
 
-test('the proposal holds the person, the table and the shelves, and never reaches past the table to the right', () => {
-    const layout = defaultLayout(FRAME)
+test('the automatic layout holds the person, the one table and the shelves, with no extra tables', () => {
+    const layout = autoLayout(FRAME)
     assert.deepEqual(layoutProblems(layout), [])
-    // the next desk in the same row, to the right of the person's: outside the area
-    assert.ok(!pointInPolygon({ x: 1.2, z: -0.3 }, layout.area))
-    // the floor behind and to the right of the person, where the shelves go: inside
+    assert.equal(layout.tables.length, 1)
     assert.ok(pointInPolygon({ x: 0.9, z: 0.6 }, layout.area))
     assert.ok(polygonInside(layout.shelfZone, layout.area))
+    for (const z of shelfZoneCandidates(FRAME)) assert.ok(polygonInside(z, layout.area))
+})
+
+test('the shelves go to the first zone where they all fit, else to the next one', () => {
+    const layout = autoLayout(FRAME)
+    const zones = shelfZoneCandidates(FRAME)
+    const first = pickShelfZone(layout, zones, 5, STAND)
+    assert.equal(first.zone, zones[0])
+    assert.equal(first.spots.length, 5)
+    // the floor to the right of the person is taken (furniture): the shelves go elsewhere, all of them
+    const blocked = pickShelfZone(layout, zones, 5, STAND, { isFree: (x, z) => !(x > 0.3 && z < 1.6) })
+    assert.notEqual(blocked.zone, zones[0])
+    assert.equal(blocked.spots.length, 5)
 })
 
 test('stands go only in their zone, each whole, apart, facing the person; none in a full zone', () => {
-    const layout = defaultLayout(FRAME)
+    const layout = autoLayout(FRAME)
     const spots = packStands(layout, 5, STAND)
     assert.equal(spots.length, 5)
     for (const s of spots) {
@@ -73,7 +84,7 @@ test('stands go only in their zone, each whole, apart, facing the person; none i
 })
 
 test('stands avoid what the floor plan says is taken', () => {
-    const layout = defaultLayout(FRAME)
+    const layout = autoLayout(FRAME)
     // only the part of the zone nearer the table than x = 0.8 is free
     const spots = packStands(layout, 5, STAND, { isFree: (x) => x < 0.8 })
     assert.ok(spots.length > 0)
@@ -113,36 +124,21 @@ test('the reserved end of the table (the family carton) gets no cartons, and a n
     assert.equal(packOnTables([strip], 5, BOX).length, 0)
 })
 
-test('a saved layout comes back on the table as measured now, and nonsense is refused', () => {
-    const layout = defaultLayout(FRAME)
-    layout.tables.push({ id: 'mesa-2', label: 'mesa 2', cx: 1.3, cz: -0.3, hw: 0.6, hd: 0.3, yaw: 0, top: 0.74, source: 'table' })
-    const text = serializeLayout(layout)
-    const wider = { ...FRAME, minX: -0.7, maxX: 0.7 }
-    const back = parseLayout(text, wider)
-    assert.equal(back.tables.length, 2)
-    assert.equal(back.tables[0].hw, 0.7)
-    assert.deepEqual(back.area, layout.area)
-    assert.equal(parseLayout('{"v":1,"area":[]}', FRAME), null)
-    assert.equal(parseLayout('not json', FRAME), null)
-})
-
 test('the floor plan keeps the whole of a body inside the area, not only its centre', () => {
-    const layout = defaultLayout(FRAME)
+    const layout = autoLayout(FRAME)
     const plan = new FloorPlan()
     plan.blockRect(0, -0.3, 0.6, 0.3)
     plan.keepInside(layout.area)
     plan.finalize({ x: 0, z: 0.35 })
-    // the next desk to the right, outside the area: never free
-    assert.ok(!plan.free(1.2, -0.3, 0.1))
     // right at the area's edge, a body of radius 0.42 does not fit; well inside it does
-    assert.ok(!plan.free(-2.25, 1.0, 0.42))
-    assert.ok(plan.free(-1.5, 1.0, 0.42))
+    assert.ok(!plan.free(-2.85, 1.0, 0.42))
+    assert.ok(plan.free(-2.0, 1.0, 0.42))
     // the person's table is taken
     assert.ok(!plan.free(0, -0.3, 0.05))
 })
 
 test('problems are named: the person outside the area, a table not wholly in it', () => {
-    const layout = defaultLayout(FRAME)
+    const layout = autoLayout(FRAME)
     const small = { ...layout, area: rectFromCorners({ x: -0.7, z: -0.7 }, { x: 0.7, z: 0.2 }) }
     const problems = layoutProblems(small)
     assert.ok(problems.some((p) => /fuera del área/.test(p)))

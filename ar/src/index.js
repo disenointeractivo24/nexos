@@ -57,16 +57,8 @@ async function main() {
     const shift = world.getSystem(ShiftSystem)
     window.nexosAR = { world, shift, report: () => shift.report() }
 
-    // ?debug shows the debug view (G toggles it on a computer); ?calibrar draws the zones again
+    // ?debug shows the debug view (G toggles it on a computer)
     const params = new URLSearchParams(location.search)
-    let calibrate = params.has('calibrar')
-    try {
-        calibrate ||= sessionStorage.getItem('nexos-ar1-calibrar') === '1'
-        sessionStorage.removeItem('nexos-ar1-calibrar')
-    } catch {
-        // private browsing: ?calibrar still works
-    }
-    shift.forceCalibration = calibrate
     if (params.has('debug')) shift.setDebug(true)
     window.addEventListener('keydown', (e) => {
         if (e.code === 'KeyG') shift.setDebug(!shift.debugOn)

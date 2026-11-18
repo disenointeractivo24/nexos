@@ -38,7 +38,7 @@ import { Glow } from './world/glow.js'
 import { familyCard, fontsReady, orderTag, orderTicket, speechBubble } from './world/panels.js'
 import { comfortableTop, dedupeSurfaces, isWorktop, rayHits, surfaceAt, surfaceFromMesh, surfaceFromPlane, surfaceMarker, tableInFront, WorkFrame } from './world/room.js'
 import { BODY_HIGH, BODY_LOW, FloorPlan } from './world/floorplan.js'
-import { defaultLayout, forgetLayout, layoutProblems, loadLayout, packOnTables, packStands, pointInPolygon, rectFromCorners, saveLayout } from './world/layout.js'
+import { autoLayout, layoutProblems, packOnTables, pickShelfZone, pointInPolygon, rectFromCorners, shelfZoneCandidates } from './world/layout.js'
 import { WorldLock, yawMatrix } from './world/worldLock.js'
 import { DebugView } from './world/debugView.js'
 import { SpatialPanel } from './world/spatialUI.js'
@@ -150,7 +150,6 @@ export class ShiftSystem extends createSystem({
         /** What could not be placed where it may go: said to the person, never put elsewhere instead. */
         this.problems = []
         this.debugOn = false
-        this.forceCalibration = false
 
         // GSAP on the frame loop: a headset can stop the page's own animation frames
         gsap.ticker.remove(gsap.updateRoot)
@@ -337,7 +336,7 @@ export class ShiftSystem extends createSystem({
         if (this.holding) held.raton = this.holding.t.kind
         const rootDrift = this.rootPlaced && this.rootObject ? this.rootObject.matrixWorld.elements.reduce((m, v, i) => Math.max(m, Math.abs(v - this.rootPlaced[i])), 0) : 0
         return {
-            fase: this.relocating ? 'volviendo a la mesa' : this.calib ? `ajuste: ${this.calib.step}` : this.choosing ? 'eligiendo mesa' : this.placed ? (this.running ? 'turno' : 'listo') : 'sin colocar',
+            fase: this.relocating ? 'volviendo a la mesa' : this.choosing ? 'eligiendo mesa' : this.placed ? (this.running ? 'turno' : 'listo') : 'sin colocar',
             zonas: this.layout ? this.layout.source : '-',
             mesaAlFrente: this.choosing ? (this.inFront ? `${this.inFront.id} (${this.inFront.label})` : 'ninguna') : '-',
             mesasVistas: this.choosing ? (this.candidates ?? []).length : '-',
@@ -494,7 +493,6 @@ export class ShiftSystem extends createSystem({
         }
         const floorY = this.#floorY()
         const worktops = found.filter((s) => isWorktop(s, floorY))
-        // every one of them while the zones are drawn: that step is for adding tables for cartons
         this.candidates = worktops
         this.room3 = found
         if (this.debugOn && this.scanAt === this.elapsed) this.debug?.showSurfaces(found)
@@ -502,8 +500,8 @@ export class ShiftSystem extends createSystem({
         // neighbours' among them (see tableInFront)
         cam.getWorldPosition(temp)
         cam.getWorldDirection(temp2)
-        this.inFront = this.calib ? null : tableInFront(worktops, temp, temp2, this.inFront)
-        const offered = this.calib ? worktops : this.inFront ? [this.inFront] : []
+        this.inFront = tableInFront(worktops, temp, temp2, this.inFront)
+        const offered = this.inFront ? [this.inFront] : []
         const seen = new Set()
         for (const s of offered) {
             const key = `${s.center.x.toFixed(2)},${s.center.z.toFixed(2)},${s.top.toFixed(2)}`
@@ -524,8 +522,7 @@ export class ShiftSystem extends createSystem({
         // a table can always be shown by hand too: two corners touched with a fingertip. It is the way
         // to tell apart two tables side by side that the headset took as one
         this.marking ??= { corners: [], dots: [], tips: {} }
-        if (!this.calib || this.calib.step === 'mesas') this.#markTable(dt)
-        if (this.calib) this.#calibrate(dt)
+        this.#markTable(dt)
     }
 
     /** Where the hand of a select event points, in the scene. */
@@ -548,7 +545,6 @@ export class ShiftSystem extends createSystem({
     /** A pinch while choosing: the table marked in front, else the surface under the hand, else a table shown by hand. */
     #picked(event) {
         const ray = this.#rayOf(event)
-        if (this.calib) return this.#calibPinch(event, ray)
         const head = this.world.camera.getWorldPosition(new THREE.Vector3())
         // what is marked is what is taken: only the table in front is offered, so pointing the hand
         // at another one does not choose it. To work at that one instead, turn to it first.
@@ -567,153 +563,9 @@ export class ShiftSystem extends createSystem({
     #tableChosen(surface, head) {
         const eye = this.#eyeHeight(head.y)
         if (this.relocating) return this.#relocate(surface, head)
-        const F = new WorkFrame(surface, head, this.#floorY())
-        const saved = this.forceCalibration ? null : loadLayout(F)
-        // a layout of this table already drawn: straight to work
-        if (saved) {
-            this.cancelChoosing?.()
-            return this.#place(surface, head, eye, saved)
-        }
-        this.#startCalibration(surface, head, eye, F)
-    }
-
-    /* ---------------- drawing the zones (calibration) ---------------- */
-
-    /**
-     * Before the first shift on a table, the person says where things may go, with the room before
-     * them: what the headset's own boundary is cannot be read by a page (see README), and the room's
-     * scan does not know which tables are theirs. Three steps, each with a proposal drawn on the
-     * floor that a pinch with both hands at once accepts:
-     *   1. more tables for cartons: two corners touched on each, or a detected table pinched;
-     *   2. the area: two opposite corners pointed at on the floor;
-     *   3. the shelves' zone: the same.
-     * Saved for this table, in its own coordinates, so later sessions skip it (?calibrar redoes it).
-     */
-    #startCalibration(surface, head, eye, F) {
-        this.calib = { surface, head, eye, F, layout: defaultLayout(F), step: 'mesas', corners: [], pending: [], both: 0 }
-        this.calibView ??= new DebugView(this.world.scene)
-        this.calibView.setVisible(true)
-        this.#calibShow()
-        this.#calibSay()
-    }
-
-    #calibSay() {
-        const say = {
-            mesas: '¿Otra mesa para cajas? Toca 2 esquinas de cada una. Pellizca con las 2 manos para seguir',
-            area: 'Área: pellizca 2 esquinas opuestas del suelo. Con las 2 manos aceptas la roja',
-            estanterias: 'Estanterías: 2 esquinas del suelo. Con las 2 manos aceptas la amarilla',
-        }
-        this.#message(this.hint, 'info', say[this.calib.step])
-    }
-
-    #calibShow() {
-        const c = this.calib
-        this.calibView.showLayout(c.F, c.layout, null)
-        this.calibView.showSurfaces(this.candidates ?? [])
-    }
-
-    /** A table (scene surface) in the frame of the chosen one, for the layout. */
-    #tableInFrame(F, s, n) {
-        const c = F.local(s.center, new THREE.Vector3())
-        const yaw = Math.atan2(-s.u.z, s.u.x) - F.yaw
-        return { id: `mesa-${n}`, label: `mesa ${n}${s.id ? ` (${s.id})` : ''}`, cx: c.x, cz: c.z, hw: s.hu, hd: s.hv, yaw, top: s.top - F.floorY, source: s.label }
-    }
-
-    /** A pinch during calibration: a detected table to add, or a corner on the floor (kept a moment, in case it is the two-hand pinch). */
-    #calibPinch(event, ray) {
-        const c = this.calib
-        if (c.step === 'mesas') {
-            let hit = null
-            let best = Infinity
-            for (const s of this.candidates ?? []) {
-                const t = rayHits(ray, s)
-                if (t < best) {
-                    best = t
-                    hit = s
-                }
-            }
-            if (hit && hit.center.distanceTo(c.surface.center) > 0.1) c.pending.push({ at: this.elapsed, table: hit })
-            return
-        }
-        const p = this.reticle?.object3D?.visible ? this.reticle.object3D.position.clone() : null
-        if (!p || p.y - c.F.floorY > 0.25) return this.#message(this.hint, 'warn', 'Apunta al suelo para marcar la esquina')
-        c.pending.push({ at: this.elapsed, floor: c.F.local(p, new THREE.Vector3()) })
-    }
-
-    /** Each frame of calibration: tables shown by hand, corners waiting, and the two-hand pinch. */
-    #calibrate(dt) {
-        const c = this.calib
-        const { left, right } = this.hands.sides
-        const both = left.seen && right.seen && left.pinching && right.pinching
-        c.both = both ? c.both + dt : 0
-        // a pinch of both hands is never a corner: what came with it is dropped
-        if (both) c.pending = c.pending.filter((p) => this.elapsed - p.at > 0.6)
-        for (const p of [...c.pending]) {
-            if (this.elapsed - p.at < 0.35) continue
-            c.pending.splice(c.pending.indexOf(p), 1)
-            if (p.table) {
-                const n = c.layout.tables.length + 1
-                c.layout.tables.push(this.#tableInFrame(c.F, p.table, n))
-                this.sound.play('tap')
-            } else if (p.floor) {
-                c.corners.push({ x: p.floor.x, z: p.floor.z })
-                this.sound.play('tap')
-                if (c.corners.length === 2) {
-                    const rect = rectFromCorners(c.corners[0], c.corners[1])
-                    if (c.step === 'area') c.layout.area = rect
-                    else c.layout.shelfZone = rect
-                    c.corners = []
-                }
-            }
-            this.#calibShow()
-        }
-        if (c.both < 0.5) return
-        c.both = -1e9 // once per pinch
-        this.sound.play('tap')
-        c.corners = []
-        if (c.step === 'mesas') c.step = 'area'
-        else if (c.step === 'area') c.step = 'estanterias'
-        else return this.#endCalibration()
-        this.#calibSay()
-    }
-
-    /**
-     * The same as the two-hand pinch, from the console (nexosAR.shift.calibration('siguiente')), and
-     * corners given in the table's frame: for the emulator, where there are no real hands to pinch with.
-     */
-    calibration(action, a = null, b = null) {
-        const c = this.calib
-        if (!c) return 'no se está ajustando'
-        if (action === 'esquinas' && a && b && c.step !== 'mesas') {
-            const rect = rectFromCorners(a, b)
-            if (c.step === 'area') c.layout.area = rect
-            else c.layout.shelfZone = rect
-            this.#calibShow()
-        }
-        if (action === 'siguiente') {
-            if (c.step === 'mesas') c.step = 'area'
-            else if (c.step === 'area') c.step = 'estanterias'
-            else return this.#endCalibration()
-            this.#calibSay()
-        }
-        return c.step
-    }
-
-    /** A table touched by hand while adding tables. */
-    #calibTable(surface) {
-        const c = this.calib
-        c.layout.tables.push(this.#tableInFrame(c.F, surface, c.layout.tables.length + 1))
-        this.#calibShow()
-    }
-
-    #endCalibration() {
-        const c = this.calib
-        c.layout.source = 'dibujada'
-        saveLayout(c.layout)
-        this.calib = null
-        this.calibView.setVisible(false)
+        // nothing to draw: the area and the shelves are worked out from the room's scan (see #place)
         this.cancelChoosing?.()
-        this.#place(c.surface, c.head, c.eye, c.layout)
+        this.#place(surface, head, eye)
     }
 
     /* ---------------- the same table, in a new session ---------------- */
@@ -800,7 +652,7 @@ export class ShiftSystem extends createSystem({
                 continue
             }
             still.for += dt
-            const height = tip.y - (this.calib?.F.floorY ?? this.#floorY())
+            const height = tip.y - (this.#floorY())
             const apart = m.corners.every((c) => Math.hypot(c.x - tip.x, c.z - tip.z) > 0.3)
             if (still.for < 0.6 || height < 0.4 || height > 1.3 || !apart) continue
             still.for = -1e9 // not again until it moves
@@ -832,8 +684,6 @@ export class ShiftSystem extends createSystem({
         for (const dot of m.dots) dot.removeFromParent()
         this.marking = { corners: [], dots: [], tips: {} }
         const surface = { id: 'marcada a mano', center, u, v, hu, hv, top, label: 'marcada', real: true }
-        // while drawing the zones it is one more table for cartons; otherwise it is the table
-        if (this.calib) return this.#calibTable(surface)
         this.#tableChosen(surface, head)
     }
 
@@ -897,12 +747,12 @@ export class ShiftSystem extends createSystem({
      * layout.js): a saved one, the one just drawn, or the proposal. What does not fit where it may
      * go is not put anywhere else: it is said on the board, and the shift does not start.
      */
-    #place(surface, head, eye, layout = null) {
+    #place(surface, head, eye) {
         this.placed = true
         this.eye = eye
         const F = new WorkFrame(surface, head, this.world.session ? this.#floorY() : 0)
         this.frame3 = F
-        this.layout = layout ?? loadLayout(F) ?? defaultLayout(F)
+        this.layout = autoLayout(F)
         this.problems = layoutProblems(this.layout)
         this.spawnLog = { boxes: [], stands: [], people: [] }
         // what the headset had told of the room by now: everything below is decided from it
@@ -979,14 +829,8 @@ export class ShiftSystem extends createSystem({
         if (this.debugOn) this.setDebug(true)
     }
 
-    /** The zones drawn again from the start (the board's button when something did not fit). */
+    /** Something did not fit: the person moves things in the room, and it is set up again. */
     recalibrate() {
-        forgetLayout()
-        try {
-            sessionStorage.setItem('nexos-ar1-calibrar', '1')
-        } catch {
-            // without it, ?calibrar in the address does the same
-        }
         const reload = () => location.reload()
         if (this.world.session) this.world.session.end().finally(reload)
         else reload()
@@ -1245,8 +1089,12 @@ export class ShiftSystem extends createSystem({
         // only on the floor of the shelves' zone: each stand's whole footprint inside it and inside
         // the area, where the room's scan has nothing, off the person's own spot, nearest first.
         // (They used to go round the person in an arc, and in a classroom the arc fell on the next desks.)
-        const spots = packStands(this.layout, INVENTORY.length, { w: STAND.w, d: STAND.d }, { isFree: (x, z, r) => plan.free(x, z, r) && this.#clearOfPerson(x, z) })
-        if (spots.length < INVENTORY.length) this.problems.push(`Caben ${spots.length} de ${INVENTORY.length} estanterías en su zona: amplíala o despéjala`)
+        // the zone is chosen here, from the floor the scan left free: the first of the candidates
+        // where every stand fits
+        const pick = pickShelfZone(this.layout, shelfZoneCandidates(F), INVENTORY.length, { w: STAND.w, d: STAND.d }, { isFree: (x, z, r) => plan.free(x, z, r) && this.#clearOfPerson(x, z) })
+        this.layout.shelfZone = pick.zone
+        const spots = pick.spots
+        if (spots.length < INVENTORY.length) this.problems.push(`Solo hay suelo libre para ${spots.length} de ${INVENTORY.length} estanterías cerca de la mesa: despeja un poco a tu alrededor`)
         this.spawnLog.stands = spots
         for (const [i, spot] of spots.entries()) {
             const categoryId = INVENTORY[i]
@@ -1369,9 +1217,9 @@ export class ShiftSystem extends createSystem({
             this.needsZones = true
             this.#board({
                 kicker: 'NO SE PUDO COLOCAR TODO',
-                title: 'Ajusta las zonas',
+                title: 'Falta espacio libre',
                 lines: this.problems.slice(0, 3),
-                action: this.world.session ? 'Volver a dibujar' : 'Recargar',
+                action: 'Volver a intentar',
             })
             this.message.show(false)
             return
@@ -1471,48 +1319,11 @@ export class ShiftSystem extends createSystem({
         const n = this.day.boxes.length
         if (this.pileCache && this.pileCache.spots.length >= n) return this.pileCache.spots
         const reserve = [rectFromCorners({ x: F.minX - 0.02, z: 0.02 }, { x: this.#kitX() + BOX.w / 2 + 0.26, z: -F.depth - 0.02 })]
-        const onTables = packOnTables(this.layout.tables, n, BOX, { reserve, levels: 2 })
+        // only on the person's table, stacked higher if it is small: never on the floor or elsewhere
+        const onTables = packOnTables(this.layout.tables, n, BOX, { reserve, levels: 4 })
         const spots = onTables.map((s) => ({ local: new THREE.Vector3(s.x, s.y, s.z), yaw: s.yaw, column: s.tableId }))
-        if (spots.length < n) {
-            const columns = (this.pileColumns ??= this.#pileColumns(Math.ceil((n - spots.length) / 2)))
-            for (let level = 0; level < 2 && spots.length < n; level++) {
-                for (const c of columns) {
-                    if (spots.length >= n) break
-                    // two high at most: nothing to look up at
-                    spots.push({ local: new THREE.Vector3(c.x, level * (BOX.h + 0.004), c.z), yaw: 0, column: c.column })
-                }
-            }
-        }
         this.pileCache = { spots }
         return spots
-    }
-
-    /**
-     * Where the piles stand on the floor: one row along the table's right end, on the person's side,
-     * between the table and the shelf. Each where the room has space for a carton, the nearest such
-     * place if not; once chosen, that floor is taken. The same for every shift.
-     */
-    #pileColumns(needed) {
-        const F = this.frame3
-        const plan = this.plan
-        // to the right of the person, past the shelves if there is floor there; the nearest there is if not
-        const x = Math.max(F.maxX, 0.45) + 0.3
-        const columns = []
-        const apart = (px, pz) => columns.every((c) => Math.abs(c.x - px) > BOX.w + 0.04 || Math.abs(c.z - pz) > BOX.d + 0.04)
-        // the radius covers the carton's whole footprint (its half diagonal): all of it on free floor of the area
-        const radius = Math.hypot(BOX.w, BOX.d) / 2 + 0.02
-        // and clear of where people stand, wait, come in and leave
-        const peopleSpots = this.spawnLog.people ?? []
-        const clearOfPeople = (px, pz) => peopleSpots.every((p) => Math.hypot(p.x - px, p.z - pz) > PERSON_RADIUS + radius)
-        const ok = (px, pz) => this.#inSight(px, pz) && this.#clearOfPerson(px, pz) && apart(px, pz) && clearOfPeople(px, pz) && !pointInPolygon({ x: px, z: pz }, this.layout.shelfZone)
-        while (columns.length < needed) {
-            const spot = plan.nearestFree(x, 0.2, radius, { reach: 4, accept: ok })
-            if (!spot) break
-            columns.push({ x: spot.x, z: spot.z, column: `suelo-${columns.length + 1}` })
-            plan.blockRect(spot.x, spot.z, BOX.w / 2 + 0.02, BOX.d / 2 + 0.02)
-            plan.finalize({ x: 0, z: 0.35 })
-        }
-        return columns
     }
 
     /** The cartons appear where they were left, still, set down whole on what is under them. */
@@ -1541,7 +1352,7 @@ export class ShiftSystem extends createSystem({
             t.homeQ = object.quaternion.clone()
         })
         if (missing) {
-            const text = `${missing} cajas no caben en las mesas ni en el suelo libre del área: añade una mesa o amplía el área`
+            const text = `${missing} cajas no caben en tu mesa: despeja un poco su superficie`
             if (!this.problems.includes(text)) this.problems.push(text)
             if (this.running) this.#say('warn', text)
         }
