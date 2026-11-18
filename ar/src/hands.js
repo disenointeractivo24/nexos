@@ -45,9 +45,6 @@ export class Hands {
             pinchPoint: new THREE.Vector3(),
             /** The hand as a rigid frame at the pinch point: what is held keeps its pose in it. */
             frame: new THREE.Matrix4(),
-            /** Where the hand points, as the headset reports it. */
-            ray: new THREE.Ray(),
-            hasRay: false,
         }
     }
 
@@ -61,7 +58,6 @@ export class Hands {
         this.tracked = false
         for (const s of Object.values(this.sides)) {
             s.seen = false
-            s.hasRay = false
         }
         if (!frame || !space) return this.#settle(dt)
         for (const source of frame.session.inputSources) {
@@ -99,14 +95,6 @@ export class Hands {
             const x = across.clone().addScaledVector(z, -across.dot(z)).normalize()
             const y = new THREE.Vector3().crossVectors(z, x)
             side.frame.makeBasis(x, y, z).setPosition(side.pinchPoint)
-            const rayPose = source.targetRaySpace && frame.getPose?.(source.targetRaySpace, space)
-            side.hasRay = !!rayPose
-            if (rayPose) {
-                const { position: o, orientation: q } = rayPose.transform
-                side.ray.origin.set(o.x, o.y, o.z)
-                side.ray.direction.set(0, 0, -1).applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w))
-                if (origin) side.ray.applyMatrix4(origin)
-            }
             // along the forearm, a hand's width back from the wrist, a little off the back of it, as a watch
             const back = new THREE.Vector3().subVectors(j.wrist, j['middle-finger-metacarpal']).normalize()
             side.over.copy(j.wrist).addScaledVector(back, 0.09).addScaledVector(side.palm, -0.05)

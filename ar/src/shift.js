@@ -35,7 +35,7 @@ import { Sound } from './sound.js'
 import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
 import { Glow } from './world/glow.js'
-import { familyCard, fontsReady, orderTag, orderTicket, speechBubble } from './world/panels.js'
+import { familyCard, fontsReady, orderTag, speechBubble } from './world/panels.js'
 import { comfortableTop, dedupeSurfaces, isWorktop, rayHits, surfaceAt, surfaceFromMesh, surfaceFromPlane, surfaceMarker, tableInFront, WorkFrame } from './world/room.js'
 import { BODY_HIGH, BODY_LOW, FloorPlan } from './world/floorplan.js'
 import { autoLayout, layoutProblems, packOnTables, pickShelfZone, pointInPolygon, rectFromCorners, shelfZoneCandidates } from './world/layout.js'
@@ -240,7 +240,6 @@ export class ShiftSystem extends createSystem({
         this.#carry(delta)
         this.#tame(delta)
         this.#tearTape(delta)
-        this.#kitFlaps()
         this.#handGrab(delta)
         this.#followGuide()
         this.#placeWatch(delta)
@@ -1360,8 +1359,10 @@ export class ShiftSystem extends createSystem({
     /** What can be taken by hand now. */
     #canTake(t) {
         if (!t.object.visible) return false
-        if (t.kind === 'kit') return !!this.kit?.closed
-        return ['box', 'open', 'item', 'stock', 'label'].includes(t.kind)
+        // the family's carton: once something is in it, it can be lifted and handed over. It seals
+        // itself as it is handed over (see #sealKit): there is no shutting it by hand
+        if (t.kind === 'kit') return !!this.day?.canDeliver
+        return ['box', 'open', 'item', 'stock'].includes(t.kind)
     }
 
     /** Half of what something measures, a little more for the smallest, so they are easy to hit. */
@@ -1394,33 +1395,6 @@ export class ShiftSystem extends createSystem({
         return best
     }
 
-    /** The first thing the hand's ray meets, unless a panel is in front of it. */
-    #alongRay(ray, taken) {
-        const inv = new THREE.Matrix4()
-        const local = new THREE.Ray()
-        const hit = new THREE.Vector3()
-        let best = null
-        let bestDist = 5
-        for (const t of this.things.values()) {
-            if (taken.has(t) || !this.#canTake(t)) continue
-            inv.copy(t.object.matrixWorld).invert()
-            local.copy(ray).applyMatrix4(inv)
-            const half = this.#reachBox(t)
-            if (!local.intersectBox(new THREE.Box3(half.clone().negate(), half), hit)) continue
-            const d = t.object.localToWorld(hit).distanceTo(ray.origin)
-            if (d < bestDist) {
-                bestDist = d
-                best = t
-            }
-        }
-        for (const panel of [this.board, this.next, this.watch]) {
-            if (!panel?.visible) continue
-            const at = ray.intersectBox(new THREE.Box3().setFromObject(panel.object), hit)
-            if (at && at.distanceTo(ray.origin) < bestDist) return null
-        }
-        return best
-    }
-
     #setWorldPose(object, matrix) {
         const scale = object.scale.clone()
         if (object.parent) object.parent.updateMatrixWorld()
@@ -1442,17 +1416,18 @@ export class ShiftSystem extends createSystem({
         for (const [name, side] of Object.entries(this.hands.sides)) {
             const held = this.handHeld[name]
             const mark = this.fingerMarks[name]
-            const flapBusy = !!this.flapGrips?.[name]?.hinge
             const started = side.seen && side.pinching && !side.wasPinching
             side.wasPinching = side.seen && side.pinching
             if (held) {
                 if (!side.seen || !side.pinching || !this.things.has(held.t.entity)) this.#letGo(name)
-                else this.#hold(held, side, dt)
-            } else if (started && !flapBusy && this.running) {
-                const near = this.#nearestToFingers(side.pinchPoint, taken)
-                const far = near ? null : side.hasRay ? this.#alongRay(side.ray, taken) : null
-                const t = near ?? far
-                if (t) this.#takeWith(name, side, t, !near)
+                else this.#hold(held, side)
+            } else if (started && this.running) {
+                // only what is between the fingertips. Pointing at something far and pinching used
+                // to bring it to the hand, but a headset aims a hand's ray from between the eyes:
+                // with two hands going, a pinch that held nothing yanked whatever was being looked
+                // at. Everything of the shift is within arm's reach, so nothing needs calling over.
+                const t = this.#nearestToFingers(side.pinchPoint, taken)
+                if (t) this.#takeWith(name, side, t)
             }
             // a dot between the fingertips: green when something is within reach of them
             mark.visible = side.seen && !this.handHeld[name] && this.running
@@ -1478,21 +1453,12 @@ export class ShiftSystem extends createSystem({
         return { left: make(), right: make() }
     }
 
-    /** It is in this hand now: at once if it was between the fingers, after a short flight if it was pointed at. */
-    #takeWith(name, side, t, pulled) {
+    /** It is in this hand now, keeping the pose it had between the fingertips. */
+    #takeWith(name, side, t) {
         const handInv = new THREE.Matrix4().copy(side.frame).invert()
         t.object.updateMatrixWorld(true)
         const offset = handInv.multiply(t.object.matrixWorld.clone())
-        const held = { t, offset, track: [], pull: pulled ? 0 : 1 }
-        if (pulled) {
-            // where it will sit in the hand: just past the fingertips, turned as it was
-            const handQ = new THREE.Quaternion().setFromRotationMatrix(side.frame)
-            const objQ = t.object.getWorldQuaternion(new THREE.Quaternion())
-            const rel = handQ.clone().invert().multiply(objQ)
-            const reach = this.#reachBox(t)
-            held.target = new THREE.Matrix4().compose(new THREE.Vector3(0, 0, Math.max(reach.x, reach.z) * 0.6), rel, new THREE.Vector3(1, 1, 1))
-            held.from = t.object.matrixWorld.clone()
-        }
+        const held = { t, offset, track: [] }
         this.handHeld[name] = held
         this.haptics.play('grab')
         // the physics follows it from now on, as it would a hand of the SDK's
@@ -1500,22 +1466,8 @@ export class ShiftSystem extends createSystem({
         this.sound.play('tap', this.#worldOf(t.object))
     }
 
-    #hold(held, side, dt) {
-        const want = new THREE.Matrix4()
-        if (held.pull < 1) {
-            held.pull = Math.min(1, held.pull + dt / 0.22)
-            const to = new THREE.Matrix4().multiplyMatrices(side.frame, held.target)
-            const p0 = new THREE.Vector3()
-            const q0 = new THREE.Quaternion()
-            const p1 = new THREE.Vector3()
-            const q1 = new THREE.Quaternion()
-            const s = new THREE.Vector3()
-            held.from.decompose(p0, q0, s)
-            to.decompose(p1, q1, s)
-            const k = 1 - (1 - held.pull) ** 3
-            want.compose(p0.lerp(p1, k), q0.slerp(q1, k), new THREE.Vector3(1, 1, 1))
-            if (held.pull >= 1) held.offset = held.target
-        } else want.multiplyMatrices(side.frame, held.offset)
+    #hold(held, side) {
+        const want = new THREE.Matrix4().multiplyMatrices(side.frame, held.offset)
         this.#setWorldPose(held.t.object, want)
         held.t.object.updateMatrixWorld(true)
         // where it has been lately, for the speed it leaves the hand with
@@ -1543,10 +1495,6 @@ export class ShiftSystem extends createSystem({
      */
     #releaseAll() {
         for (const name of Object.keys(this.handHeld ?? {})) if (this.handHeld[name]) this.#letGo(name)
-        for (const grip of Object.values(this.flapGrips ?? {})) {
-            grip.hinge = null
-            grip.was = false
-        }
         for (const side of Object.values(this.hands.sides)) side.wasPinching = false
     }
 
@@ -1612,16 +1560,10 @@ export class ShiftSystem extends createSystem({
         }
         if (t.kind === 'item') return this.#releaseItem(entity, t, where)
         if (t.kind === 'stock') return this.#releaseStock(t, where)
-        if (t.kind === 'label') {
-            if (this.kit && t.kit === this.kit && where.distanceTo(this.#worldOf(this.kit.object)) < 0.32) return this.#stickLabel(entity, t)
-            return this.#watchThrow(entity)
-        }
         if (t.kind === 'kit') {
             if (this.#handedOver(where)) {
-                if (!this.kit.closed) this.#say('warn', 'Ciérrala primero: junta las dos aletas')
-                else if (!this.kit.labeled) this.#say('warn', 'Pégale su orden encima')
-                else if (this.day.canDeliver) return this.day.deliver()
-                else this.#say('warn', 'La caja está vacía')
+                if (this.day.canDeliver) return this.day.deliver()
+                this.#say('warn', 'La caja está vacía')
             }
             return this.#watchThrow(entity)
         }
@@ -1653,8 +1595,6 @@ export class ShiftSystem extends createSystem({
     }
 
     #inKit(where) {
-        // shut, it takes nothing more
-        if (this.kit.closed) return false
         const kitAt = this.#worldOf(this.kit.object)
         return Math.hypot(where.x - kitAt.x, where.z - kitAt.z) < KIT_REACH && where.y > kitAt.y - 0.12 && where.y < kitAt.y + 0.5
     }
@@ -1787,75 +1727,21 @@ export class ShiftSystem extends createSystem({
         }
     }
 
-    /* ---------------- shutting the family's carton ---------------- */
-
-    /** How open a flap is (0 shut, about 2.75 laid back), from where a point is next to its hinge. */
-    #flapAngle(hinge, world) {
-        const side = hinge.userData.side
-        const local = hinge.parent.worldToLocal(temp2.copy(world)).sub(hinge.position)
-        return THREE.MathUtils.clamp(Math.atan2(local.y, -side * local.z), 0, 2.9)
-    }
-
-    #setFlap(hinge, angle) {
-        hinge.rotation.x = hinge.userData.side * angle
-    }
-
-    /** Where the free edge of a flap is, in the room. */
-    #flapEdge(hinge) {
-        return hinge.localToWorld(new THREE.Vector3(0, 0, (-hinge.userData.side * BOX.d) / 2))
-    }
+    /* ---------------- the family's carton ---------------- */
 
     /**
-     * Each flap is taken by a pinch near its free edge and goes where the fingers take it. Both
-     * down, the carton is taped shut; one lifted again, it opens.
+     * Shut and taped, at the moment it is handed over. The carton stands open on the table the
+     * whole time it is being packed, so nothing has to be shut by hand and no order has to be
+     * stuck on it: it closes itself on its way to the family.
      */
-    #kitFlaps() {
+    #sealKit() {
         const kit = this.kit
-        if (!kit) return
-        const { flaps } = kit.object.userData
-        if (this.hands.tracked) {
-            this.flapGrips ??= { left: { was: false, hinge: null }, right: { was: false, hinge: null } }
-            for (const [name, side] of Object.entries(this.hands.sides)) {
-                const grip = this.flapGrips[name]
-                const pinching = side.seen && side.pinching
-                const at = side.joints['thumb-tip']
-                if (pinching && !grip.was) {
-                    grip.hinge = flaps.find((h) => this.#flapEdge(h).distanceTo(at) < 0.09) ?? null
-                    if (grip.hinge) this.haptics.play('grab')
-                }
-                if (!pinching) grip.hinge = null
-                if (grip.hinge) this.#setFlap(grip.hinge, this.#flapAngle(grip.hinge, at))
-                grip.was = pinching
-            }
-        }
-        const shut = flaps.every((h) => Math.abs(h.rotation.x) < 0.35)
-        if (shut && !kit.closed) this.#closeKit()
-        else if (!shut && kit.closed && flaps.some((h) => Math.abs(h.rotation.x) > 0.6)) this.#openKit()
-    }
-
-    #closeKit() {
-        const kit = this.kit
+        if (!kit || kit.closed) return
         kit.closed = true
-        for (const hinge of kit.object.userData.flaps) gsap.to(hinge.rotation, { x: 0, duration: 0.15 })
+        for (const hinge of kit.object.userData.flaps) hinge.rotation.x = 0
         kit.object.userData.seal.visible = true
         this.sound.play('tape', this.#worldOf(kit.object))
-        this.haptics.play('right')
-        // shut, it can be lifted and handed over
-        this.#makeGrabbable(kit.entity)
         this.ghost.visible = false
-    }
-
-    #openKit() {
-        this.kit.closed = false
-        this.kit.object.userData.seal.visible = false
-        this.#rebuildGhost()
-    }
-
-    /** With a mouse, a click on a flap swings it shut, or open again. */
-    #toggleFlap(hinge) {
-        const shutNow = Math.abs(hinge.rotation.x) > 0.3
-        gsap.to(hinge.rotation, { x: shutNow ? 0 : hinge.userData.side * 2.75, duration: 0.3, ease: 'power2.out' })
-        this.sound.play('tap')
     }
 
     /** Something resting on top of a carton keeps it shut. */
@@ -2058,18 +1944,8 @@ export class ShiftSystem extends createSystem({
     /** Pressed on something that can be carried? Then it is in hand until let go. */
     #pick(ndc) {
         if (!this.running) return false
-        // a flap of the family's carton: it swings, nothing is carried
-        if (this.kit) {
-            const flapHit = this.#rayAt(ndc).intersectObjects(this.kit.object.userData.flaps, true)[0]
-            if (flapHit) {
-                let hinge = flapHit.object
-                while (hinge && !this.kit.object.userData.flaps.includes(hinge)) hinge = hinge.parent
-                if (hinge) this.#toggleFlap(hinge)
-                return false
-            }
-        }
-        // open, the family's carton stays where it is
-        const carriable = [...this.things.values()].filter((t) => t.object.visible && !(t.kind === 'kit' && !this.kit?.closed))
+        // empty, the family's carton stays where it is
+        const carriable = [...this.things.values()].filter((t) => t.object.visible && this.#canTake(t))
         const hits = this.#rayAt(ndc).intersectObjects(carriable.map((t) => t.object), true)
         const found = hits.length ? this.#entityOf(hits[0]) : null
         if (!found) return false
@@ -2148,11 +2024,6 @@ export class ShiftSystem extends createSystem({
         }
         if (day.calm) {
             const missing = Object.keys(day.missing)
-            if (!missing.length && !this.kit.closed) return { phase: 'close', targets: [this.kit.object], text: hands ? 'Ciérrala: junta las dos aletas' : 'Haz clic en las dos aletas para cerrarla' }
-            if (!missing.length && !this.kit.labeled) {
-                const label = things.find((t) => t.kind === 'label')
-                return { phase: 'label', targets: label ? [label.object] : [], text: 'Pégale la orden encima de la caja' }
-            }
             if (!missing.length) return { phase: 'deliver', targets: [this.kit.object], text: 'Entrégala en la ventanilla, a tu izquierda' }
             let targets = []
             if (held && (held.kind === 'item' || held.kind === 'stock')) targets = missing.includes(held.itemId) ? [this.kit.object] : []
@@ -2524,12 +2395,6 @@ export class ShiftSystem extends createSystem({
         if (!this.kit) return
         this.things.delete(this.kit.entity)
         this.kit.entity.destroy()
-        // the order's label goes with it, wherever it was
-        for (const [entity, t] of this.things) {
-            if (t.kind !== 'label' || t.kit !== this.kit) continue
-            this.things.delete(entity)
-            entity.destroy()
-        }
         this.kit = null
         this.#rebuildGhost()
     }
@@ -2614,46 +2479,11 @@ export class ShiftSystem extends createSystem({
         this.#static(entity, BOX)
         this.#occlude(entity)
         const units = Object.entries(order.items).flatMap(([id, q]) => Array(q).fill(id))
-        this.kit = { entity, object: kitObject, layout: cartonLayout(this.supplies, units), used: new Set(), closed: false, labeled: false }
-        this.#printTicket(order, kitX + BOX.w / 2 + 0.12)
+        this.kit = { entity, object: kitObject, layout: cartonLayout(this.supplies, units), used: new Set(), closed: false }
         this.#rebuildGhost()
         this.sound.play('radio')
         if (!this.guide) this.#say(order.urgent ? 'alert' : 'radio', `${order.family} está en la ventanilla`)
         this.#refreshNext()
-    }
-
-    /** The printed order, lying on the table near the person, ready to be stuck on the carton. */
-    #printTicket(order, x) {
-        const ticket = orderTicket()
-        ticket.refresh({ family: order.family, urgent: !!order.urgent, items: Object.entries(order.items).map(([id, qty]) => ({ label: SUPPLIES[id].label, qty })) })
-        const object = new THREE.Group()
-        ticket.mesh.rotation.x = -Math.PI / 2
-        object.add(ticket.mesh)
-        object.userData.size = { w: ticket.width, h: 0.006, d: ticket.height }
-        this.frame3.at(x, this.top + 0.004, -0.14, object.position)
-        object.quaternion.copy(yawQ(this.frame3.yaw))
-        const t = { kind: 'label', kit: this.kit, ticket, home: object.position.clone(), homeQ: object.quaternion.clone(), density: 0.3 }
-        const entity = this.#thing(object, t, { parent: null })
-        this.#static(entity, object.userData.size)
-        this.#occlude(entity)
-        gsap.from(object.scale, { x: 0.4, y: 0.4, z: 0.4, duration: 0.35, ease: 'back.out(2)' })
-    }
-
-    /** Let go on the shut carton, the order sticks on its front: now it is that family's. */
-    #stickLabel(entity, t) {
-        const kit = this.kit
-        if (!kit.closed) {
-            this.#say('warn', 'Primero cierra la caja')
-            return this.#watchThrow(entity)
-        }
-        this.things.delete(entity)
-        entity.destroy()
-        const sticker = new THREE.Mesh(t.ticket.mesh.geometry, t.ticket.mesh.material)
-        sticker.position.set(0, -0.01, BOX.d / 2 + 0.003)
-        kit.object.add(sticker)
-        kit.labeled = true
-        this.haptics.play('right')
-        this.sound.play('tape', this.#worldOf(kit.object))
     }
 
     #sendAway(f, x, z) {
@@ -2672,6 +2502,8 @@ export class ShiftSystem extends createSystem({
         const f = this.familyAtCounter
         this.familyAtCounter = null
         if (this.kit) {
+            // it shuts itself here, on its way into their arms
+            this.#sealKit()
             const carried = this.kit.object.clone()
             carried.scale.setScalar(1 / f.leader.root.scale.x)
             carried.position.set(0, (f.leader.height * 0.55) / f.leader.root.scale.x, 0.22 / f.leader.root.scale.x)
@@ -2750,7 +2582,7 @@ export class ShiftSystem extends createSystem({
             this.#rebuildGhost()
             if (detail.complete) {
                 this.sound.play('done')
-                if (!this.guide) this.#say('info', 'Completo: ciérrala y pégale la orden')
+                if (!this.guide) this.#say('info', 'Completo: ya puedes entregarla en la ventanilla')
             }
         }
         if (event === 'impatient') this.sound.play('radio')
