@@ -15,7 +15,8 @@ Parte de `/ar/`, a escala de la mesa real:
 
 - **Tu mesa es el mostrador.** Al presionar, la app busca en el escaneo del cuarto la mesa que tienes delante (la que miras) y pone encima una mesa virtual de su mismo tamaño y altura. Todo el punto se reduce para caber en ella: los tapetes, el botón y las cajas quedan sobre tu mesa.
 - **Se ve tu cuarto.** La carpa no se muestra, así no se pierde la profundidad del espacio. El camión es mucho más pequeño.
-- **El estante está a tu derecha y a la mano**, pegado al extremo de la mesa y más bajo y corto. Si a la derecha hay una pared o un mueble, se pone a la izquierda (y te avisa).
+- **El estante está a tu derecha y a la mano**, pegado al extremo de la mesa, con las cajas entre la rodilla y el pecho. Si a la derecha hay una pared o un mueble, se pone a la izquierda (y te avisa). El camión y su panel siempre van del lado contrario al estante.
+- **Órdenes, no personas.** Las familias no aparecen: llegan sus órdenes, en fila sobre la mesa, cada una con una foto de la familia, fotos de lo que necesita con cuántos, y el tiempo que les queda (la urgente primero).
 - Sin mesa en el escaneo, usa una virtual del tamaño de una mesa común y la coloca donde no choque con paredes ni muebles. Conviene haber escaneado el cuarto en las gafas (Ajustes › Espacio físico).
 
 ## Sin visor

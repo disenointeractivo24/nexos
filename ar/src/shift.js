@@ -1,5 +1,6 @@
 import { createSystem, GrabSystem, Grabbed, Hovered, OneHandGrabbable, Pressed, RayInteractable, VisibilityState, XRAnchor, XRMesh, XRPlane } from '@iwsdk/core'
 import { clearance, fitTent, toWorld } from './world/fit.js'
+import { takeThumbs } from './world/thumbs.js'
 import gsap from 'gsap'
 import * as THREE from 'three'
 import { AssetLoader } from '../../src/three/AssetLoader.js'
@@ -14,7 +15,7 @@ import { Sound } from './sound.js'
 import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
 import { Glow } from './world/glow.js'
-import { bigBoard, buttonPanel, familyCard, fontsReady, messageBoard, nextPanel, orderCard, receivePanel, speechBubble, taskList } from './world/panels.js'
+import { bigBoard, buttonPanel, familyCard, orderPhotoCard, fontsReady, messageBoard, nextPanel, orderCard, receivePanel, speechBubble, taskList } from './world/panels.js'
 import { buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
 import { Temper } from './world/temper.js'
 import { buildTruck } from './world/truck.js'
@@ -161,7 +162,6 @@ export class ShiftSystem extends createSystem({
             person.update(delta, this.elapsed)
             person.temper.update(delta, this.elapsed)
         }
-        if (!this.paused) this.#complaints(delta)
         this.#followCards()
         this.#carry(delta)
         this.#markHeld()
@@ -197,6 +197,8 @@ export class ShiftSystem extends createSystem({
         this.stand = stand
         this.supplies = supplies
         this.people = new Map(people)
+        // the photos on the order cards, taken once
+        takeThumbs({ loader: this.loader, people: this.people, supplies, orders: ORDERS })
         // published: the demonstration tab of the sheet. On this computer, only this browser.
         const endpoint = import.meta.env.PROD ? sheetsEndpoint() : ''
         this.store = new InventoryStore({ pointId: DEMO_POINT, endpoint })
@@ -318,7 +320,7 @@ export class ShiftSystem extends createSystem({
         const build = (side) => {
             const rootObject = new THREE.Group()
             rootObject.scale.setScalar(S)
-            return { rootObject, station: buildStation(rootObject, this.loader, this.stand, { table, shelfSide: side }) }
+            return { rootObject, station: buildStation(rootObject, this.loader, this.stand, { table, shelfSide: side, worldScale: S }) }
         }
         let { rootObject, station } = build(1)
         if (real) {
@@ -501,8 +503,10 @@ export class ShiftSystem extends createSystem({
         // right at the person's left, with the truck behind it. It looks at the person.
         this.receive = receivePanel()
         this.#thing(this.receive.mesh, { kind: 'receive' }, { grab: false })
-        this.receive.mesh.position.set(x - RECEIVE_REACH, 1.3, WORKER.z)
-        this.receive.mesh.rotation.y = Math.PI / 2
+        // on the truck's side, which is always the side opposite the shelf
+        const t = this.#truckSide()
+        this.receive.mesh.position.set(x + t * RECEIVE_REACH, 1.3, WORKER.z)
+        this.receive.mesh.rotation.y = (-t * Math.PI) / 2
         this.#setActive(this.receive.mesh, false)
         this.truck = buildTruck()
         // much smaller than the rest: it is only there to say the cartons came
@@ -612,10 +616,10 @@ export class ShiftSystem extends createSystem({
     #driveTruck(fromZ, toZ, seconds, ease, then) {
         const { object, wheels, wheelRadius } = this.truck
         object.visible = true
-        object.position.set(TRUCK_X, 0, fromZ)
+        object.position.set(TRUCK_X * -this.#truckSide(), 0, fromZ)
         gsap.to(object.position, { z: toZ, duration: seconds, ease, onComplete: then })
         for (const wheel of wheels) gsap.to(wheel.rotation, { x: `+=${(toZ - fromZ) / wheelRadius}`, duration: seconds, ease })
-        this.sound.play('truck', this.rootObject.localToWorld(new THREE.Vector3(TRUCK_X, 1, TRUCK_PARK_Z)))
+        this.sound.play('truck', this.rootObject.localToWorld(new THREE.Vector3(TRUCK_X * -this.#truckSide(), 1, TRUCK_PARK_Z)))
     }
 
     /** A truck comes in and stops by the panel. It stays until all it brought has been received. */
@@ -627,7 +631,7 @@ export class ShiftSystem extends createSystem({
             this.truckParked = true
             if (!this.running) return this.#truckLeaves()
             this.sound.play('radio')
-            this.#say('radio', 'Llegó el camión. Recibe las donaciones en el panel de tu izquierda.')
+            this.#say('radio', `Llegó el camión. Recibe las donaciones en el panel de tu ${this.#truckSide() < 0 ? 'izquierda' : 'derecha'}.`)
             this.#refreshReceive()
         })
     }
@@ -797,7 +801,7 @@ export class ShiftSystem extends createSystem({
 
         if (day.calm && !day.boxes.length) {
             if (!this.truckParked) return { phase: 'truck', targets: [], text: 'Viene un camión con donaciones, por tu izquierda.' }
-            return { phase: 'receive', targets: [this.receive.mesh], text: 'Llegó el camión. Presiona el panel que brilla, a tu izquierda, para recibir las donaciones.' }
+            return { phase: 'receive', targets: [this.receive.mesh], text: `Llegó el camión. Presiona el panel que brilla, a tu ${this.#truckSide() < 0 ? 'izquierda' : 'derecha'}, para recibir las donaciones.` }
         }
         if (day.calm && !day.current) {
             const box = things.find((t) => t.kind === 'box' && t.box === day.boxes[0])
@@ -822,8 +826,8 @@ export class ShiftSystem extends createSystem({
                     return [this.things.get(zone.stock.get(id)).object]
                 })
             }
-            if (onShelf.length === missing.length) return { phase: 'shelf', targets, text: `Falta ${wants}: brilla en el estante, a tu derecha. Llévalo a su caja, en «Arma el pedido».` }
-            const where = onShelf.length ? 'en la caja abierta y en el estante, a tu derecha' : 'en la caja abierta'
+            if (onShelf.length === missing.length) return { phase: 'shelf', targets, text: `Falta ${wants}: brilla en el estante, a tu ${this.#truckSide() < 0 ? 'derecha' : 'izquierda'}. Llévalo a su caja, en «Arma el pedido».` }
+            const where = onShelf.length ? `en la caja abierta y en el estante, a tu ${this.#truckSide() < 0 ? 'derecha' : 'izquierda'}` : 'en la caja abierta'
             return { phase: 'order', targets, text: `${day.current.family} necesita ${wants}. Lo que brilla está ${where}: llévalo a su caja, en «Arma el pedido».` }
         }
         // handed over, time runs again: only what was left in the carton still gets a hand
@@ -831,7 +835,7 @@ export class ShiftSystem extends createSystem({
         if (!left.length || day.current) return null
         let targets = left.map((t) => t.object)
         if (held) targets = held.kind === 'item' ? [this.station.zones.find((z) => z.categoryId === SUPPLIES[held.itemId].category).crate] : []
-        return { phase: 'sort', targets, text: 'Lo que quedó en la caja va a su lugar en el estante, a tu derecha. Desde ahora el tiempo corre.' }
+        return { phase: 'sort', targets, text: `Lo que quedó en la caja va a su lugar en el estante, a tu ${this.#truckSide() < 0 ? 'derecha' : 'izquierda'}. Desde ahora el tiempo corre.` }
     }
 
     #followGuide() {
@@ -1280,7 +1284,7 @@ export class ShiftSystem extends createSystem({
             object.position.copy(home)
             this.#thing(object, { kind: 'item', itemId, box: t.box, home })
         }
-        this.#say('info', `Caja de ${t.box.from}. Lleva cada insumo a su caja del estante, a tu derecha, o directo a un pedido.`)
+        this.#say('info', `Caja de ${t.box.from}. Lleva cada insumo a su caja del estante, a tu ${this.#truckSide() < 0 ? 'derecha' : 'izquierda'}, o directo a un pedido.`)
     }
 
     /** An item goes into its crate, or back to its carton with a word about where it goes. */
@@ -1366,6 +1370,8 @@ export class ShiftSystem extends createSystem({
         person.place(position, yaw)
         person.temper = new Temper(person)
         person.appear()
+        // orders, not people: who they are is on the card, with their photo
+        person.root.visible = false
         this.rootObject.add(person.root)
         this.crowd.add(person)
         return person
@@ -1416,20 +1422,24 @@ export class ShiftSystem extends createSystem({
             this.#say('alert', `${order.family} necesita ${this.#wants(order)} ya. Pasa al entregar lo del mostrador, o con «Que pase el siguiente».`)
         } else if (this.day.current) {
             this.sound.play('radio')
-            this.#say('radio', `Llegó ${order.family}. Pasará cuando termines, o con «Que pase el siguiente».`)
+            this.#say('radio', `Llegó una orden de ${order.family}. La atiendes cuando termines, o con «Que pase el siguiente».`)
         }
     }
 
     /** The card over the head of whoever is in line. */
     #giveCard(f) {
         const { order, leader } = f
-        const card = familyCard()
-        card.mesh.position.set(leader.position.x, CARD_Y, leader.position.z)
-        card.mesh.scale.setScalar(1.6)
-        card.refresh({ family: order.family, people: order.people, urgent: order.urgent, left: barStep(1 - order.waited / order.patience) })
+        const card = orderPhotoCard()
+        // about 34 cm wide where the person is, whatever the point's scale
+        const k = 0.34 / (card.width * this.scale)
+        card.base = k
+        card.mesh.scale.setScalar(k)
+        card.refresh(this.#cardData(order))
         this.rootObject.add(card.mesh)
         f.card = card
-        if (order.urgent) gsap.to(card.mesh.scale, { x: 1.78, y: 1.78, duration: 1.2, repeat: -1, yoyo: true, ease: 'sine.inOut' })
+        this.#followCards()
+        gsap.from(card.mesh.scale, { x: k * 0.3, y: k * 0.3, duration: 0.4, ease: 'back.out(2)' })
+        this.sound.play('radio')
     }
 
     /** Sent back to wait: their carton goes, and they return to a place in the line. */
@@ -1444,10 +1454,28 @@ export class ShiftSystem extends createSystem({
         this.#walkTo(f.leader, f.slot.x, f.slot.z, () => (f.leader.targetYaw = 0))
     }
 
+    /** The orders waiting, in a row over the far edge of the table, the urgent first; turned to the person. */
     #followCards() {
-        for (const f of this.families.values()) {
-            if (f.card) f.card.mesh.position.set(f.leader.position.x, CARD_Y, f.leader.position.z)
-        }
+        const waiting = [...this.families.values()].filter((f) => f.card).sort((a, b) => (b.order.urgent ? 1 : 0) - (a.order.urgent ? 1 : 0))
+        const step = 0.37 / this.scale
+        // above the other signs, a little behind the table
+        const y = this.station.deskTop + 0.78 / this.scale
+        const z = this.station.deskFar - 0.2 / this.scale
+        waiting.forEach((f, i) => {
+            const x = WORKER.x + (i - (waiting.length - 1) / 2) * step
+            f.card.mesh.position.set(x, y, z)
+            f.card.mesh.rotation.set(0, Math.atan2(WORKER.x - x, WORKER.z + 0.4 - z) * 0.6, 0)
+        })
+    }
+
+    /** -1 left, 1 right: the truck comes along the side the shelf is not on. */
+    #truckSide() {
+        return -(this.station?.shelfSide ?? 1)
+    }
+
+    #cardData(order) {
+        const { id, family, urgent, items, packed, waited, patience } = order
+        return { id, family, urgent, items, packed, left: barStep(1 - waited / patience) }
     }
 
     #wants(order) {
@@ -1505,8 +1533,7 @@ export class ShiftSystem extends createSystem({
         let n = 0
         for (const f of this.families.values()) {
             if (f.order.state !== 'waiting' || !f.card || n++ % 2 !== half) continue
-            const { family, people, urgent, waited, patience } = f.order
-            f.card.refresh({ family, people, urgent, left: barStep(1 - waited / patience) })
+            f.card.refresh(this.#cardData(f.order))
         }
     }
 
@@ -1515,6 +1542,7 @@ export class ShiftSystem extends createSystem({
         gsap.killTweensOf(f.card.mesh.scale)
         f.card.mesh.removeFromParent()
         f.card = null
+        this.#followCards()
     }
 
     /** What they asked for, and for what is missing, whether it is anywhere to be had. */
@@ -1546,7 +1574,7 @@ export class ShiftSystem extends createSystem({
         this.order.mesh.visible = true
         gsap.fromTo(this.order.mesh.scale, { x: 0.86, y: 0.86 }, { x: 1, y: 1, duration: 0.4, ease: 'back.out(2.4)' })
         this.sound.play('radio')
-        this.#say(order.urgent ? 'alert' : 'radio', `${order.family} pasó al mostrador. Busca lo que pide en los estantes, a tu derecha, o en las cajas que abras.`)
+        this.#say(order.urgent ? 'alert' : 'radio', `Atiende la orden de ${order.family}: busca lo que pide en el estante o en las cajas que abras, y ponlo en la caja de «Arma el pedido».`)
         this.#refreshAction()
     }
 

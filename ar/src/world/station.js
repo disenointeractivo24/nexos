@@ -21,8 +21,8 @@ const SUPPLY_FIT = 0.72
 /** How full a carton is: its contents stand on this much packing paper, so they show. */
 const FILL = 0.6
 
-/** How much smaller than modelled the shelf is: low and short enough to reach every crate. */
-const SHELF_SCALE = 0.72
+/** The shelf's size in the room against the model: its crates between the knee and the chest. */
+const SHELF_SIZE = 0.66
 
 /** Height of the top of the shelf's boards above its feet, measured in the model. */
 const BOARD_TOP = [0.04, 0.72, 1.27, 1.82]
@@ -298,7 +298,7 @@ const CRATE_SPOTS = [
  * The model's shelf stands behind the person: it is taken from there, turned a quarter and set at
  * their right hand, its front to them, clear of the counter. Returns its new box.
  */
-function shelfBeside(root, tent, nearZ, side = 1) {
+function shelfBeside(root, tent, nearZ, side = 1, worldScale = 1) {
     root.updateMatrixWorld(true)
     const meshes = []
     tent.traverse((o) => {
@@ -319,7 +319,8 @@ function shelfBeside(root, tent, nearZ, side = 1) {
     // its front faced -Z (the person, in front of it); now it faces them from their side
     pivot.rotation.y += (side * Math.PI) / 2
     // shorter than modelled, so every crate is within arm's reach
-    const k = SHELF_SCALE
+    // as tall in the room as SHELF_SIZE says, whatever the point's scale
+    const k = SHELF_SIZE / worldScale
     pivot.scale.setScalar(k)
     // its front a step from the person, starting where the table ends
     pivot.position.set(WORKER.x + side * (0.55 + (k * depth) / 2), 0, nearZ + 0.08 + (k * width) / 2)
@@ -335,13 +336,14 @@ function shelfBeside(root, tent, nearZ, side = 1) {
  * (families on its far side): where the truck's cartons land on its left, then the mat where
  * a carton is opened, the button, and the mat where a kit is packed. The shelves are to the right.
  */
-export function buildStation(root, loader, stand, { table = null, shelfSide = 1 } = {}) {
+export function buildStation(root, loader, stand, { table = null, shelfSide = 1, worldScale = 1 } = {}) {
     const station = { root, zones: [] }
     const { tent, desk: modelDesk } = tentOf(loader, stand)
     root.add(tent)
     station.tent = tent
     const nearEdge = modelDesk.max.z
-    const { box: shelf, pivot } = shelfBeside(root, tent, nearEdge, shelfSide)
+    const { box: shelf, pivot } = shelfBeside(root, tent, nearEdge, shelfSide, worldScale)
+    station.shelfSide = shelfSide
     // the tent itself is not shown: the real room is, so its depth is not lost. Only the shelf
     // (taken out of it) and a table of the real one's size and height remain.
     tent.visible = false

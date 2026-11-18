@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { THUMBS } from './thumbStore.js'
 import { SUPPLIES } from '../../../src/data/catalog.js'
 
 export const BRAND = {
@@ -559,6 +560,53 @@ export function familyCard() {
         fillRR(ctx, x, y, Math.max(38, bar * d.left), 38, 19, d.urgent ? '#FFFFFF' : d.left < 0.35 ? BRAND.redText : d.left < 0.65 ? BRAND.amber : BRAND.greenInk)
     })
     return p
+}
+
+/**
+ * An order as it arrives: the family's photo, their name, what they need as photos of the things
+ * with how many, and the time left. Packed things get a check.
+ */
+export function orderPhotoCard() {
+    return new Panel(0.5, 0.3, (ctx, w, h, d) => {
+        if (!d) return
+        const photo = THUMBS.family.get(d.id)
+        fillRR(ctx, 2, 2, w - 4, h - 4, 44, d.urgent ? '#FFF1F1' : '#FFFFFF')
+        ctx.lineWidth = 8
+        ctx.strokeStyle = d.urgent ? BRAND.redText : BRAND.navy
+        rr(ctx, 6, 6, w - 12, h - 12, 40)
+        ctx.stroke()
+        const ph = h - 150
+        fillRR(ctx, 30, 30, ph, ph, 30, '#E9EEF4')
+        if (photo) ctx.drawImage(photo, 30, 30, ph, ph)
+        const x0 = ph + 60
+        ctx.fillStyle = d.urgent ? BRAND.redText : BRAND.navy
+        ctx.textBaseline = 'alphabetic'
+        ctx.font = `800 34px ${FONT}`
+        ctx.fillText(d.urgent ? 'ORDEN URGENTE' : 'ORDEN', x0, 74)
+        let size = 60
+        ctx.font = `800 ${size}px ${FONT}`
+        while (ctx.measureText(d.family).width > w - x0 - 30) ctx.font = `800 ${(size -= 2)}px ${FONT}`
+        ctx.fillText(d.family, x0, 140)
+        const items = Object.entries(d.items)
+        const cell = Math.min(210, (w - x0 - 30) / Math.max(1, items.length))
+        items.forEach(([id, qty], i) => {
+            const x = x0 + i * cell
+            const y = 170
+            fillRR(ctx, x, y, cell - 16, cell - 16, 20, '#F2F4F7')
+            const img = THUMBS.item.get(id)
+            if (img) ctx.drawImage(img, x + 4, y + 4, cell - 24, cell - 24)
+            const have = d.packed?.[id] ?? 0
+            ctx.font = `800 40px ${FONT}`
+            ctx.fillStyle = BRAND.navy
+            ctx.fillText(`×${qty}`, x + 6, y + cell + 30)
+            if (have >= qty) badge(ctx, x + cell - 36, y + 20, 22, 'check', BRAND.greenInk, '#FFFFFF')
+        })
+        const bx = 30
+        const by = h - 80
+        const bar = w - 60
+        fillRR(ctx, bx, by, bar, 40, 20, BRAND.line)
+        fillRR(ctx, bx, by, Math.max(40, bar * d.left), 40, 20, d.left < 0.35 ? BRAND.redText : d.left < 0.65 ? BRAND.amber : BRAND.greenInk)
+    })
 }
 
 /** What someone is complaining about, beside their head: its tail points at them. */
