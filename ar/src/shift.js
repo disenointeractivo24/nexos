@@ -392,7 +392,7 @@ export class ShiftSystem extends createSystem({
             this.relocating = true
             this.#showShift(false)
             this.#message(this.hint, 'info', 'Ponte frente a tu mesa y pellízcala para retomar el turno')
-        } else this.#message(this.hint, 'info', 'Ponte frente a tu mesa y pellízcala, o toca dos esquinas opuestas')
+        } else this.#message(this.hint, 'info', 'Ponte frente a tu mesa y pellízcala')
         this.markers = new Map()
         this.inFront = null
         // where the hand points, on whatever real surface it meets
@@ -519,10 +519,6 @@ export class ShiftSystem extends createSystem({
                 this.markers.delete(key)
             }
         }
-        // a table can always be shown by hand too: two corners touched with a fingertip. It is the way
-        // to tell apart two tables side by side that the headset took as one
-        this.marking ??= { corners: [], dots: [], tips: {} }
-        this.#markTable(dt)
     }
 
     /** Where the hand of a select event points, in the scene. */
@@ -553,8 +549,12 @@ export class ShiftSystem extends createSystem({
             const hit = this.reticle?.object3D?.visible ? this.reticle.object3D.position.clone() : null
             const floorY = this.#floorY()
             if (hit && hit.y - floorY > 0.4 && hit.y - floorY < 1.25) chosen = surfaceAt(hit, head, { width: 1.0, depth: 0.6, label: 'punto en la mesa', real: true })
-            // no table the headset knows of: the person shows where theirs is, with their own hands
-            else return this.#message(this.hint, 'info', 'Ponte frente a tu mesa, o toca dos esquinas opuestas de ella')
+            // no table the headset knows of: one of our own, in front, at the person's height
+            else {
+                const look = this.world.camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize()
+                const at = head.clone().addScaledVector(look, 0.55).setY(floorY + comfortableTop(this.#eyeHeight(head.y) - floorY))
+                chosen = surfaceAt(at, head, { width: 1.2, depth: 0.65, label: 'mesa virtual' })
+            }
         }
         this.#tableChosen({ id: chosen.id ?? 'punto', ...chosen }, head)
     }
@@ -623,68 +623,6 @@ export class ShiftSystem extends createSystem({
         this.wantAnchor = false
         const space = this.world.renderer.xr.getReferenceSpace?.()
         this.lock.lockAt(xrFrame, space, yawMatrix(this.frame3.origin, this.frame3.yaw))
-    }
-
-    /* ---------------- a table shown by hand ---------------- */
-
-    #startMarking() {
-        this.marking = { corners: [], dots: [], tips: {} }
-        this.#message(this.hint, 'info', 'No veo tu mesa: toca dos esquinas opuestas')
-        this.sound.play('tap')
-    }
-
-    /**
-     * A fingertip held still on the table for a moment marks a corner of it; two opposite corners
-     * give its height and its size, square to where the person is looking.
-     */
-    #markTable(dt) {
-        const m = this.marking
-        for (const [name, side] of Object.entries(this.hands.sides)) {
-            if (!side.seen || side.pinching) {
-                m.tips[name] = null
-                continue
-            }
-            const tip = side.joints['index-finger-tip']
-            const still = (m.tips[name] ??= { at: tip.clone(), for: 0 })
-            if (tip.distanceTo(still.at) > 0.012) {
-                still.at.copy(tip)
-                still.for = 0
-                continue
-            }
-            still.for += dt
-            const height = tip.y - (this.#floorY())
-            const apart = m.corners.every((c) => Math.hypot(c.x - tip.x, c.z - tip.z) > 0.3)
-            if (still.for < 0.6 || height < 0.4 || height > 1.3 || !apart) continue
-            still.for = -1e9 // not again until it moves
-            m.corners.push(tip.clone())
-            const dot = new THREE.Mesh(new THREE.SphereGeometry(0.012, 16, 10), new THREE.MeshBasicMaterial({ color: '#2ECC71' }))
-            dot.position.copy(tip)
-            this.world.scene.add(dot)
-            m.dots.push(dot)
-            this.sound.play('tap', tip)
-            if (m.corners.length === 1) this.#message(this.hint, 'info', 'Ahora la esquina opuesta')
-        }
-        if (m.corners.length < 2) return
-        const [a, b] = m.corners
-        const head = this.world.camera.getWorldPosition(new THREE.Vector3())
-        const look = this.world.camera.getWorldDirection(new THREE.Vector3()).setY(0).normalize()
-        // the table's sides square to the person: one across their view, one along it
-        const v = look.clone().negate()
-        const u = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), v).normalize()
-        const d = new THREE.Vector3().subVectors(b, a)
-        const hu = Math.abs(d.dot(u)) / 2
-        const hv = Math.abs(d.dot(v)) / 2
-        if (hu < 0.2 || hv < 0.15) {
-            for (const dot of m.dots) dot.removeFromParent()
-            this.marking = { corners: [], dots: [], tips: {} }
-            return this.#message(this.hint, 'warn', 'Muy cerca: toca dos esquinas opuestas')
-        }
-        const top = (a.y + b.y) / 2
-        const center = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5).setY(top)
-        for (const dot of m.dots) dot.removeFromParent()
-        this.marking = { corners: [], dots: [], tips: {} }
-        const surface = { id: 'marcada a mano', center, u, v, hu, hv, top, label: 'marcada', real: true }
-        this.#tableChosen(surface, head)
     }
 
     /** The eyes' usual height, from what was seen while choosing. */
@@ -808,6 +746,9 @@ export class ShiftSystem extends createSystem({
         this.plan = new FloorPlan()
         for (const t of this.layout.tables) this.plan.blockRect(t.cx, t.cz, t.hw, t.hd, t.yaw)
         this.plan.keepInside(this.layout.area)
+        // the movement limit drawn in the headset: nothing outside it
+        this.bounds = this.world.session ? this.#guardianBounds() : null
+        if (this.bounds) this.plan.keepInside(this.bounds)
         if (this.world.session) this.#scanInto(this.plan)
         this.plan.finalize({ x: 0, z: 0.35 })
 
@@ -827,6 +768,26 @@ export class ShiftSystem extends createSystem({
         this.rootPlaced = [...rootObject.matrixWorld.elements]
         this.#lockAnchor()
         if (this.debugOn) this.setDebug(true)
+    }
+
+    /** The headset's movement limit (bounded-floor), on the floor in the table's frame; null without it. */
+    #guardianBounds() {
+        const space = this.world.renderer.xr.getReferenceSpace?.()
+        const pts = space?.boundsGeometry
+        if (!pts || pts.length < 3) return null
+        const v = new THREE.Vector3()
+        // a little in from the line, so nothing is right at it
+        const poly = [...pts].map((p) => {
+            this.frame3.local(v.set(p.x, 0, p.z).applyMatrix4(this.lock.toScene), v)
+            return { x: v.x, z: v.z }
+        })
+        const cx = poly.reduce((a, p) => a + p.x, 0) / poly.length
+        const cz = poly.reduce((a, p) => a + p.z, 0) / poly.length
+        return poly.map((p) => {
+            const d = Math.hypot(p.x - cx, p.z - cz) || 1
+            const k = Math.max(0, d - 0.1) / d
+            return { x: cx + (p.x - cx) * k, z: cz + (p.z - cz) * k }
+        })
     }
 
     /** Something did not fit: the person moves things in the room, and it is set up again. */

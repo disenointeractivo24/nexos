@@ -1,4 +1,4 @@
-import { DepthOccludable, DepthSensingSystem, Grabbed, SessionMode, VisibilityState, World } from '@iwsdk/core'
+import { DepthOccludable, DepthSensingSystem, Grabbed, ReferenceSpaceType, SessionMode, VisibilityState, World } from '@iwsdk/core'
 import { ShiftSystem } from './shift.js'
 
 const start = document.getElementById('start')
@@ -22,6 +22,9 @@ async function main() {
     const world = await World.create(document.getElementById('scene-container'), {
         xr: {
             sessionMode: SessionMode.ImmersiveAR,
+            // bounded-floor: fixed to the movement limit the person drew, so recentring the view
+            // (a palm pinch, or both hands) does not move the shift; and its bounds are the area
+            referenceSpace: { type: ReferenceSpaceType.BoundedFloor, fallbackOrder: [ReferenceSpaceType.LocalFloor, ReferenceSpaceType.Local] },
             offer: 'none',
             features: {
                 handTracking: true,
