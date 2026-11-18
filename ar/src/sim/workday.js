@@ -68,11 +68,25 @@ export class Workday {
      *           first?: { from: string, items: string[] }[], random?: () => number,
      *           orders?: typeof ORDERS, arrivals?: typeof ARRIVALS, guided?: boolean }} opts
      */
-    constructor({ store, first = null, random = Math.random, orders = ORDERS, arrivals = ARRIVALS, guided = false, boxes = START_BOXES }) {
+    constructor({ store, first = null, random = Math.random, orders = ORDERS, arrivals = ARRIVALS, guided = false, boxes = START_BOXES, categories = null }) {
         this.store = store
+        /** The categories that have a shelf in this room: nothing else is given, asked for or shown. */
+        this.categories = new Set(categories ?? Object.keys(CATEGORIES))
+        const allowed = (id) => this.categories.has(categoryOf(id))
+        const keep = (items) => Object.fromEntries(Object.entries(items).filter(([id]) => allowed(id)))
+        // fewer cartons, fewer people: about as many orders as the room's cartons can feed
+        const room = Math.max(1, Math.round((orders.length * boxes) / START_BOXES))
+        orders = orders
+            .map((o) => ({ ...o, items: keep(guided && o.id === GUIDED.order ? GUIDED.items : o.items) }))
+            .filter((o) => Object.keys(o.items).length)
+        orders = orders.slice(0, room)
+        const ids = new Set(orders.map((o) => o.id))
+        arrivals = arrivals.filter((a) => ids.has(a.id))
         /** Cartons known beforehand; the rest of the `boxes`, if any, are whatever people gave. */
-        this.first = guided ? [GUIDED.carton] : first
-        this.startBoxes = first && !guided ? first.length : boxes
+        const guidedCarton = { ...GUIDED.carton, items: GUIDED.carton.items.filter(allowed) }
+        this.first = guided && guidedCarton.items.length ? [guidedCarton] : first
+        this.allowed = allowed
+        this.startBoxes = first && !guided ? Math.min(first.length, boxes) : boxes
         /** Learning: time stands still, until that first order has been handed over. */
         this.calm = guided
         this.random = random
@@ -82,7 +96,7 @@ export class Workday {
         this.counterFree = 0
         this.sortedCount = 0
         this.mistakes = 0
-        this.orders = orders.map((o) => ({ ...o, items: { ...(guided && o.id === GUIDED.order ? GUIDED.items : o.items) }, packed: {}, state: 'scheduled', waited: 0, warned: false }))
+        this.orders = orders.map((o) => ({ ...o, items: { ...o.items }, packed: {}, state: 'scheduled', waited: 0, warned: false }))
         this.pending = [...arrivals].sort((a, b) => a.at - b.at)
         this.current = null
         this.clock = 0
@@ -106,7 +120,7 @@ export class Workday {
 
     /** One supply, as likely as people are to give it. */
     #anySupply() {
-        const ids = Object.keys(LIKELIHOOD).filter((id) => id !== 'medicine' || this.medicineLeft > 0)
+        const ids = Object.keys(LIKELIHOOD).filter((id) => this.allowed(id) && (id !== 'medicine' || this.medicineLeft > 0))
         let pick = this.random() * ids.reduce((n, id) => n + LIKELIHOOD[id], 0)
         const id = ids.find((x) => (pick -= LIKELIHOOD[x]) < 0) ?? ids[0]
         if (id === 'medicine') this.medicineLeft--
@@ -127,7 +141,7 @@ export class Workday {
         if (this.started) return false
         this.started = true
         const known = this.first ?? []
-        const list = [...known, ...Array.from({ length: Math.max(0, this.startBoxes - known.length) }, () => this.#carton())]
+        const list = [...known.slice(0, this.startBoxes), ...Array.from({ length: Math.max(0, this.startBoxes - known.length) }, () => this.#carton())]
         const boxes = list.map((b) => ({ ...b, id: `caja-${++this.boxCount}`, items: [...b.items], loose: [...b.items], state: 'received', left: b.items.length }))
         this.boxes.push(...boxes)
         this.#emit('received', boxes)

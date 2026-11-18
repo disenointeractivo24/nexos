@@ -17,7 +17,7 @@ Nada se dibuja a mano: al pellizcar la mesa que tienes al frente, la aplicación
 
 - **Mesa**: solo una, la del frente. Todas las cajas van sobre ella (apiladas si hace falta), nunca en el piso ni en otras mesas.
 - **Área** (rojo): el piso alrededor de la mesa, recortado por lo que el escaneo conoce (paredes, muebles, otras mesas) y solo hasta donde se puede caminar desde tu sitio.
-- **Estanterías** (amarillo): la aplicación prueba varias zonas del piso libre (primero a tu derecha y detrás, luego más amplias) y usa la primera donde caben todas.
+- **Estanterías** (amarillo): la aplicación prueba varias zonas del piso libre (primero a tu derecha y detrás, luego más amplias) y usa la primera donde caben más. El turno se ajusta al espacio: si solo caben 3 estanterías, solo hay esas categorías (en orden: alimentos, agua, medicinas, higiene, refugio) y los pedidos y cajas solo traen de ellas; hay tantas cajas como caben en la mesa (hasta 10) y menos pedidos si hay menos cajas.
 
 Si algo no cabe, el tablero lo dice; despeja un poco y vuelve a intentar.
 

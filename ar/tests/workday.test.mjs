@@ -421,3 +421,14 @@ test('the whole shift ends in a review; pressure rises and falls', () => {
     assert.ok(Object.values(store.stock).every((n) => n >= 0))
     assert.ok(ARRIVALS.length === ORDERS.length)
 })
+
+test('a smaller room: only the categories with a shelf, fewer cartons and fewer orders', () => {
+    const store = { m: new Map(), add(id, n) { this.m.set(id, (this.m.get(id) ?? 0) + n); return this.m.get(id) }, get(id) { return this.m.get(id) ?? 0 }, set(id, n) { this.m.set(id, n) } }
+    const cats = ['alimentos', 'agua', 'medicinas']
+    const day = new Workday({ store, boxes: 4, categories: cats, random: () => 0.5 })
+    day.start()
+    assert.equal(day.boxes.length, 4)
+    for (const b of day.boxes) for (const id of b.items) assert.ok(cats.includes(categoryOf(id)))
+    assert.ok(day.orders.length < ORDERS.length && day.orders.length > 0)
+    for (const o of day.orders) for (const id of Object.keys(o.items)) assert.ok(cats.includes(categoryOf(id)))
+})

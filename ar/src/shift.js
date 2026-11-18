@@ -30,7 +30,7 @@ import { Workable } from './components.js'
 import { Haptics } from './haptics.js'
 import { Hands } from './hands.js'
 import { COMPLAINS_BELOW, complaintFor } from './sim/temper.js'
-import { ORDERS, SHIFT_STOCK, Workday } from './sim/workday.js'
+import { ORDERS, SHIFT_STOCK, START_BOXES, Workday } from './sim/workday.js'
 import { Sound } from './sound.js'
 import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
@@ -49,6 +49,7 @@ import { Temper } from './world/temper.js'
 const DEMO_POINT = 'demo-ar'
 /** The categories on each side of the person: food and water to the left, the rest to the right. */
 /** The inventory's crates, in the order they stand on the shelf to the right: top board first. */
+const NO_ROOM = 'No cabe ninguna caja en tu mesa: despeja un poco su superficie'
 const INVENTORY = ['alimentos', 'agua', 'medicinas', 'higiene', 'refugio']
 /** People at their real height, in metres. */
 /**
@@ -1055,7 +1056,10 @@ export class ShiftSystem extends createSystem({
         const pick = pickShelfZone(this.layout, shelfZoneCandidates(F), INVENTORY.length, { w: STAND.w, d: STAND.d }, { isFree: (x, z, r) => plan.free(x, z, r) && this.#clearOfPerson(x, z) })
         this.layout.shelfZone = pick.zone
         const spots = pick.spots
-        if (spots.length < INVENTORY.length) this.problems.push(`Solo hay suelo libre para ${spots.length} de ${INVENTORY.length} estanterías cerca de la mesa: despeja un poco a tu alrededor`)
+        // the shift fits the room: as many categories as stands fit, the rest are left out of it
+        // (and of the orders and cartons, see Workday). Only with no stand at all does it not start.
+        if (!spots.length) this.problems.push('No hay suelo libre para ninguna estantería cerca de la mesa: despeja un poco a tu alrededor')
+        this.categories = INVENTORY.slice(0, spots.length)
         this.spawnLog.stands = spots
         for (const [i, spot] of spots.entries()) {
             const categoryId = INVENTORY[i]
@@ -1165,7 +1169,11 @@ export class ShiftSystem extends createSystem({
     /* ---------------- the day ---------------- */
 
     #newDay(guided) {
-        this.day = new Workday({ store: this.store, guided })
+        // as many cartons as fit on the table, and as many shelves as fit on the floor
+        this.pileCache = null
+        const boxes = Math.min(START_BOXES, this.#tableRoom())
+        if (!boxes && !this.problems.includes(NO_ROOM)) this.problems.push(NO_ROOM)
+        this.day = new Workday({ store: this.store, guided, boxes, categories: this.categories })
         this.day.on((event, detail) => this.#onDay(event, detail))
         // the cartons are there from the start, closed, wherever people left them
         this.day.start()
@@ -1275,6 +1283,13 @@ export class ShiftSystem extends createSystem({
      * headset knew of nearby (the next desks, a monitor's box) and on top of each other when the
      * places ran out, and they floated or sank into one another.
      */
+    /** How many cartons the person's table holds, as #pileSpots sets them. */
+    #tableRoom() {
+        const F = this.frame3
+        const reserve = [rectFromCorners({ x: F.minX - 0.02, z: 0.02 }, { x: this.#kitX() + BOX.w / 2 + 0.26, z: -F.depth - 0.02 })]
+        return packOnTables(this.layout.tables, 99, BOX, { reserve, levels: 4 }).length
+    }
+
     #pileSpots() {
         const F = this.frame3
         const n = this.day.boxes.length
