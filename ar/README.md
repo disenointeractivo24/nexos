@@ -11,10 +11,12 @@ npm test --prefix ar                   # las reglas del turno, sin 3D
 
 ## Esta versión (rama `ar2`, publicada en `/ar2/`)
 
-La carpa del punto de acopio con su modelo, como en `/ar/`, con dos cambios:
+Parte de `/ar/`, a escala de la mesa real:
 
-- **El estante está a tu derecha**, de frente a ti, y no a tu espalda.
-- **No choca con lo que ya existe.** Al presionar para levantar la carpa, la app lee el escaneo del cuarto que tiene el visor (paredes, puertas, ventanas, muebles y la malla del cuarto). Si el mostrador, el estante, tu sitio o la fila de personas quedarían encima de algo, gira o corre la carpa lo mínimo necesario para dejar al menos 30 cm libres. Si tuvo que moverla, te lo dice. Conviene haber escaneado el cuarto en las gafas (Ajustes › Espacio físico).
+- **Tu mesa es el mostrador.** Al presionar, la app busca en el escaneo del cuarto la mesa que tienes delante (la que miras) y pone encima una mesa virtual de su mismo tamaño y altura. Todo el punto se reduce para caber en ella: los tapetes, el botón y las cajas quedan sobre tu mesa.
+- **Se ve tu cuarto.** La carpa no se muestra, así no se pierde la profundidad del espacio. El camión es mucho más pequeño.
+- **El estante está a tu derecha y a la mano**, pegado al extremo de la mesa y más bajo y corto. Si a la derecha hay una pared o un mueble, se pone a la izquierda (y te avisa).
+- Sin mesa en el escaneo, usa una virtual del tamaño de una mesa común y la coloca donde no choque con paredes ni muebles. Conviene haber escaneado el cuarto en las gafas (Ajustes › Espacio físico).
 
 ## Sin visor
 

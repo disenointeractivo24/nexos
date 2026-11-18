@@ -21,6 +21,9 @@ const SUPPLY_FIT = 0.72
 /** How full a carton is: its contents stand on this much packing paper, so they show. */
 const FILL = 0.6
 
+/** How much smaller than modelled the shelf is: low and short enough to reach every crate. */
+const SHELF_SCALE = 0.72
+
 /** Height of the top of the shelf's boards above its feet, measured in the model. */
 const BOARD_TOP = [0.04, 0.72, 1.27, 1.82]
 
@@ -295,14 +298,17 @@ const CRATE_SPOTS = [
  * The model's shelf stands behind the person: it is taken from there, turned a quarter and set at
  * their right hand, its front to them, clear of the counter. Returns its new box.
  */
-function shelfToTheRight(root, tent, desk) {
+function shelfBeside(root, tent, nearZ, side = 1) {
     root.updateMatrixWorld(true)
     const meshes = []
     tent.traverse((o) => {
         if (o.isMesh && /estanteria/i.test(materialName(o))) meshes.push(o)
     })
+    // in the root's own units, whatever its scale
+    const toRoot = root.matrixWorld.clone().invert()
     const box = new THREE.Box3()
     for (const m of meshes) box.expandByObject(m)
+    box.applyMatrix4(toRoot)
     const pivot = new THREE.Group()
     pivot.position.set((box.min.x + box.max.x) / 2, 0, (box.min.z + box.max.z) / 2)
     root.add(pivot)
@@ -310,13 +316,17 @@ function shelfToTheRight(root, tent, desk) {
     for (const m of meshes) pivot.attach(m)
     const width = box.max.x - box.min.x
     const depth = box.max.z - box.min.z
-    // its front faced -Z (the person, in front of it); now it faces -X
-    pivot.rotation.y += Math.PI / 2
-    pivot.position.set(WORKER.x + 0.7 + depth / 2, 0, Math.max(WORKER.z + 0.1, desk.max.z + 0.15 + width / 2))
+    // its front faced -Z (the person, in front of it); now it faces them from their side
+    pivot.rotation.y += (side * Math.PI) / 2
+    // shorter than modelled, so every crate is within arm's reach
+    const k = SHELF_SCALE
+    pivot.scale.setScalar(k)
+    // its front a step from the person, starting where the table ends
+    pivot.position.set(WORKER.x + side * (0.55 + (k * depth) / 2), 0, nearZ + 0.08 + (k * width) / 2)
     pivot.updateMatrixWorld(true)
     const moved = new THREE.Box3()
     for (const m of meshes) moved.expandByObject(m)
-    return moved
+    return { box: moved.applyMatrix4(toRoot), pivot }
 }
 
 /**
@@ -325,18 +335,26 @@ function shelfToTheRight(root, tent, desk) {
  * (families on its far side): where the truck's cartons land on its left, then the mat where
  * a carton is opened, the button, and the mat where a kit is packed. The shelves are to the right.
  */
-export function buildStation(root, loader, stand) {
+export function buildStation(root, loader, stand, { table = null, shelfSide = 1 } = {}) {
     const station = { root, zones: [] }
-    const { tent, desk } = tentOf(loader, stand)
+    const { tent, desk: modelDesk } = tentOf(loader, stand)
     root.add(tent)
     station.tent = tent
-    const shelf = shelfToTheRight(root, tent, desk)
+    const nearEdge = modelDesk.max.z
+    const { box: shelf, pivot } = shelfBeside(root, tent, nearEdge, shelfSide)
+    // the tent itself is not shown: the real room is, so its depth is not lost. Only the shelf
+    // (taken out of it) and a table of the real one's size and height remain.
+    tent.visible = false
+    const t = table ?? { width: modelDesk.max.x - modelDesk.min.x, depth: modelDesk.max.z - modelDesk.min.z, top: modelDesk.max.y }
+    const desk = new THREE.Box3(new THREE.Vector3(WORKER.x - t.width / 2, 0, nearEdge - t.depth), new THREE.Vector3(WORKER.x + t.width / 2, t.top, nearEdge))
+    station.desk = deskMesh(desk)
+    root.add(station.desk)
 
     const top = desk.max.y
-    const nearEdge = desk.max.z
-    const matZ = nearEdge - 0.32
+    const matZ = nearEdge - Math.min(0.32, t.depth / 2)
     station.deskTop = top
     station.matZ = matZ
+    station.deskNear = nearEdge
     station.deskFar = desk.min.z
     station.deskMinX = desk.min.x
     station.deskMaxX = desk.max.x
@@ -356,19 +374,24 @@ export function buildStation(root, loader, stand) {
     station.kitMat = pad(WORKER.x + 0.43, 'Arma el pedido', '#7A4B00') // where a kit gets packed
 
     // where the truck's cartons land: two side by side, and on top of them
+    // at the table's left end, in front of the mat; a second column further in if the table is deep
     const intakeY = top + 0.002
+    const ix = Math.min(desk.min.x + 0.22, WORKER.x - 0.93)
+    const iz2 = t.depth > 0.8 ? matZ - 0.42 : matZ
     station.intake = [
-        new THREE.Vector3(desk.min.x + 0.23, intakeY, matZ),
-        new THREE.Vector3(desk.min.x + 0.7, intakeY, matZ),
-        new THREE.Vector3(desk.min.x + 0.23, intakeY + BOX.h + 0.004, matZ),
-        new THREE.Vector3(desk.min.x + 0.7, intakeY + BOX.h + 0.004, matZ),
+        new THREE.Vector3(ix, intakeY, matZ),
+        new THREE.Vector3(ix, intakeY, iz2),
+        new THREE.Vector3(ix, intakeY + BOX.h + 0.004, matZ),
+        new THREE.Vector3(ix, intakeY + BOX.h + 0.004, iz2),
     ]
 
     // the crates, on the stand's own boards, their labels towards the person
+    // where the shelf is, with its scale and turn (the model's front faced -Z); a child of the
+    // root, as the shift makes it an entity of its own
     const shelfGroup = new THREE.Group()
-    shelfGroup.position.set((shelf.min.x + shelf.max.x) / 2, 0, (shelf.min.z + shelf.max.z) / 2)
-    // its front towards the person, to their left (-X)
-    shelfGroup.rotation.y = -Math.PI / 2
+    shelfGroup.position.copy(pivot.position)
+    shelfGroup.rotation.y = pivot.rotation.y + Math.PI
+    shelfGroup.scale.copy(pivot.scale)
     root.add(shelfGroup)
     station.shelf = shelfGroup
 
@@ -384,6 +407,25 @@ export function buildStation(root, loader, stand) {
         station.zones.push({ categoryId, crate, label })
     }
     return station
+}
+
+/** The table the person works at: the size and height of the real one, so it covers it exactly. */
+function deskMesh(box) {
+    const g = new THREE.Group()
+    const wood = new THREE.MeshStandardMaterial({ color: '#9C6B3F', roughness: 0.7 })
+    const legs = new THREE.MeshStandardMaterial({ color: '#4A3A2C', roughness: 0.8 })
+    const w = box.max.x - box.min.x
+    const d = box.max.z - box.min.z
+    const h = box.max.y
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(w, 0.04, d), wood)
+    slab.position.set((box.min.x + box.max.x) / 2, h - 0.02, (box.min.z + box.max.z) / 2)
+    g.add(slab)
+    for (const [sx, sz] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, h - 0.04, 0.05), legs)
+        leg.position.set(sx ? box.max.x - 0.05 : box.min.x + 0.05, (h - 0.04) / 2, sz ? box.max.z - 0.05 : box.min.z + 0.05)
+        g.add(leg)
+    }
+    return g
 }
 
 const support = new THREE.MeshStandardMaterial({ color: '#2B2118', roughness: 0.8 })

@@ -1,5 +1,5 @@
 import { createSystem, GrabSystem, Grabbed, Hovered, OneHandGrabbable, Pressed, RayInteractable, VisibilityState, XRAnchor, XRMesh, XRPlane } from '@iwsdk/core'
-import { fitTent } from './world/fit.js'
+import { clearance, fitTent, toWorld } from './world/fit.js'
 import gsap from 'gsap'
 import * as THREE from 'three'
 import { AssetLoader } from '../../src/three/AssetLoader.js'
@@ -39,7 +39,7 @@ const ENTRY_Z = -7
 const CARD_Y = 2.02
 const WALK_SPEED = 1.5
 /** The truck stops just outside the tent, at the person's left, and drives along that side. */
-const TRUCK_X = -4
+const TRUCK_X = -2.6
 const TRUCK_PARK_Z = WORKER.z + 0.2
 const TRUCK_FROM_Z = -18
 const TRUCK_TO_Z = 18
@@ -226,7 +226,7 @@ export class ShiftSystem extends createSystem({
         this.view = new DesktopView({
             camera,
             canvas,
-            solids: this.station.solids,
+            solids: this.station.solids.map((r) => ({ minX: r.minX * this.scale, maxX: r.maxX * this.scale, minZ: r.minZ * this.scale, maxZ: r.maxZ * this.scale })),
             bounds: { minX: -2.4, maxX: 2.4, minZ: -2.4, maxZ: 1.7 },
             roof: (on) => this.station.tent.traverse((o) => o.userData.roof && (o.visible = on)),
             grab: {
@@ -249,8 +249,8 @@ export class ShiftSystem extends createSystem({
     /** The views offered on a computer. */
     showView(name) {
         if (!this.view) return
-        if (name === 'persona') return this.view.stand(WORKER.x, WORKER.z + 0.55, 0, -0.2)
-        if (name === 'arriba') return this.view.lookFrom(temp.set(0, 6.6, 1.9), temp2.set(0, 0.3, -0.9), true)
+        if (name === 'persona') return this.view.stand(WORKER.x * this.scale, (WORKER.z + 0.55) * this.scale, 0, -0.35)
+        if (name === 'arriba') return this.view.lookFrom(temp.set(0, 4, 1.2), temp2.set(0, 0.3, -0.6), true)
         if (name === 'frente') return this.view.lookFrom(temp.set(1.6, 1.9, -7), temp2.set(0, 1.1, -1), false)
     }
 
@@ -292,30 +292,63 @@ export class ShiftSystem extends createSystem({
             // the tent's -Z along the gaze, the person's spot under their feet; then turned or moved
             // as little as needed so that nothing of it is where a wall or furniture is (see #place)
             const yaw = Math.atan2(-dir.x, -dir.z)
-            this.#place(null, yaw, head.clone())
+            this.#place(null, yaw, head.clone(), dir.clone())
         }
         session.addEventListener('select', confirm)
     }
 
-    #place(at, yaw, head = null) {
+    /**
+     * The collection point, small enough to see all of it, around the real table in front: a table
+     * of its exact size and height covers it, and everything else is scaled to match. Without a
+     * table the headset knows of, the same at a usual table's size, where the room has space.
+     */
+    #place(at, yaw, head = null, gaze = null) {
         this.placed = true
-        const rootObject = new THREE.Group()
-        this.station = buildStation(rootObject, this.loader, this.stand)
-        if (head) {
-            // what the person walks around: the counter, the shelf and their own spot
-            const footprints = [...this.station.solids, { minX: WORKER.x - 0.45, maxX: WORKER.x + 0.45, minZ: WORKER.z - 0.3, maxZ: WORKER.z + 0.6 }, { minX: this.station.deskMinX, maxX: this.station.deskMaxX, minZ: this.station.deskFar - 0.7, maxZ: this.station.deskFar }]
-            const obstacles = this.#roomObstacles()
-            const fit = fitTent({ head: { x: head.x, z: head.z }, gazeYaw: yaw, worker: { x: WORKER.x, z: WORKER.z }, footprints, obstacles })
+        const floorY = head ? this.#floorY() : 0
+        const real = head ? this.#realTable(head, gaze) : null
+        const width = real?.width ?? 1.2
+        const depth = real?.depth ?? 0.6
+        const top = (real?.top ?? floorY + 0.75) - floorY
+        // the whole point at this scale: the table holds the mats, the button and the cartons
+        const S = THREE.MathUtils.clamp(width / 2.3, 0.4, 0.65)
+        this.scale = S
+        const table = { width: width / S, depth: depth / S, top: top / S }
+        const obstacles = head ? this.#roomObstacles() : []
+        const scaled = (r) => ({ minX: r.minX * S, maxX: r.maxX * S, minZ: r.minZ * S, maxZ: r.maxZ * S })
+        const build = (side) => {
+            const rootObject = new THREE.Group()
+            rootObject.scale.setScalar(S)
+            return { rootObject, station: buildStation(rootObject, this.loader, this.stand, { table, shelfSide: side }) }
+        }
+        let { rootObject, station } = build(1)
+        if (real) {
+            // the tent's front away from the person, its table's near edge on the real one's
+            yaw = Math.atan2(real.n.x, real.n.z)
+            const near = toWorld({ x: WORKER.x * S, z: station.deskNear * S }, { x: 0, z: 0 }, yaw)
+            at = new THREE.Vector3(real.near.x - near.x, floorY, real.near.z - near.z)
+            // the shelf where it can be reached: to the right, or to the left if something is there
+            const shelf = scaled(station.solids[1])
+            if (obstacles.length && clearance(obstacles, [shelf], at, yaw) < 0.15) {
+                ;({ rootObject, station } = build(-1))
+                this.shelfMoved = true
+            }
+        } else if (head) {
+            const footprints = [...station.solids, { minX: WORKER.x - 0.45, maxX: WORKER.x + 0.45, minZ: WORKER.z - 0.3, maxZ: WORKER.z + 0.6 }].map(scaled)
+            const fit = fitTent({ head: { x: head.x, z: head.z }, gazeYaw: yaw, worker: { x: WORKER.x * S, z: WORKER.z * S }, footprints, obstacles })
             this.fit = { ...fit, obstacles: obstacles.length }
-            at = new THREE.Vector3(fit.at.x, 0, fit.at.z)
+            at = new THREE.Vector3(fit.at.x, floorY, fit.at.z)
             yaw = fit.yaw
         }
+        this.station = station
+        this.realTable = real
         rootObject.position.copy(at)
         rootObject.rotation.y = yaw
         rootObject.updateMatrixWorld(true)
         this.root = this.world.createTransformEntity(rootObject)
         this.rootObject = rootObject
-        if (this.fit && this.fit.moved > 0.05) this.pendingSay = this.fit.ok ? 'Moví un poco el punto para que no choques con paredes ni muebles: camina hasta tu lugar, detrás del mostrador.' : 'Tu espacio es pequeño: busca un lugar más despejado si chocas con algo.'
+        if (head && !real) this.pendingSay = 'No encontré tu mesa en el escaneo: puse una virtual donde hay espacio. Escanea el cuarto en las gafas para que use la tuya.'
+        else if (this.shelfMoved) this.pendingSay = 'El estante quedó a tu izquierda: a la derecha hay algo con lo que chocarías.'
+        else if (this.fit && this.fit.moved > 0.05) this.pendingSay = 'Moví un poco el punto para que no choques con paredes ni muebles.'
         if (this.world.session) {
             try {
                 this.root.addComponent(XRAnchor)
@@ -384,6 +417,54 @@ export class ShiftSystem extends createSystem({
         return out
     }
 
+    /**
+     * The real table in front: the horizontal surface at a table's height that the gaze meets, or
+     * the nearest one ahead. Its size, height, the middle of its near edge and the way to the person.
+     */
+    #realTable(head, gaze) {
+        const floor = this.#floorY()
+        const flat = new THREE.Vector3(gaze.x, 0, gaze.z).normalize()
+        let best = null
+        for (const entity of this.queries.planes.entities) {
+            const plane = entity.getValue(XRPlane, '_plane')
+            const object = entity.object3D
+            if (!plane?.polygon || !object || plane.orientation !== 'horizontal') continue
+            if (/floor|ceiling/i.test(plane.semanticLabel ?? '')) continue
+            object.updateMatrixWorld(true)
+            const pts = [...plane.polygon]
+            const xs = pts.map((p) => p.x)
+            const zs = pts.map((p) => p.z)
+            const [x0, x1, z0, z1] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)]
+            const m = object.matrixWorld
+            const center = new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2).applyMatrix4(m)
+            const h = center.y - floor
+            if (h < 0.45 || h > 1.15) continue
+            const ax = new THREE.Vector3(1, 0, 0).transformDirection(m).setY(0).normalize()
+            const az = new THREE.Vector3(0, 0, 1).transformDirection(m).setY(0).normalize()
+            const ex = x1 - x0
+            const ez = z1 - z0
+            if (Math.max(ex, ez) < 0.4 || Math.min(ex, ez) < 0.25) continue
+            const to = center.clone().sub(head).setY(0)
+            if (to.dot(flat) < 0 || to.length() > 2.2) continue
+            // where the gaze meets its height, against how far that is from its middle
+            let score = to.length()
+            if (gaze.y < -0.05) {
+                const t = (center.y - head.y) / gaze.y
+                const hit = head.clone().addScaledVector(gaze, t)
+                const d = hit.clone().sub(center)
+                if (Math.abs(d.dot(ax)) <= ex / 2 && Math.abs(d.dot(az)) <= ez / 2) score -= 10
+            }
+            if (best && best.score <= score) continue
+            const long = ex >= ez ? ax : az
+            const width = Math.max(ex, ez)
+            const depth = Math.min(ex, ez)
+            const n = new THREE.Vector3(-long.z, 0, long.x)
+            if (n.dot(head.clone().sub(center)) < 0) n.negate()
+            best = { score, width, depth, top: center.y, n, near: center.clone().addScaledVector(n, depth / 2) }
+        }
+        return best
+    }
+
     /** The floor's height, from the scan if it says so; 0 otherwise (local-floor). */
     #floorY() {
         for (const entity of this.queries.planes.entities) {
@@ -424,6 +505,8 @@ export class ShiftSystem extends createSystem({
         this.receive.mesh.rotation.y = Math.PI / 2
         this.#setActive(this.receive.mesh, false)
         this.truck = buildTruck()
+        // much smaller than the rest: it is only there to say the cartons came
+        this.truck.object.scale.setScalar(0.45)
         this.truck.object.visible = false
         root.add(this.truck.object)
         // the buttons: the one that hands over, between the mats; the list, to one side
