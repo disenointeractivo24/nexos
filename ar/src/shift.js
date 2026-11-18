@@ -1,4 +1,5 @@
-import { createSystem, GrabSystem, Grabbed, Hovered, OneHandGrabbable, Pressed, RayInteractable, VisibilityState, XRAnchor } from '@iwsdk/core'
+import { createSystem, GrabSystem, Grabbed, Hovered, OneHandGrabbable, Pressed, RayInteractable, VisibilityState, XRAnchor, XRMesh, XRPlane } from '@iwsdk/core'
+import { fitTent } from './world/fit.js'
 import gsap from 'gsap'
 import * as THREE from 'three'
 import { AssetLoader } from '../../src/three/AssetLoader.js'
@@ -91,6 +92,8 @@ export class ShiftSystem extends createSystem({
     pressed: { required: [Workable, Pressed] },
     held: { required: [Workable, Grabbed] },
     hovered: { required: [Workable, Hovered] },
+    planes: { required: [XRPlane] },
+    meshes: { required: [XRMesh] },
 }) {
     init() {
         this.things = new Map() // entity → { kind, ... }
@@ -286,22 +289,33 @@ export class ShiftSystem extends createSystem({
             this.cancelPlacement = null
             stop()
             this.world.scene.remove(hint.mesh)
-            // the tent's -Z along the gaze, the person's spot under their feet
+            // the tent's -Z along the gaze, the person's spot under their feet; then turned or moved
+            // as little as needed so that nothing of it is where a wall or furniture is (see #place)
             const yaw = Math.atan2(-dir.x, -dir.z)
-            const offset = WORKER.clone().applyAxisAngle(temp.set(0, 1, 0), yaw)
-            this.#place(new THREE.Vector3(head.x - offset.x, 0, head.z - offset.z), yaw)
+            this.#place(null, yaw, head.clone())
         }
         session.addEventListener('select', confirm)
     }
 
-    #place(at, yaw) {
+    #place(at, yaw, head = null) {
         this.placed = true
         const rootObject = new THREE.Group()
+        this.station = buildStation(rootObject, this.loader, this.stand)
+        if (head) {
+            // what the person walks around: the counter, the shelf and their own spot
+            const footprints = [...this.station.solids, { minX: WORKER.x - 0.45, maxX: WORKER.x + 0.45, minZ: WORKER.z - 0.3, maxZ: WORKER.z + 0.6 }, { minX: this.station.deskMinX, maxX: this.station.deskMaxX, minZ: this.station.deskFar - 0.7, maxZ: this.station.deskFar }]
+            const obstacles = this.#roomObstacles()
+            const fit = fitTent({ head: { x: head.x, z: head.z }, gazeYaw: yaw, worker: { x: WORKER.x, z: WORKER.z }, footprints, obstacles })
+            this.fit = { ...fit, obstacles: obstacles.length }
+            at = new THREE.Vector3(fit.at.x, 0, fit.at.z)
+            yaw = fit.yaw
+        }
         rootObject.position.copy(at)
         rootObject.rotation.y = yaw
+        rootObject.updateMatrixWorld(true)
         this.root = this.world.createTransformEntity(rootObject)
         this.rootObject = rootObject
-        this.station = buildStation(rootObject, this.loader, this.stand)
+        if (this.fit && this.fit.moved > 0.05) this.pendingSay = this.fit.ok ? 'Moví un poco el punto para que no choques con paredes ni muebles: camina hasta tu lugar, detrás del mostrador.' : 'Tu espacio es pequeño: busca un lugar más despejado si chocas con algo.'
         if (this.world.session) {
             try {
                 this.root.addComponent(XRAnchor)
@@ -313,6 +327,70 @@ export class ShiftSystem extends createSystem({
         for (const zone of this.station.zones) this.#stockCrate(zone)
         this.#refreshShelf()
         this.#intro()
+    }
+
+    /**
+     * What the headset scanned of the room, as points on the floor that a body would bump into:
+     * walls, doors and windows, furniture, and the room's own mesh between the ankles and the head.
+     */
+    #roomObstacles() {
+        const out = []
+        const low = 0.1
+        const high = 1.9
+        const floor = this.#floorY()
+        const body = (y) => y - floor > low && y - floor < high
+        const v = new THREE.Vector3()
+        const edge = (a, b) => {
+            const n = Math.max(1, Math.ceil(a.distanceTo(b) / 0.1))
+            for (let i = 0; i <= n; i++) out.push({ x: a.x + ((b.x - a.x) * i) / n, z: a.z + ((b.z - a.z) * i) / n })
+        }
+        for (const entity of this.queries.planes.entities) {
+            const plane = entity.getValue(XRPlane, '_plane')
+            const object = entity.object3D
+            if (!plane?.polygon || !object) continue
+            object.updateMatrixWorld(true)
+            const label = plane.semanticLabel ?? ''
+            if (/floor|ceiling/i.test(label)) continue
+            const pts = [...plane.polygon].map((p) => new THREE.Vector3(p.x, p.y, p.z).applyMatrix4(object.matrixWorld))
+            const ys = pts.map((p) => p.y)
+            const reaches = plane.orientation === 'vertical' ? Math.min(...ys) - floor < high && Math.max(...ys) - floor > low : body(ys[0])
+            if (!reaches) continue
+            pts.forEach((a, i) => edge(a, pts[(i + 1) % pts.length]))
+        }
+        for (const entity of this.queries.meshes.entities) {
+            const object = entity.object3D
+            if (!object) continue
+            object.updateMatrixWorld(true)
+            const label = entity.getValue(XRMesh, 'semanticLabel') ?? ''
+            if (/floor|ceiling/i.test(label)) continue
+            if (!entity.getValue(XRMesh, 'isBounded3D')) {
+                const position = object.geometry?.getAttribute('position')
+                if (!position) continue
+                const stride = Math.max(1, Math.ceil(position.count / 20000))
+                for (let i = 0; i < position.count; i += stride) {
+                    v.fromBufferAttribute(position, i).applyMatrix4(object.matrixWorld)
+                    if (body(v.y)) out.push({ x: v.x, z: v.z })
+                }
+                continue
+            }
+            const min = entity.getVectorView(XRMesh, 'min')
+            const max = entity.getVectorView(XRMesh, 'max')
+            const lowY = v.set(0, min[1], 0).applyMatrix4(object.matrixWorld).y
+            const highY = v.set(0, max[1], 0).applyMatrix4(object.matrixWorld).y
+            if (Math.max(lowY, highY) - floor < low || Math.min(lowY, highY) - floor > high) continue
+            const c = [[min[0], min[2]], [max[0], min[2]], [max[0], max[2]], [min[0], max[2]]].map(([x, z]) => new THREE.Vector3(x, min[1], z).applyMatrix4(object.matrixWorld))
+            c.forEach((a, i) => edge(a, c[(i + 1) % 4]))
+        }
+        return out
+    }
+
+    /** The floor's height, from the scan if it says so; 0 otherwise (local-floor). */
+    #floorY() {
+        for (const entity of this.queries.planes.entities) {
+            const plane = entity.getValue(XRPlane, '_plane')
+            if (/floor/i.test(plane?.semanticLabel ?? '') && entity.object3D) return entity.object3D.getWorldPosition(new THREE.Vector3()).y
+        }
+        return 0
     }
 
     /* ---------------- the room's signs ---------------- */
@@ -547,6 +625,8 @@ export class ShiftSystem extends createSystem({
     /* ---------------- opening ---------------- */
 
     #intro() {
+        if (this.pendingSay) this.#say('info', this.pendingSay)
+        this.pendingSay = null
         this.pendingStart = true
         const button = this.world.session ? 'el botón A o X del control' : 'la tecla T'
         this.big.refresh({
@@ -659,8 +739,8 @@ export class ShiftSystem extends createSystem({
                     return [this.things.get(zone.stock.get(id)).object]
                 })
             }
-            if (onShelf.length === missing.length) return { phase: 'shelf', targets, text: `Falta ${wants}: brilla en el estante, a tu espalda. Llévalo a su caja, en «Arma el pedido».` }
-            const where = onShelf.length ? 'en la caja abierta y en el estante, a tu espalda' : 'en la caja abierta'
+            if (onShelf.length === missing.length) return { phase: 'shelf', targets, text: `Falta ${wants}: brilla en el estante, a tu derecha. Llévalo a su caja, en «Arma el pedido».` }
+            const where = onShelf.length ? 'en la caja abierta y en el estante, a tu derecha' : 'en la caja abierta'
             return { phase: 'order', targets, text: `${day.current.family} necesita ${wants}. Lo que brilla está ${where}: llévalo a su caja, en «Arma el pedido».` }
         }
         // handed over, time runs again: only what was left in the carton still gets a hand
@@ -668,7 +748,7 @@ export class ShiftSystem extends createSystem({
         if (!left.length || day.current) return null
         let targets = left.map((t) => t.object)
         if (held) targets = held.kind === 'item' ? [this.station.zones.find((z) => z.categoryId === SUPPLIES[held.itemId].category).crate] : []
-        return { phase: 'sort', targets, text: 'Lo que quedó en la caja va a su lugar en el estante, a tu espalda. Desde ahora el tiempo corre.' }
+        return { phase: 'sort', targets, text: 'Lo que quedó en la caja va a su lugar en el estante, a tu derecha. Desde ahora el tiempo corre.' }
     }
 
     #followGuide() {
@@ -1117,7 +1197,7 @@ export class ShiftSystem extends createSystem({
             object.position.copy(home)
             this.#thing(object, { kind: 'item', itemId, box: t.box, home })
         }
-        this.#say('info', `Caja de ${t.box.from}. Lleva cada insumo a su caja del estante, a tu espalda, o directo a un pedido.`)
+        this.#say('info', `Caja de ${t.box.from}. Lleva cada insumo a su caja del estante, a tu derecha, o directo a un pedido.`)
     }
 
     /** An item goes into its crate, or back to its carton with a word about where it goes. */
@@ -1383,7 +1463,7 @@ export class ShiftSystem extends createSystem({
         this.order.mesh.visible = true
         gsap.fromTo(this.order.mesh.scale, { x: 0.86, y: 0.86 }, { x: 1, y: 1, duration: 0.4, ease: 'back.out(2.4)' })
         this.sound.play('radio')
-        this.#say(order.urgent ? 'alert' : 'radio', `${order.family} pasó al mostrador. Busca lo que pide en los estantes, a tu espalda, o en las cajas que abras.`)
+        this.#say(order.urgent ? 'alert' : 'radio', `${order.family} pasó al mostrador. Busca lo que pide en los estantes, a tu derecha, o en las cajas que abras.`)
         this.#refreshAction()
     }
 

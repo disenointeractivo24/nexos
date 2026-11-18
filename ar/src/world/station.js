@@ -292,16 +292,45 @@ const CRATE_SPOTS = [
 ]
 
 /**
+ * The model's shelf stands behind the person: it is taken from there, turned a quarter and set at
+ * their right hand, its front to them, clear of the counter. Returns its new box.
+ */
+function shelfToTheRight(root, tent, desk) {
+    root.updateMatrixWorld(true)
+    const meshes = []
+    tent.traverse((o) => {
+        if (o.isMesh && /estanteria/i.test(materialName(o))) meshes.push(o)
+    })
+    const box = new THREE.Box3()
+    for (const m of meshes) box.expandByObject(m)
+    const pivot = new THREE.Group()
+    pivot.position.set((box.min.x + box.max.x) / 2, 0, (box.min.z + box.max.z) / 2)
+    root.add(pivot)
+    pivot.updateMatrixWorld(true)
+    for (const m of meshes) pivot.attach(m)
+    const width = box.max.x - box.min.x
+    const depth = box.max.z - box.min.z
+    // its front faced -Z (the person, in front of it); now it faces -X
+    pivot.rotation.y += Math.PI / 2
+    pivot.position.set(WORKER.x + 0.7 + depth / 2, 0, Math.max(WORKER.z + 0.1, desk.max.z + 0.15 + width / 2))
+    pivot.updateMatrixWorld(true)
+    const moved = new THREE.Box3()
+    for (const m of meshes) moved.expandByObject(m)
+    return moved
+}
+
+/**
  * The collection point around the person, in metres, y = 0 on the floor, facing -Z: the
  * stand as it was modelled, and what the shift needs on top of it. The counter is in front
  * (families on its far side): where the truck's cartons land on its left, then the mat where
- * a carton is opened, the button, and the mat where a kit is packed. The shelves are behind.
+ * a carton is opened, the button, and the mat where a kit is packed. The shelves are to the right.
  */
 export function buildStation(root, loader, stand) {
     const station = { root, zones: [] }
-    const { tent, desk, shelf } = tentOf(loader, stand)
+    const { tent, desk } = tentOf(loader, stand)
     root.add(tent)
     station.tent = tent
+    const shelf = shelfToTheRight(root, tent, desk)
 
     const top = desk.max.y
     const nearEdge = desk.max.z
@@ -338,7 +367,8 @@ export function buildStation(root, loader, stand) {
     // the crates, on the stand's own boards, their labels towards the person
     const shelfGroup = new THREE.Group()
     shelfGroup.position.set((shelf.min.x + shelf.max.x) / 2, 0, (shelf.min.z + shelf.max.z) / 2)
-    shelfGroup.rotation.y = Math.PI
+    // its front towards the person, to their left (-X)
+    shelfGroup.rotation.y = -Math.PI / 2
     root.add(shelfGroup)
     station.shelf = shelfGroup
 
