@@ -94,6 +94,46 @@ export function dedupeSurfaces(surfaces) {
     return kept
 }
 
+/** Whether two surfaces, found in different frames, are the same table. */
+export function sameTable(a, b) {
+    if (!a || !b) return false
+    if (a.id && b.id) return a.id === b.id
+    return Math.hypot(a.center.x - b.center.x, a.center.z - b.center.z) < 0.25 && Math.abs(a.top - b.top) < 0.08
+}
+
+/**
+ * The one table in front of the person. A headset reports every table in the room, and marking them
+ * all left the person to pick theirs out of the neighbours': only the one they are facing is
+ * offered. What the gaze crosses comes first; failing that, whatever is nearest the middle of the
+ * view, within `cone` of it and no further than `reach`. The table offered last (`current`) is held
+ * until the head turns well past it (`hold`), so the mark does not jump between two tables side by
+ * side. Nothing in front: nothing is offered, and the person shows their table by hand.
+ */
+export function tableInFront(surfaces, head, forward, current = null, { cone = Math.PI / 3, hold = Math.PI / 2, reach = 5 } = {}) {
+    const dir = new THREE.Vector3(forward.x, 0, forward.z)
+    if (dir.lengthSq() < 1e-6) dir.set(0, 0, -1)
+    dir.normalize()
+    const ray = new THREE.Ray(new THREE.Vector3().copy(head), new THREE.Vector3().copy(forward).normalize())
+    let best = null
+    let score = Infinity
+    for (const s of surfaces) {
+        const to = new THREE.Vector3(s.center.x - head.x, 0, s.center.z - head.z)
+        const away = to.length()
+        if (away > reach) continue
+        const angle = away < 1e-3 ? 0 : Math.acos(THREE.MathUtils.clamp(to.divideScalar(away).dot(dir), -1, 1))
+        const crossed = Number.isFinite(rayHits(ray, s))
+        const mine = sameTable(current, s)
+        if (!crossed && angle > (mine ? hold : cone)) continue
+        // what the eyes cross first of all, then what is nearest the middle of the view
+        const its = (crossed ? 0 : 1) + angle / Math.PI + away / 1000 - (mine ? 0.15 : 0)
+        if (its < score) {
+            score = its
+            best = s
+        }
+    }
+    return best
+}
+
 /** Whether one can stand at it and work. */
 export function isWorktop(s, floorY = 0) {
     const h = s.top - floorY

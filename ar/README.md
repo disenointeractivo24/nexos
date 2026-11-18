@@ -6,7 +6,7 @@ Experiencia de realidad aumentada para Meta Quest 3: la persona es responsable d
 npm install --prefix ar
 npm run dev --prefix ar                # https://localhost:8081, para abrir desde el visor o con el emulador
 npm run dev --prefix ar -- --mode http # http://localhost:8081, para probar en este computador
-npm test --prefix ar                   # las reglas del turno, de las zonas y del anclaje, sin 3D
+npm test --prefix ar                   # las reglas del turno, las zonas, el anclaje y la mesa, sin 3D
 ```
 
 Esta carpeta, en la rama `ar1`, se publica en `/ar1/` (la de `main` sigue en `/ar/`).
@@ -23,11 +23,11 @@ La primera vez, o con `?calibrar` en la dirección, después de elegir la mesa: 
 
 ## Depuración
 
-`?debug` (o la tecla G en el computador) dibuja el área, las mesas, las superficies que dio el visor (con su id y etiqueta), el piso ocupado, dónde se puso cada cosa, y un panel con lo que tiene cada mano, el estado real de la profundidad (concedida, datos en este cuadro, materiales ocultando) y del anclaje. Lo mismo en la consola: `nexosAR.report()`.
+`?debug` (o la tecla G en el computador) dibuja el área, las mesas, las superficies que dio el visor (con su id y etiqueta), cuál quedó al frente, el piso ocupado, dónde se puso cada cosa, y un panel con lo que tiene cada mano, el estado real de la profundidad (concedida, datos en este cuadro, materiales ocultando) y del anclaje. Lo mismo en la consola: `nexosAR.report()`.
 
 ## Con el visor
 
-Solo manos, sin controles. Al entrar, el visor marca las mesas que reconoce del cuarto: mira la tuya y pellízcala (o toca con un dedo dos esquinas opuestas de tu mesa y quédate quieto un momento en cada una). Las cajas están sobre las mesas de tus zonas; si no caben, en pilas en el piso del área. Pasa el dedo por la cinta (o pellizca rápido la caja) para abrirla: adentro está lo que trae. Todo se guarda en las cajas de colores de la zona de estanterías, cada una en su soporte. Lo que sueltas cae y se queda quieto; si se pierde, vuelve a su sitio. Una caja vacía se tira para desecharla. Las personas hacen fila a tu izquierda y pasan de a una a la ventanilla, en la punta izquierda de la mesa; cada pedido trae una caja verde y una orden impresa. Arma la caja, ciérrala juntando las dos aletas, pégale la orden encima y entrégala en la ventanilla. Mira el dorso de tu muñeca, como un reloj, para ver qué falta (no la palma: con la palma y un pellizco el visor abre su propio menú y recentra la vista). Se toma lo que está entre el pulgar y el índice (un punto verde entre los dedos avisa que hay algo al alcance); apuntando a algo lejano y pellizcando, viene a tu mano.
+Solo manos, sin controles. Al entrar, ponte frente a tu mesa: de todas las que el visor reconoce del cuarto se marca una sola, la que tengas al frente, y un pellizco la toma. Si marca la de al lado, gira la cabeza hacia la tuya; si no marca ninguna, toca con un dedo dos esquinas opuestas de tu mesa y quédate quieto un momento en cada una. Las cajas están sobre las mesas de tus zonas; si no caben, en pilas en el piso del área. Pasa el dedo por la cinta (o pellizca rápido la caja) para abrirla: adentro está lo que trae. Todo se guarda en las cajas de colores de la zona de estanterías, cada una en su soporte. Lo que sueltas cae y se queda quieto; si se pierde, vuelve a su sitio. Una caja vacía se tira para desecharla. Las personas hacen fila a tu izquierda y pasan de a una a la ventanilla, en la punta izquierda de la mesa; cada pedido trae una caja verde y una orden impresa. Arma la caja, ciérrala juntando las dos aletas, pégale la orden encima y entrégala en la ventanilla. Mira el dorso de tu muñeca, como un reloj, para ver qué falta (no la palma: con la palma y un pellizco el visor abre su propio menú y recentra la vista). Se toma lo que está entre el pulgar y el índice (un punto verde entre los dedos avisa que hay algo al alcance); apuntando a algo lejano y pellizcando, viene a tu mano.
 Funciones de IWSDK que usa: UIKitML (`public/ui/*.uikitml`), reconocimiento de planos y mallas, anclas (el turno se queda en su sitio aunque el visor recentre la vista), raycast al entorno, física Havok, acceso a la cámara (luz del cuarto) y oclusión por profundidad (cajas, insumos, estanterías y personas). El agarre con las manos es propio (`#handGrab` en `src/shift.js`), una cosa por mano; el agarre del SDK está apagado. Si la sesión termina, lo que estaba en la mano se suelta; al volver, se pellizca otra vez la mesa y el turno vuelve a ella, sin duplicarse.
 
 ## Sin visor

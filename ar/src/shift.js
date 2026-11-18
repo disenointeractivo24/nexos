@@ -36,7 +36,7 @@ import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
 import { Glow } from './world/glow.js'
 import { familyCard, fontsReady, orderTag, orderTicket, speechBubble } from './world/panels.js'
-import { comfortableTop, dedupeSurfaces, isWorktop, rayHits, surfaceAt, surfaceFromMesh, surfaceFromPlane, surfaceMarker, WorkFrame } from './world/room.js'
+import { comfortableTop, dedupeSurfaces, isWorktop, rayHits, surfaceAt, surfaceFromMesh, surfaceFromPlane, surfaceMarker, tableInFront, WorkFrame } from './world/room.js'
 import { BODY_HIGH, BODY_LOW, FloorPlan } from './world/floorplan.js'
 import { defaultLayout, forgetLayout, layoutProblems, loadLayout, packOnTables, packStands, pointInPolygon, rectFromCorners, saveLayout } from './world/layout.js'
 import { WorldLock, yawMatrix } from './world/worldLock.js'
@@ -339,6 +339,8 @@ export class ShiftSystem extends createSystem({
         return {
             fase: this.relocating ? 'volviendo a la mesa' : this.calib ? `ajuste: ${this.calib.step}` : this.choosing ? 'eligiendo mesa' : this.placed ? (this.running ? 'turno' : 'listo') : 'sin colocar',
             zonas: this.layout ? this.layout.source : '-',
+            mesaAlFrente: this.choosing ? (this.inFront ? `${this.inFront.id} (${this.inFront.label})` : 'ninguna') : '-',
+            mesasVistas: this.choosing ? (this.candidates ?? []).length : '-',
             mesas: this.layout?.tables.map((t) => `${t.id} ${(t.hw * 2).toFixed(2)}x${(t.hd * 2).toFixed(2)} y=${t.top.toFixed(2)}`) ?? [],
             suelo: this.frame3 ? this.frame3.floorY.toFixed(3) : '-',
             detectado: this.sceneAtPlace ?? '-',
@@ -357,6 +359,7 @@ export class ShiftSystem extends createSystem({
         const lines = [
             [`NEXOS AR1 · depuración · ${r.fase}`, '#FFD400'],
             `zonas: ${r.zonas}  suelo y=${r.suelo}`,
+            ...(r.mesaAlFrente === '-' ? [] : [[`mesa al frente: ${r.mesaAlFrente} (de ${r.mesasVistas} vistas)`, '#9FD3FF']]),
             ...r.mesas.map((m) => [`mesa ${m}`, '#2ECC71']),
             `escena al colocar: ${typeof r.detectado === 'string' ? r.detectado : `${r.detectado.planos} planos, ${r.detectado.volumenes} volúmenes, malla global: ${r.detectado.mallaGlobal ? 'sí' : 'no'}`}`,
             [`agarre: izq ${r.agarrado.left ?? '-'} · der ${r.agarrado.right ?? '-'}`, '#22D3EE'],
@@ -389,9 +392,10 @@ export class ShiftSystem extends createSystem({
         if (relocate) {
             this.relocating = true
             this.#showShift(false)
-            this.#message(this.hint, 'info', 'Vuelve a pellizcar tu mesa para retomar el turno')
-        } else this.#message(this.hint, 'info', 'Pellizca tu mesa, o toca dos esquinas opuestas')
+            this.#message(this.hint, 'info', 'Ponte frente a tu mesa y pellízcala para retomar el turno')
+        } else this.#message(this.hint, 'info', 'Ponte frente a tu mesa y pellízcala, o toca dos esquinas opuestas')
         this.markers = new Map()
+        this.inFront = null
         // where the hand points, on whatever real surface it meets
         const ring = new THREE.Mesh(new THREE.RingGeometry(0.05, 0.065, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.9, depthTest: false }))
         ring.renderOrder = 20
@@ -409,6 +413,7 @@ export class ShiftSystem extends createSystem({
     #endChoosing() {
         this.choosing = false
         this.cancelChoosing = null
+        this.inFront = null
         for (const marker of this.markers?.values() ?? []) marker.removeFromParent()
         this.markers?.clear()
         this.reticle?.destroy()
@@ -488,12 +493,19 @@ export class ShiftSystem extends createSystem({
             surfaces: found.map((s) => `${s.label} top=${s.top.toFixed(2)} ${(s.hu * 2).toFixed(2)}x${(s.hv * 2).toFixed(2)}`),
         }
         const floorY = this.#floorY()
-        const surfaces = found.filter((s) => isWorktop(s, floorY))
-        this.candidates = surfaces
+        const worktops = found.filter((s) => isWorktop(s, floorY))
+        // every one of them while the zones are drawn: that step is for adding tables for cartons
+        this.candidates = worktops
         this.room3 = found
         if (this.debugOn && this.scanAt === this.elapsed) this.debug?.showSurfaces(found)
+        // only the table in front is marked: the headset reports every table in the room, the
+        // neighbours' among them (see tableInFront)
+        cam.getWorldPosition(temp)
+        cam.getWorldDirection(temp2)
+        this.inFront = this.calib ? null : tableInFront(worktops, temp, temp2, this.inFront)
+        const offered = this.calib ? worktops : this.inFront ? [this.inFront] : []
         const seen = new Set()
-        for (const s of surfaces) {
+        for (const s of offered) {
             const key = `${s.center.x.toFixed(2)},${s.center.z.toFixed(2)},${s.top.toFixed(2)}`
             seen.add(key)
             if (!this.markers.has(key)) {
@@ -533,26 +545,20 @@ export class ShiftSystem extends createSystem({
         return ray
     }
 
-    /** A pinch while choosing: the table it points at, else the surface under the ray, else a table shown by hand. */
+    /** A pinch while choosing: the table marked in front, else the surface under the hand, else a table shown by hand. */
     #picked(event) {
         const ray = this.#rayOf(event)
         if (this.calib) return this.#calibPinch(event, ray)
         const head = this.world.camera.getWorldPosition(new THREE.Vector3())
-        let chosen = null
-        let best = Infinity
-        for (const s of this.candidates ?? []) {
-            const t = rayHits(ray, s)
-            if (t < best) {
-                best = t
-                chosen = s
-            }
-        }
+        // what is marked is what is taken: only the table in front is offered, so pointing the hand
+        // at another one does not choose it. To work at that one instead, turn to it first.
+        let chosen = this.inFront
         if (!chosen) {
             const hit = this.reticle?.object3D?.visible ? this.reticle.object3D.position.clone() : null
             const floorY = this.#floorY()
             if (hit && hit.y - floorY > 0.4 && hit.y - floorY < 1.25) chosen = surfaceAt(hit, head, { width: 1.0, depth: 0.6, label: 'punto en la mesa', real: true })
             // no table the headset knows of: the person shows where theirs is, with their own hands
-            else return this.#message(this.hint, 'info', 'No veo una mesa ahí: toca dos esquinas opuestas de la tuya')
+            else return this.#message(this.hint, 'info', 'Ponte frente a tu mesa, o toca dos esquinas opuestas de ella')
         }
         this.#tableChosen({ id: chosen.id ?? 'punto', ...chosen }, head)
     }
