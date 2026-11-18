@@ -43,6 +43,17 @@ jobs:
       - run: npm run build --prefix ar1src/ar
       - run: cp -r ar1src/ar/dist dist/ar1
 
+      # Another version, from the ar2 branch: the tent with the shelf to the right, fitted to the room. At /ar2/.
+      - uses: actions/checkout@v4
+        with:
+          ref: ar2
+          path: ar2src
+      - run: npm install --prefix ar2src
+      - run: npm install --prefix ar2src/ar
+      - run: npm test --prefix ar2src/ar
+      - run: npm run build --prefix ar2src/ar
+      - run: cp -r ar2src/ar/dist dist/ar2
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
