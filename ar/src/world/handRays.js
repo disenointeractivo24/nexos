@@ -176,3 +176,25 @@ export function areaMesh() {
     g.visible = false
     return g
 }
+
+/**
+ * The surface the headset detected, as a translucent shadow on it: shown under the ray while
+ * choosing, then fixed on the chosen table while the area is marked.
+ */
+export function surfaceShadow() {
+    const g = new THREE.Group()
+    const sheet = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#1E2A36', transparent: true, opacity: 0.35, depthWrite: false }))
+    const edge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2)), new THREE.LineBasicMaterial({ color: '#3EE0C5', transparent: true, opacity: 0.8 }))
+    g.add(sheet, edge)
+    g.renderOrder = 24
+    g.show = (r, { fixed = false } = {}) => {
+        if (!r) return (g.visible = false)
+        g.visible = true
+        g.position.copy(r.center).setY(r.top + 0.002)
+        g.rotation.set(0, Math.atan2(-r.ax.z, r.ax.x), 0)
+        g.scale.set(r.ex, 1, r.ez)
+        sheet.material.opacity = fixed ? 0.45 : 0.3
+    }
+    g.visible = false
+    return g
+}

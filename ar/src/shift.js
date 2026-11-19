@@ -1,7 +1,7 @@
 import { createSystem, GrabSystem, Grabbed, Hovered, OneHandGrabbable, Pressed, RayInteractable, VisibilityState, XRAnchor, XRMesh, XRPlane } from '@iwsdk/core'
 import { clearance, fitTent, toWorld } from './world/fit.js'
 import { takeThumbs } from './world/thumbs.js'
-import { areaBetween, areaMesh, HandRays } from './world/handRays.js'
+import { areaBetween, areaMesh, HandRays, surfaceShadow } from './world/handRays.js'
 import gsap from 'gsap'
 import * as THREE from 'three'
 import { AssetLoader } from '../../src/three/AssetLoader.js'
@@ -289,6 +289,10 @@ export class ShiftSystem extends createSystem({
         this.world.scene.add(hint.mesh)
         const area = areaMesh()
         this.world.scene.add(area)
+        // the detected surface, as a shadow: under the ray while choosing, fixed once chosen
+        const shadow = surfaceShadow()
+        this.world.scene.add(shadow)
+        let shadowEntity = null
         const head = new THREE.Vector3()
         const dir = new THREE.Vector3()
         const state = { step: 'surface', surface: null, marking: null, held: 0 }
@@ -296,6 +300,10 @@ export class ShiftSystem extends createSystem({
             session.removeEventListener('select', onSelect)
             stop()
             this.world.scene.remove(hint.mesh, area)
+            if (shadowEntity) shadowEntity.destroy()
+            shadow.removeFromParent()
+            // the rays come back: the shift's buttons are pressed with them
+            if (this.rays) this.rays.visible = true
             this.cancelPlacement = null
         }
         // leaving before the table is up: it can start over on coming back
@@ -310,6 +318,15 @@ export class ShiftSystem extends createSystem({
             if (!hit) return say('warn', 'Ese rayo no toca ninguna mesa: apunta a su superficie y pellizca.')
             state.surface = hit.surface
             state.step = 'area'
+            // the shadow stays on the chosen table, anchored to it, and the rays go: step 2 is with both hands
+            shadow.show(hit.surface, { fixed: true })
+            try {
+                shadowEntity = this.world.createTransformEntity(shadow)
+                shadowEntity.addComponent(XRAnchor)
+            } catch (err) {
+                console.warn('[ar2] the surface shadow is not anchored', err)
+            }
+            this.rays.visible = false
             this.sound.play('tap')
             say('info', 'Paso 2: pellizca con las dos manos en el borde de la mesa y sepáralas para marcar su ancho. Suelta para terminar.')
         }
@@ -319,7 +336,12 @@ export class ShiftSystem extends createSystem({
             cam.getWorldDirection(dir)
             hint.mesh.position.copy(head).addScaledVector(dir, 0.9).add(temp.set(0, 0.12, 0))
             hint.mesh.lookAt(head)
-            if (state.step !== 'area') return
+            if (state.step === 'surface') {
+                // the surface either ray is on, shown as it was detected
+                const hit = this.rays?.get('right')?.hit ?? this.rays?.get('left')?.hit
+                shadow.show(hit?.surface ?? null)
+                return
+            }
             const left = this.rays?.get('left')
             const right = this.rays?.get('right')
             const both = left?.pinching && right?.pinching
