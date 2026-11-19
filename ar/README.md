@@ -13,7 +13,7 @@ npm test --prefix ar                   # las reglas del turno, sin 3D
 
 Parte de `/ar/`, a escala de la mesa real:
 
-- **Tu mesa es el mostrador.** Al presionar, la app busca en el escaneo del cuarto la mesa que tienes delante (la que miras) y pone encima una mesa virtual de su mismo tamaño y altura. Todo el punto se reduce para caber en ella: los tapetes, el botón y las cajas quedan sobre tu mesa.
+- **Colocar la mesa, en dos gestos.** (1) Cada mano tiene siempre un rayo con una diana donde toca una superficie; apunta a tu mesa y pellizca para elegirla. (2) Pellizca con las dos manos en el borde de la mesa y sepáralas: el área gris se dibuja mientras las mueves, tan ancha como la separación (mínimo 35 cm) y hacia atrás hasta donde llega la mesa. Al soltar, la mesa virtual del punto de acopio se crea dentro de esa área, a la altura de la superficie, y todo se escala a su ancho.
 - **Se ve tu cuarto.** La carpa no se muestra, así no se pierde la profundidad del espacio. El camión es mucho más pequeño.
 - **El estante está a tu derecha y a la mano**, pegado al extremo de la mesa, con las cajas entre la rodilla y el pecho. Si a la derecha hay una pared o un mueble, se pone a la izquierda (y te avisa). El camión y su panel siempre van del lado contrario al estante.
 - **Órdenes, no personas.** Las familias no aparecen: llegan sus órdenes, en fila sobre la mesa, cada una con una foto de la familia, fotos de lo que necesita con cuántos, y el tiempo que les queda (la urgente primero).

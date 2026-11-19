@@ -28,3 +28,17 @@ test('a wall right where the shelf would go: the tent turns or moves until it is
     assert.ok(f.ok)
     assert.ok(clearance(wall, footprints, f.at, f.yaw) >= 0.3)
 })
+
+test('two pinches mark an area as wide as they are apart, back from them as far as the table goes', async () => {
+    const THREE = await import('three')
+    const { areaBetween, rayOnRect } = await import('../src/world/handRays.js')
+    const table = { center: new THREE.Vector3(0, 0.75, -0.4), ax: new THREE.Vector3(1, 0, 0), az: new THREE.Vector3(0, 0, 1), ex: 1.6, ez: 0.8, top: 0.75 }
+    const area = areaBetween(new THREE.Vector3(-0.4, 0.8, 0), new THREE.Vector3(0.4, 0.78, 0), table, new THREE.Vector3(0, 1.6, 0.4))
+    assert.ok(Math.abs(area.width - 0.8) < 1e-6)
+    assert.equal(area.top, 0.75)
+    assert.ok(area.n.z > 0.99) // towards the person
+    assert.ok(Math.abs(area.depth - 0.8) < 0.05)
+    const hit = rayOnRect(new THREE.Vector3(0, 1.5, 0.3), new THREE.Vector3(0, -1, -0.6).normalize(), table)
+    assert.ok(hit && Math.abs(hit.point.y - 0.75) < 1e-9)
+    assert.equal(rayOnRect(new THREE.Vector3(0, 1.5, 0.3), new THREE.Vector3(0, 1, 0), table), null)
+})

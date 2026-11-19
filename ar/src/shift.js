@@ -1,6 +1,7 @@
 import { createSystem, GrabSystem, Grabbed, Hovered, OneHandGrabbable, Pressed, RayInteractable, VisibilityState, XRAnchor, XRMesh, XRPlane } from '@iwsdk/core'
 import { clearance, fitTent, toWorld } from './world/fit.js'
 import { takeThumbs } from './world/thumbs.js'
+import { areaBetween, areaMesh, HandRays } from './world/handRays.js'
 import gsap from 'gsap'
 import * as THREE from 'three'
 import { AssetLoader } from '../../src/three/AssetLoader.js'
@@ -143,6 +144,15 @@ export class ShiftSystem extends createSystem({
 
     update(delta) {
         this.elapsed += delta
+        // the hands' rays, always on in the headset (see handRays.js)
+        if (this.world.session) {
+            this.rays ??= new HandRays(this.world.scene)
+            if (this.elapsed - (this.rectsAt ?? -9) > 0.5) {
+                this.rectsAt = this.elapsed
+                this.rects = this.#surfaceRects()
+            }
+            this.rays.update(this.world.renderer.xr.getFrame?.(), this.world.renderer.xr.getReferenceSpace?.(), this.world.player, this.rects)
+        }
         gsap.updateRoot(this.elapsed)
         this.view?.update(delta)
         this.haptics.watch(this.world.session)
@@ -257,6 +267,12 @@ export class ShiftSystem extends createSystem({
     }
 
     /** In the headset: wherever the person stands and looks when they press is behind the counter. */
+    /**
+     * In the headset, in two gestures:
+     *   1. the ray of either hand points at the real surface, and a pinch chooses it;
+     *   2. both hands pinch on its near edge and move apart: the area between them, drawn as they
+     *      move, is where the table goes, as wide as they are apart. Letting go of both sets it.
+     */
     async #beginPlacement() {
         await this.ready
         const { session } = this.world
@@ -268,35 +284,96 @@ export class ShiftSystem extends createSystem({
         else this.world.scene.background = null
 
         const hint = messageBoard()
-        hint.refresh({ kind: 'info', text: 'Busca unos 3 metros libres, mira hacia el frente y presiona para levantar tu carpa.' })
+        const say = (kind, text) => hint.refresh({ kind, text })
+        say('info', 'Paso 1: apunta con el rayo de tu mano a la mesa y pellizca para elegirla.')
         this.world.scene.add(hint.mesh)
+        const area = areaMesh()
+        this.world.scene.add(area)
         const head = new THREE.Vector3()
         const dir = new THREE.Vector3()
-        // leaving before the tent is up: it can start over on coming back
-        this.cancelPlacement = () => {
-            this.cancelPlacement = null
+        const state = { step: 'surface', surface: null, marking: null, held: 0 }
+        const end = () => {
+            session.removeEventListener('select', onSelect)
             stop()
-            this.world.scene.remove(hint.mesh)
+            this.world.scene.remove(hint.mesh, area)
+            this.cancelPlacement = null
+        }
+        // leaving before the table is up: it can start over on coming back
+        this.cancelPlacement = () => {
+            end()
             this.placing = false
+        }
+        const onSelect = (event) => {
+            if (state.step !== 'surface') return
+            const side = event.inputSource?.handedness
+            const hit = this.rays?.get(side)?.hit
+            if (!hit) return say('warn', 'Ese rayo no toca ninguna mesa: apunta a su superficie y pellizca.')
+            state.surface = hit.surface
+            state.step = 'area'
+            this.sound.play('tap')
+            say('info', 'Paso 2: pellizca con las dos manos en el borde de la mesa y sepáralas para marcar su ancho. Suelta para terminar.')
         }
         const stop = this.world.onXRFrame(() => {
             const cam = this.world.camera
             cam.getWorldPosition(head)
             cam.getWorldDirection(dir)
-            hint.mesh.position.copy(head).addScaledVector(dir, 0.9)
+            hint.mesh.position.copy(head).addScaledVector(dir, 0.9).add(temp.set(0, 0.12, 0))
             hint.mesh.lookAt(head)
+            if (state.step !== 'area') return
+            const left = this.rays?.get('left')
+            const right = this.rays?.get('right')
+            const both = left?.pinching && right?.pinching
+            if (both) {
+                state.marking = areaBetween(left.pinch, right.pinch, state.surface, head)
+                state.held += 1
+                area.show(state.marking, state.marking && state.marking.width >= 0.35)
+                return
+            }
+            if (!state.marking) return
+            // let go of both: the area is set, if it was held a moment and is wide enough
+            const marked = state.marking
+            state.marking = null
+            if (state.held < 10 || marked.width < 0.35) {
+                state.held = 0
+                area.show(null)
+                return say('warn', 'Muy angosto: separa más las manos (al menos 35 cm) y suelta.')
+            }
+            end()
+            this.sound.play('tap')
+            const yaw = Math.atan2(marked.n.x, marked.n.z)
+            this.#place(null, yaw, head.clone(), dir.clone(), marked)
         })
-        const confirm = () => {
-            session.removeEventListener('select', confirm)
-            this.cancelPlacement = null
-            stop()
-            this.world.scene.remove(hint.mesh)
-            // the tent's -Z along the gaze, the person's spot under their feet; then turned or moved
-            // as little as needed so that nothing of it is where a wall or furniture is (see #place)
-            const yaw = Math.atan2(-dir.x, -dir.z)
-            this.#place(null, yaw, head.clone(), dir.clone())
+        session.addEventListener('select', onSelect)
+    }
+
+    /** The horizontal surfaces the headset knows of, at any height a table may have, as rectangles for the rays. */
+    #surfaceRects() {
+        const floor = this.#floorY()
+        const out = []
+        for (const entity of this.queries.planes.entities) {
+            const plane = entity.getValue(XRPlane, '_plane')
+            const object = entity.object3D
+            if (!plane?.polygon || !object || plane.orientation !== 'horizontal') continue
+            if (/floor|ceiling/i.test(plane.semanticLabel ?? '')) continue
+            object.updateMatrixWorld(true)
+            const pts = [...plane.polygon]
+            const xs = pts.map((p) => p.x)
+            const zs = pts.map((p) => p.z)
+            const [x0, x1, z0, z1] = [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)]
+            const m = object.matrixWorld
+            const center = new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2).applyMatrix4(m)
+            const h = center.y - floor
+            if (h < 0.3 || h > 1.3) continue
+            const ax = new THREE.Vector3(1, 0, 0).transformDirection(m).setY(0).normalize()
+            const az = new THREE.Vector3(0, 0, 1).transformDirection(m).setY(0).normalize()
+            out.push({ center, ax, az, ex: x1 - x0, ez: z1 - z0, top: center.y })
         }
-        session.addEventListener('select', confirm)
+        // nothing scanned: a surface at a usual table's height around the person, so it can still be done
+        if (!out.length && !this.placed) {
+            const cam = this.world.camera.getWorldPosition(new THREE.Vector3())
+            out.push({ center: new THREE.Vector3(cam.x, floor + 0.74, cam.z), ax: new THREE.Vector3(1, 0, 0), az: new THREE.Vector3(0, 0, 1), ex: 4, ez: 4, top: floor + 0.74, virtual: true })
+        }
+        return out
     }
 
     /**
@@ -304,10 +381,10 @@ export class ShiftSystem extends createSystem({
      * of its exact size and height covers it, and everything else is scaled to match. Without a
      * table the headset knows of, the same at a usual table's size, where the room has space.
      */
-    #place(at, yaw, head = null, gaze = null) {
+    #place(at, yaw, head = null, gaze = null, area = null) {
         this.placed = true
         const floorY = head ? this.#floorY() : 0
-        const real = head ? this.#realTable(head, gaze) : null
+        const real = area ?? (head ? this.#realTable(head, gaze) : null)
         const width = real?.width ?? 1.2
         const depth = real?.depth ?? 0.6
         const top = (real?.top ?? floorY + 0.75) - floorY
