@@ -59,6 +59,9 @@ export class Glow {
             if (!mesh.isMesh || !mesh.material?.emissive) return
             const original = mesh.material
             mesh.material = original.clone()
+            // a clone loses the depth occlusion put into the original's shader: it gets it again
+            mesh.material.onBeforeCompile = original.onBeforeCompile
+            if (original.customProgramCacheKey !== THREE.Material.prototype.customProgramCacheKey) mesh.material.customProgramCacheKey = original.customProgramCacheKey
             mesh.material.emissive.set(COLOR)
             swapped.push({ mesh, original })
         })

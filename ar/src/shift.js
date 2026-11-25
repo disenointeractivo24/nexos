@@ -17,7 +17,7 @@ import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
 import { Glow } from './world/glow.js'
 import { bigBoard, buttonPanel, orderPhotoCard, fontsReady, messageBoard, nextPanel, receivePanel, speechBubble, taskList } from './world/panels.js'
-import { BOX_HEIGHT, buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
+import { BOX_HEIGHT, buildStation, surfaceBias, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
 import { Temper } from './world/temper.js'
 import { buildTruck } from './world/truck.js'
 
@@ -505,6 +505,8 @@ export class ShiftSystem extends createSystem({
             }
         }
         this.#boards()
+        // the table and its mats: the hands work right over them
+        for (const object of [this.station.desk, ...this.station.mats]) this.#occlude(this.world.createTransformEntity(object, { parent: this.root }))
         for (const zone of this.station.zones) this.#stockCrate(zone)
         this.#refreshShelf()
         this.#intro()
@@ -926,7 +928,7 @@ export class ShiftSystem extends createSystem({
         for (const person of this.crowd) person.root.removeFromParent()
         this.crowd.clear()
         this.families.clear()
-        this.kit?.entity.destroy()
+        this.#destroyKit(this.kit)
         this.kit = null
         this.onMat = null
         this.familyAtCounter = null
@@ -1020,12 +1022,21 @@ export class ShiftSystem extends createSystem({
     /**
      * Hidden where something real is in front of it, so the person's hands show over it: only for
      * what they work with by hand (cartons, supplies, the shelf and its crates, the order's carton,
-     * the buttons within reach). The rest (floor, tent, table, signs) is never see-through.
+     * the buttons within reach, and the table and its mats under them). The rest (floor, tent,
+     * signs, bubbles, truck) is never see-through.
      */
     #occlude(entity) {
         if (!entity || entity.hasComponent?.(DepthOccludable)) return entity
+        // materials of its own: the occlusion lives in each material's shader, registered to the
+        // entity that compiled it. Shared with another that goes away, it would go with it.
+        entity.object3D?.traverse((o) => {
+            if (!o.isMesh) return
+            o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone()
+        })
         try {
             entity.addComponent(DepthOccludable, { mode: OcclusionShadersMode.SoftOcclusion })
+            // what lies right on the real table counts a little nearer, so it does not flicker
+            surfaceBias(entity.object3D)
         } catch (err) {
             console.warn('[ar2] no depth occlusion for', entity.object3D?.name, err)
         }
@@ -1546,6 +1557,13 @@ export class ShiftSystem extends createSystem({
         this.#showInKit(t.itemId)
     }
 
+    /** The order's carton goes, with what is in it. */
+    #destroyKit(kit) {
+        if (!kit) return
+        for (const e of kit.items ?? []) e.destroy()
+        kit.entity.destroy()
+    }
+
     /** One more unit in the kit, in the place kept for it. */
     #showInKit(itemId) {
         this.haptics.play('right')
@@ -1554,7 +1572,9 @@ export class ShiftSystem extends createSystem({
         const { fit, position } = this.kit.layout[slot]
         const object = supplyObject(this.loader, this.supplies.get(itemId), itemId, fit)
         object.position.copy(position)
-        this.kit.object.add(object)
+        // its own entity in the kit, so a hand over it shows too
+        const entity = this.#occlude(this.world.createTransformEntity(object, { parent: this.kit.entity }))
+        this.kit.items.push(entity)
         this.sound.play('item', this.#worldOf(this.kit.object))
     }
 
@@ -1647,7 +1667,7 @@ export class ShiftSystem extends createSystem({
     #familyStepsBack() {
         const f = this.familyAtCounter
         this.familyAtCounter = null
-        this.kit.entity.destroy()
+        this.#destroyKit(this.kit)
         this.kit = null
         f.slot = this.#freeSlot()
         if (f.card) f.card.refresh(this.#cardData(f.order))
@@ -1847,7 +1867,7 @@ export class ShiftSystem extends createSystem({
         // entity can be left behind by the entity's own scale, and the carton stays half size)
         entity.object3D.scale.setScalar(1)
         const units = Object.entries(order.items).flatMap(([id, q]) => Array(q).fill(id))
-        this.kit = { entity, object: kitObject, layout: cartonLayout(this.supplies, units), used: new Set() }
+        this.kit = { entity, object: kitObject, layout: cartonLayout(this.supplies, units), used: new Set(), items: [] }
         this.#refreshOrder(order)
         const k = f.card.base
         gsap.fromTo(f.card.mesh.scale, { x: k * 0.86, y: k * 0.86 }, { x: k, y: k, duration: 0.4, ease: 'back.out(2.4)' })
@@ -1884,14 +1904,11 @@ export class ShiftSystem extends createSystem({
         const fading = []
         kit.object.traverse((o) => {
             if (!o.isMesh) return
-            // its own materials: the other cartons share theirs and must not fade with it
-            o.material = [o.material].flat().map((m) => {
-                const c = m.clone()
-                c.transparent = true
-                fading.push(c)
-                return c
-            })
-            if (o.material.length === 1) o.material = o.material[0]
+            // its materials are its own already (see #occlude): they fade, and keep the occlusion
+            for (const m of [o.material].flat()) {
+                m.transparent = true
+                fading.push(m)
+            }
         })
         gsap.delayedCall(0.55, () => {
             seal.visible = true
@@ -1911,7 +1928,7 @@ export class ShiftSystem extends createSystem({
                 for (const m of fading) m.opacity = fade.k
             },
             onComplete: () => {
-                kit.entity.destroy()
+                this.#destroyKit(kit)
                 this.#sendAway(f, WORKER.x + 3, ENTRY_Z)
             },
         })
@@ -1937,7 +1954,7 @@ export class ShiftSystem extends createSystem({
         for (const person of f.members) person.temper.settled = 'angry'
         if (this.familyAtCounter === f) {
             this.familyAtCounter = null
-            this.kit.entity.destroy()
+            this.#destroyKit(this.kit)
             this.kit = null
         }
         this.#sendAway(f, f.leader.position.x, ENTRY_Z)

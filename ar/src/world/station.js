@@ -78,6 +78,36 @@ function tentOf(loader, template) {
     return { tent, desk: boxOf(/escritorio/i), shelf: boxOf(/estanteria/i) }
 }
 
+/** How much nearer (m) what lies right on a real surface counts for depth occlusion. */
+const SURFACE_BIAS = 0.05
+
+/** Marks what lies right on a real surface (the table, its mats): see surfaceBias. */
+export function onRealSurface(object) {
+    object.traverse((o) => o.isMesh && (o.userData.onRealSurface = true))
+}
+
+/**
+ * What lies right on a real surface would flicker against it under depth occlusion. Once the
+ * occlusion is in their shaders, these count a few centimetres nearer: the real table never
+ * hides its own cover, and a hand over it always does.
+ */
+export function surfaceBias(root) {
+    root.traverse((o) => {
+        if (!o.isMesh || !o.userData.onRealSurface) return
+        for (const m of [o.material].flat()) {
+            if (!m || m.userData.surfaceBias) continue
+            m.userData.surfaceBias = true
+            const occluding = m.onBeforeCompile?.bind(m)
+            m.onBeforeCompile = (shader, renderer) => {
+                occluding?.(shader, renderer)
+                shader.vertexShader = shader.vertexShader.replace('vOcclusionViewDepth = -occlusion_view_pos.z;', `vOcclusionViewDepth = -occlusion_view_pos.z - ${SURFACE_BIAS.toFixed(3)};`)
+            }
+            m.customProgramCacheKey = () => 'surface-bias'
+            m.needsUpdate = true
+        }
+    })
+}
+
 /** What one supply measures at its real size, and the factor that gives it. */
 export function realSize(template, itemId) {
     const { x, y, z } = template.size
@@ -385,6 +415,8 @@ export function buildStation(root, loader, stand, { table = null, shelfSide = 1,
     station.tentScale = real
     const desk = new THREE.Box3(new THREE.Vector3(WORKER.x - t.width / 2, 0, nearEdge - t.depth), new THREE.Vector3(WORKER.x + t.width / 2, t.top, nearEdge))
     station.desk = deskMesh(desk)
+    onRealSurface(station.desk)
+    station.mats = []
     root.add(station.desk)
 
     const top = desk.max.y
@@ -404,6 +436,8 @@ export function buildStation(root, loader, stand, { table = null, shelfSide = 1,
         const { mesh } = matPanel(label, color)
         mesh.rotation.x = -Math.PI / 2
         mesh.position.set(x, top + 0.003, matZ)
+        onRealSurface(mesh)
+        station.mats.push(mesh)
         root.add(mesh)
         return new THREE.Vector3(x, top + 0.004, matZ)
     }
