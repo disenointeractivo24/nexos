@@ -1,4 +1,4 @@
-import { SessionMode, VisibilityState, World } from '@iwsdk/core'
+import { DepthSensingSystem, SessionMode, VisibilityState, World } from '@iwsdk/core'
 import { ShiftSystem } from './shift.js'
 
 const start = document.getElementById('start')
@@ -12,12 +12,21 @@ const world = await World.create(document.getElementById('scene-container'), {
         sessionMode: SessionMode.ImmersiveAR,
         offer: 'none',
         // none of these is required: the shift adapts to what the device grants
-        features: { handTracking: true, anchors: true, hitTest: true, planeDetection: true, meshDetection: true },
+        features: {
+            handTracking: true,
+            anchors: true,
+            hitTest: true,
+            planeDetection: true,
+            meshDetection: true,
+            // the room's depth, so real hands (and anything real) cover what is behind them
+            depthSensing: { usage: 'gpu-optimized', format: 'float32' },
+        },
     },
     input: { canvasPointerEvents: true },
     render: { fov: 60, near: 0.01, far: 60 },
     features: { locomotion: false, grabbing: true, sceneUnderstanding: true, physics: false, spatialUI: false },
 })
+world.registerSystem(DepthSensingSystem)
 world.registerSystem(ShiftSystem)
 const shift = world.getSystem(ShiftSystem)
 window.nexosAR = { world, shift }

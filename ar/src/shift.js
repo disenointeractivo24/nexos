@@ -1,4 +1,4 @@
-import { createSystem, GrabSystem, Grabbed, Hovered, OneHandGrabbable, Pressed, RayInteractable, VisibilityState, XRAnchor, XRMesh, XRPlane } from '@iwsdk/core'
+import { createSystem, DepthOccludable, GrabSystem, Grabbed, Hovered, OcclusionShadersMode, OneHandGrabbable, Pressed, RayInteractable, VisibilityState, XRAnchor, XRMesh, XRPlane } from '@iwsdk/core'
 import { clearance, fitTent, toWorld } from './world/fit.js'
 import { takeThumbs } from './world/thumbs.js'
 import { areaBetween, areaMesh, HandRays, surfaceShadow } from './world/handRays.js'
@@ -17,7 +17,7 @@ import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
 import { Glow } from './world/glow.js'
 import { bigBoard, buttonPanel, orderPhotoCard, fontsReady, messageBoard, nextPanel, receivePanel, speechBubble, taskList } from './world/panels.js'
-import { BOX_HEIGHT, buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
+import { BOX_HEIGHT, onRealSurface, surfaceBias, buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
 import { Temper } from './world/temper.js'
 import { buildTruck } from './world/truck.js'
 
@@ -331,9 +331,11 @@ export class ShiftSystem extends createSystem({
         const hint = messageBoard()
         const say = (kind, text) => hint.refresh({ kind, text })
         say('info', 'Paso 1: apunta con el rayo de tu mano a la mesa y pellizca para elegirla.')
-        this.world.scene.add(hint.mesh)
+        // entities of their own, so the hands cover them too; the area lies on the table
+        const hintEntity = this.#occlude(this.world.createTransformEntity(hint.mesh))
         const area = areaMesh()
-        this.world.scene.add(area)
+        onRealSurface(area)
+        const areaEntity = this.#occlude(this.world.createTransformEntity(area))
         // the detected surface, as a shadow: under the ray while choosing, fixed once chosen
         const shadow = surfaceShadow()
         this.world.scene.add(shadow)
@@ -344,7 +346,8 @@ export class ShiftSystem extends createSystem({
         const end = () => {
             session.removeEventListener('select', onSelect)
             stop()
-            this.world.scene.remove(hint.mesh, area)
+            hintEntity.destroy()
+            areaEntity.destroy()
             if (shadowEntity) shadowEntity.destroy()
             shadow.removeFromParent()
             // the rays come back: the shift's buttons are pressed with them
@@ -367,6 +370,8 @@ export class ShiftSystem extends createSystem({
             shadow.show(hit.surface, { fixed: true })
             try {
                 shadowEntity = this.world.createTransformEntity(shadow)
+                onRealSurface(shadow)
+                this.#occlude(shadowEntity)
                 shadowEntity.addComponent(XRAnchor)
             } catch (err) {
                 console.warn('[ar2] the surface shadow is not anchored', err)
@@ -507,6 +512,9 @@ export class ShiftSystem extends createSystem({
         this.#boards()
         for (const zone of this.station.zones) this.#stockCrate(zone)
         this.#refreshShelf()
+        // all that is in the point now: the tent, the shelf, the signs. What comes later is its own entity
+        this.#occlude(this.root)
+        surfaceBias(this.rootObject)
         this.#intro()
     }
 
@@ -697,7 +705,7 @@ export class ShiftSystem extends createSystem({
         // called up with a button; the world's child rather than the tent's, it goes with the person
         this.list = taskList()
         this.list.mesh.visible = false
-        this.world.scene.add(this.list.mesh)
+        this.listEntity = this.#occlude(this.world.createTransformEntity(this.list.mesh))
     }
 
     /**
@@ -1017,11 +1025,28 @@ export class ShiftSystem extends createSystem({
 
     /* ---------------- objects ---------------- */
 
+    /**
+     * Hidden where something real is in front of it, the person's hands above all: the headset's
+     * depth decides. What lies right on a real surface is left out (see noOcclusion).
+     */
+    #occlude(entity) {
+        if (!entity || entity.hasComponent?.(DepthOccludable)) return entity
+        try {
+            entity.addComponent(DepthOccludable, { mode: OcclusionShadersMode.SoftOcclusion })
+            // what lies on the table and was added later (the mats' cartons do not, but say so if they did)
+            if (entity.object3D) surfaceBias(entity.object3D)
+        } catch (err) {
+            console.warn('[ar2] no depth occlusion for', entity.object3D?.name, err)
+        }
+        return entity
+    }
+
     /** An object the person works with: pressable, and grabbable in the headset unless told otherwise. */
     #thing(object, info, { grab = true, parent = null } = {}) {
         const entity = this.world.createTransformEntity(object, { parent: parent ?? this.root })
         entity.addComponent(Workable)
         entity.addComponent(RayInteractable)
+        this.#occlude(entity)
         if (grab) this.#makeGrabbable(entity)
         this.things.set(entity, info)
         info.object = object
@@ -1610,12 +1635,14 @@ export class ShiftSystem extends createSystem({
         // about 42 cm wide where the person is, whatever the point's scale
         const k = 0.42 / (card.width * this.scale)
         card.base = k
-        card.mesh.scale.setScalar(k)
         card.refresh(this.#cardData(order))
-        this.rootObject.add(card.mesh)
+        // an entity of its own, so a hand in front of it covers it; scaled once it is one
+        card.entity = this.#occlude(this.world.createTransformEntity(card.mesh, { parent: this.root }))
+        card.mesh = card.entity.object3D
+        card.mesh.scale.setScalar(k)
         f.card = card
         this.#followCards()
-        gsap.from(card.mesh.scale, { x: k * 0.3, y: k * 0.3, duration: 0.4, ease: 'back.out(2)' })
+        gsap.fromTo(card.mesh.scale, { x: k * 0.3, y: k * 0.3 }, { x: k, y: k, duration: 0.4, ease: 'back.out(2)' })
         this.sound.play('radio')
     }
 
@@ -1731,7 +1758,8 @@ export class ShiftSystem extends createSystem({
     #removeCard(f) {
         if (!f.card) return
         gsap.killTweensOf(f.card.mesh.scale)
-        f.card.mesh.removeFromParent()
+        if (f.card.entity) f.card.entity.destroy()
+        else f.card.mesh.removeFromParent()
         f.card = null
         this.#followCards()
     }
@@ -1755,12 +1783,15 @@ export class ShiftSystem extends createSystem({
         if (key === this.ghostKey) return
         this.ghostKey = key
         if (!this.ghosts) {
-            this.ghosts = new THREE.Group()
-            this.ghosts.name = 'lo-que-falta'
-            this.rootObject.add(this.ghosts)
+            const group = new THREE.Group()
+            group.name = 'lo-que-falta'
+            this.ghostEntity = this.world.createTransformEntity(group, { parent: this.root })
+            this.ghosts = this.ghostEntity.object3D
+            this.ghostItems = []
         }
         const ring = this.ghosts
-        for (const child of [...ring.children]) ring.remove(child)
+        for (const e of this.ghostItems) e.destroy()
+        this.ghostItems = []
         ring.position.copy(this.station.kitMat).setY(this.station.kitMat.y + BOX_HEIGHT + GHOST_OVER / this.scale)
         const radius = (missing.length > 1 ? GHOST_RADIUS : 0) / this.scale
         missing.forEach((id, i) => {
@@ -1781,7 +1812,7 @@ export class ShiftSystem extends createSystem({
             const a = (i / missing.length) * Math.PI * 2
             ghost.position.set(Math.cos(a) * radius, 0, Math.sin(a) * radius)
             ghost.userData.bob = a
-            ring.add(ghost)
+            this.ghostItems.push(this.#occlude(this.world.createTransformEntity(ghost, { parent: this.ghostEntity })))
         })
     }
 
@@ -1814,7 +1845,7 @@ export class ShiftSystem extends createSystem({
         kitObject.userData.seal.visible = false
         for (const hinge of kitObject.userData.flaps) hinge.rotation.x = hinge.userData.side * 2.75
         kitObject.name = order.id
-        const entity = this.world.createTransformEntity(kitObject, { parent: this.root })
+        const entity = this.#occlude(this.world.createTransformEntity(kitObject, { parent: this.root }))
         // as large as every other carton, from the start: no growing in (a scale tween on a fresh
         // entity can be left behind by the entity's own scale, and the carton stays half size)
         entity.object3D.scale.setScalar(1)
