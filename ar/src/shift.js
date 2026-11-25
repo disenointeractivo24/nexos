@@ -285,7 +285,7 @@ export class ShiftSystem extends createSystem({
             canvas,
             solids: this.station.solids.map((r) => ({ minX: r.minX * this.scale, maxX: r.maxX * this.scale, minZ: r.minZ * this.scale, maxZ: r.maxZ * this.scale })),
             bounds: { minX: -2.4, maxX: 2.4, minZ: -2.4, maxZ: 1.7 },
-            roof: (on) => this.station.tent.traverse((o) => o.userData.roof && (o.visible = on)),
+            roof: (on) => this.station.tent.traverse((o) => o.userData.roof && !o.userData.hidden && (o.visible = on)),
             grab: {
                 pick: (ndc) => this.#pick(ndc),
                 move: (ndc) => this.#holdAt(ndc),

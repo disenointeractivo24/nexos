@@ -71,6 +71,9 @@ function tentOf(loader, template) {
         if (/techo|bombilla/i.test(materialName(o))) o.userData.roof = true
         // its own desk and stacked cartons: the person's table and the shelf take their place
         if (/escritorio|cajas/i.test(materialName(o))) o.visible = false
+        // and its light bulb: it hangs low, right over the person's head, a white blot always in view
+        if (/bombilla/i.test(materialName(o))) o.visible = false
+        if (!o.visible) o.userData.hidden = true
     })
     return { tent, desk: boxOf(/escritorio/i), shelf: boxOf(/estanteria/i) }
 }
