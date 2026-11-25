@@ -54,7 +54,21 @@ const TRUCK_OUT_SECONDS = 4
 const RECEIVE_REACH = 0.6
 /** How large the signs over the table are in the room against how they were drawn, and the buttons on it. */
 const SIGN_SCALE = 1.15
-const BUTTON_SCALE = 0.8
+/** The buttons between the mats grow and shrink with the table, filling the gap between them; never smaller than this (m wide). */
+const BUTTON_MIN_WIDTH = 0.15
+/** How wide the mats are drawn (see matPanel), in the point's units. */
+const MAT_WIDTH = 0.52
+/** The order cards: how wide (m), how far apart in a row, how high over the table, how far in from its back edge, row to row (m). */
+const CARD_WIDTH = 0.3
+/** Taken from farther than this from the hand (m), it was taken with the ray: it flies into the hand. */
+const MAGNET_FROM = 0.28
+/** How fast it flies there (1/s), and where it settles: a little out from the palm, along the ray (m). */
+const MAGNET_PULL = 9
+const MAGNET_OUT = 0.07
+const CARD_STEP = 0.33
+const CARD_OVER_TABLE = 0.3
+const CARD_IN_FROM_BACK = 0.12
+const CARD_ROW = 0.21
 /** How far under the eyes (m) the panel's middle is: right in the view, without looking up. */
 const RECEIVE_BELOW_EYES = 0.05
 /** What someone being carried on a computer floats at, from the eyes. */
@@ -91,6 +105,7 @@ const BUTTONS = new Set(['action', 'list', 'receive', 'card'])
 
 const temp = new THREE.Vector3()
 const temp2 = new THREE.Vector3()
+const temp3 = new THREE.Vector3()
 const up = new THREE.Vector3()
 
 const list = (names) => {
@@ -175,6 +190,7 @@ export class ShiftSystem extends createSystem({
             ;(this.handOutline ??= new HandOutline(this.world.scene)).update(delta)
         }
         gsap.updateRoot(this.elapsed)
+        if (this.world.session) this.#pullToHand(delta)
         this.view?.update(delta)
         this.haptics.watch(this.world.session)
         const cam = this.world.camera
@@ -670,9 +686,9 @@ export class ShiftSystem extends createSystem({
         root.add(this.truck.object)
         // the buttons: the one that hands over, between the mats; the list, to one side
         this.action = buttonPanel('Empezar el turno', { width: 0.32, height: 0.095, halo: '#FFD34D' })
-        sign(this.action, BUTTON_SCALE)
+        this.#fitBetweenMats(this.action)
         this.#thing(this.action.mesh, { kind: 'action' }, { grab: false })
-        this.action.mesh.position.set(x, top + 0.05, this.station.matZ + 0.09)
+        this.action.mesh.position.set(x, top + 0.03, this.station.matZ + 0.1)
         this.action.mesh.rotation.x = -0.9
         this.#setActive(this.action.mesh, false)
         // up in the middle, between the signs, while there is someone in line to bring forward
@@ -689,14 +705,25 @@ export class ShiftSystem extends createSystem({
         this.matSpot.position.copy(this.station.mat)
         root.add(this.matSpot)
         this.listButton = buttonPanel('Por hacer', { width: 0.22, height: 0.085, fill: '#011E41' })
-        sign(this.listButton, BUTTON_SCALE)
+        this.#fitBetweenMats(this.listButton)
         this.#thing(this.listButton.mesh, { kind: 'list' }, { grab: false })
-        this.listButton.mesh.position.set(x, top + 0.05, this.station.matZ - 0.1)
+        this.listButton.mesh.position.set(x, top + 0.03, this.station.matZ - 0.1)
         this.listButton.mesh.rotation.x = -0.9
         // called up with a button; the world's child rather than the tent's, it goes with the person
         this.list = taskList()
         this.list.mesh.visible = false
         this.world.scene.add(this.list.mesh)
+    }
+
+    /**
+     * A button on the table, in the gap between the two mats, as wide as that gap: it is laid out
+     * with the table, so it grows and shrinks with it. Too small a table, and it keeps a width that
+     * can still be read and pressed.
+     */
+    #fitBetweenMats(panel) {
+        const gap = Math.abs(this.station.kitMat.x - this.station.mat.x) - MAT_WIDTH
+        const width = Math.max(gap * 0.94, BUTTON_MIN_WIDTH / this.scale)
+        panel.mesh.scale.setScalar(width / panel.width)
     }
 
     /**
@@ -944,7 +971,7 @@ export class ShiftSystem extends createSystem({
         const { day } = this
         const hands = this.world.session
         const [heldEntity] = this.queries.held.entities
-        const held = this.holding?.t ?? this.things.get(heldEntity)
+        const held = this.holding?.t ?? this.magnet?.t ?? this.things.get(heldEntity)
         const things = [...this.things.values()]
 
         if (day.calm && !day.boxes.length) {
@@ -1277,6 +1304,10 @@ export class ShiftSystem extends createSystem({
     /** With a ray, what it would land in swells too. */
     #markHeld() {
         if (!this.world.session) return
+        if (this.magnet) {
+            this.heldHand = this.magnet.hand
+            return this.#mark(this.#targetAlong(this.magnet.hand, this.magnet.t))
+        }
         const [entity] = this.queries.held.entities
         if (!entity) return this.marked && this.#mark(null)
         const t = this.things.get(entity)
@@ -1334,11 +1365,80 @@ export class ShiftSystem extends createSystem({
         if (!t) return
         gsap.killTweensOf(t.object.position)
         this.haptics.play('grab')
+        // whether a hand took it or a ray did is known once the grab system says whose it is
+        this.magnetCheck = entity
+    }
+
+    /**
+     * What is taken with the ray comes to the hand, like a magnet: the grab system would carry it
+     * out there, at the ray's length. It lets go of it, and from then on it is the hand's, flying
+     * in and then staying in it, until the pinch (or the trigger) lets go. Then it lands as if
+     * the grab system had let it go.
+     */
+    #pullToHand(dt) {
+        const check = this.magnetCheck
+        this.magnetCheck = null
+        if (check && !this.magnet) {
+            const t = this.things.get(check)
+            const grabs = this.world.getSystem(GrabSystem)
+            const hand = grabs?.getHolderHand(check)
+            const grip = hand && this.#handPoint(hand)
+            if (t && grip && this.#worldOf(t.object).distanceTo(grip) > MAGNET_FROM) {
+                this.magnet = { entity: check, t, hand, held: 0 }
+                t.magnet = true
+                grabs.forceRelease(check)
+                gsap.killTweensOf(t.object.rotation)
+            }
+        }
+        const m = this.magnet
+        if (!m) return
+        const object = m.t.object
+        const select = this.input?.xr?.getSelectState?.(m.hand)
+        const squeeze = this.input?.xr?.gamepads?.[m.hand]?.getButtonPressed?.('xr-standard-squeeze')
+        m.held += dt
+        // a pinch may be let go of between two frames: one frame of grace
+        if (!select?.active && !squeeze && m.held > 0.05 && !m.entity.hasComponent(Grabbed)) return this.#dropFromHand()
+        const point = this.#handPoint(m.hand)
+        if (!point || !object.parent) return
+        const local = object.parent.worldToLocal(point)
+        const k = 1 - Math.exp(-dt * MAGNET_PULL)
+        object.position.lerp(local, k)
+        object.rotation.x += (0 - object.rotation.x) * k
+        object.rotation.z += (0 - object.rotation.z) * k
+        // a click in the hand when it gets there
+        if (!m.landed && object.position.distanceTo(local) * this.scale < 0.02) {
+            m.landed = true
+            this.haptics.hand = m.hand
+            this.haptics.play('grab')
+        }
+    }
+
+    /** Where something held sits: just out from the palm, along the hand's ray. */
+    #handPoint(hand) {
+        const origin = this.input?.xr?.xrOrigin
+        const grip = origin?.gripSpaces?.[hand]
+        const ray = origin?.raySpaces?.[hand]
+        if (!grip || !ray) return null
+        const point = grip.getWorldPosition(new THREE.Vector3())
+        if (point.lengthSq() === 0) return null
+        temp3.set(0, 0, -1).transformDirection(ray.matrixWorld)
+        return point.addScaledVector(temp3, MAGNET_OUT)
+    }
+
+    /** The pinch let go of what the magnet brought: it lands where it is, or where the ray points. */
+    #dropFromHand() {
+        const { entity, t, hand } = this.magnet
+        this.magnet = null
+        t.magnet = false
+        this.heldHand = hand
+        this.#release(entity)
     }
 
     /** Let go in the headset: what it counts as depends on where it, or the ray holding it, was. */
     #release(entity) {
         const t = this.things.get(entity)
+        // the grab system letting go of it for the magnet: it is still in the hand
+        if (t?.magnet) return
         const hand = this.heldHand
         this.heldHand = null
         // what answers goes to the hand that let go, even if the other one pressed something meanwhile
@@ -1615,8 +1715,8 @@ export class ShiftSystem extends createSystem({
     #giveCard(f) {
         const { order, leader } = f
         const card = orderPhotoCard()
-        // about 42 cm wide where the person is, whatever the point's scale
-        const k = 0.42 / (card.width * this.scale)
+        // about 30 cm wide where the person is, whatever the point's scale: close by, they need not be larger
+        const k = CARD_WIDTH / (card.width * this.scale)
         card.base = k
         card.refresh(this.#cardData(order))
         // pressable with the ray: pointing at it and pinching brings that family up
@@ -1643,24 +1743,30 @@ export class ShiftSystem extends createSystem({
     }
 
     /**
-     * The orders, as bubbles in a row up high over the far edge of the table: the one being
-     * attended first, then the urgent; turned to the person.
+     * The orders, as bubbles in a row on the back of the table, just over what is on it and in
+     * front of the person, close enough to read and to point at: the one being attended first,
+     * then the urgent. Each one looks at the person's eyes.
      */
     #followCards() {
         const rank = (f) => (f === this.familyAtCounter ? 2 : f.order.urgent ? 1 : 0)
         const waiting = [...this.families.values()].filter((f) => f.card).sort((a, b) => rank(b) - rank(a))
-        const step = 0.45 / this.scale
-        // above the other signs, a little behind the table, with their bottom over the eyes
-        const y = this.station.deskTop + 0.95 / this.scale
-        const z = this.station.deskFar - 0.2 / this.scale
-        // four to a row; when the line grows, the next row goes above, a little further back
-        const PER_ROW = 4
+        const S = this.scale
+        const step = CARD_STEP / S
+        const y = this.station.deskTop + CARD_OVER_TABLE / S
+        // on the table's back strip, behind the mats; on a shallow table, right behind them
+        const z = Math.min(this.station.deskFar + CARD_IN_FROM_BACK / S, this.station.matZ - 0.3)
+        const eyeY = (this.eyeHeight ?? 1.6) / S
+        const PER_ROW = 5
         waiting.forEach((f, i) => {
             const row = Math.floor(i / PER_ROW)
             const inRow = Math.min(PER_ROW, waiting.length - row * PER_ROW)
             const x = WORKER.x + ((i % PER_ROW) - (inRow - 1) / 2) * step
-            f.card.mesh.position.set(x, y + (row * 0.27) / this.scale, z - (row * 0.12) / this.scale)
-            f.card.mesh.rotation.set(0, Math.atan2(WORKER.x - x, WORKER.z + 0.4 - z) * 0.6, 0)
+            const cy = y + (row * CARD_ROW) / S
+            const cz = z - (row * 0.08) / S
+            const dx = WORKER.x - x
+            const dz = WORKER.z - cz
+            f.card.mesh.rotation.set(-Math.atan2(eyeY - cy, Math.hypot(dx, dz)), Math.atan2(dx, dz), 0, 'YXZ')
+            f.card.mesh.position.set(x, cy, cz)
         })
     }
 
