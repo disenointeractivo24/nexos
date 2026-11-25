@@ -16,7 +16,7 @@ import { Sound } from './sound.js'
 import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
 import { Glow } from './world/glow.js'
-import { bigBoard, buttonPanel, orderPhotoCard, fontsReady, messageBoard, nextPanel, receivePanel, speechBubble, taskList } from './world/panels.js'
+import { bigBoard, buttonPanel, orderPhotoCard, fontsReady, messageBoard, receivePanel, speechBubble, taskList } from './world/panels.js'
 import { BOX_HEIGHT, buildStation, surfaceBias, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
 import { Temper } from './world/temper.js'
 import { buildTruck } from './world/truck.js'
@@ -86,7 +86,7 @@ const COMPLAINT_PAUSE = 1.4
 /** How much of what is left of the wait each family has, for its faces and its bar alike. */
 const leftOf = (order) => Math.max(0, 1 - order.waited / order.patience)
 /** What is pressed, rather than carried. */
-const BUTTONS = new Set(['action', 'list', 'receive', 'next'])
+const BUTTONS = new Set(['action', 'list', 'receive', 'card'])
 
 const temp = new THREE.Vector3()
 const temp2 = new THREE.Vector3()
@@ -207,8 +207,9 @@ export class ShiftSystem extends createSystem({
     }
 
     /**
-     * Once the point is up, a hand's ray shows only while it points at a button or at something it
-     * can take (or holds it), and only as long as that. Looked for a few times a second, not every frame.
+     * Once the point is up, a hand's ray shows only while it points at an order card: it is for
+     * picking who to attend, and only that (everything else is taken by hand). Looked for a few
+     * times a second, not every frame.
      */
     #rayWanted(side, h) {
         if (this.placing && !this.placed) return h.hit ? h.hit.t : RAY_LENGTH
@@ -220,7 +221,8 @@ export class ShiftSystem extends createSystem({
         const targets = []
         for (const t of this.things.values()) {
             if (!t.object.visible || t.object.pointerEvents === 'none') continue
-            if (BUTTONS.has(t.kind) || t.kind === 'box' || t.kind === 'item' || t.kind === 'stock') targets.push(t.object)
+            // the ray is for picking an order, and only that
+            if (t.kind === 'card') targets.push(t.object)
         }
         this.raycaster.ray.origin.copy(h.origin)
         this.raycaster.ray.direction.copy(h.dir)
@@ -228,8 +230,6 @@ export class ShiftSystem extends createSystem({
         const hit = this.raycaster.intersectObjects(targets, true)[0]
         this.raycaster.far = Infinity
         if (hit) length = hit.distance
-        // while carrying, the ray stays, to aim where it lands
-        else if (this.queries.held.entities.size || this.queries.held.entities.length) length = h.pinching ? RAY_LENGTH * 0.4 : null
         seen[side] = { at: this.elapsed, length }
         return length
     }
@@ -675,13 +675,6 @@ export class ShiftSystem extends createSystem({
         this.action.mesh.rotation.x = -0.9
         this.#setActive(this.action.mesh, false)
         // up in the middle, between the signs, while there is someone in line to bring forward
-        this.nextButton = nextPanel()
-        sign(this.nextButton, SIGN_SCALE)
-        this.#thing(this.nextButton.mesh, { kind: 'next' }, { grab: false })
-        this.nextButton.mesh.position.set(x + m(0.42), 0, far)
-        this.nextButton.mesh.rotation.y = -0.26
-        hangFromRoof(this.nextButton, top + m(0.68), top + m(0.74))
-        this.#setActive(this.nextButton.mesh, false)
         this.glow = new Glow(this.world.scene)
         this.bubble = speechBubble()
         this.bubble.mesh.visible = false
@@ -747,9 +740,6 @@ export class ShiftSystem extends createSystem({
         this.pendingAction = action
         this.#setActive(this.action.mesh, !!action)
         if (action) this.action.refresh(label)
-        const next = this.running ? day.nextInLine : null
-        this.#setActive(this.nextButton.mesh, !!next)
-        if (next) this.nextButton.refresh({ family: next.family, urgent: next.urgent })
     }
 
     /** Hidden is also out of reach: a ray must not press, or stop at, what cannot be seen. */
@@ -1057,8 +1047,8 @@ export class ShiftSystem extends createSystem({
         const entity = this.world.createTransformEntity(object, { parent: parent ?? this.root })
         entity.addComponent(Workable)
         entity.addComponent(RayInteractable)
-        // all but the sign that calls the next one up, hanging out of reach
-        if (info.kind !== 'next') this.#occlude(entity)
+        // all but the order cards, up high and out of reach of the hands: never see-through
+        if (info.kind !== 'card') this.#occlude(entity)
         if (grab) this.#makeGrabbable(entity)
         this.things.set(entity, info)
         info.object = object
@@ -1190,7 +1180,7 @@ export class ShiftSystem extends createSystem({
         if (t.kind === 'action') return this.#pressAction()
         if (t.kind === 'list') return this.toggleList()
         if (t.kind === 'receive') return this.#pressReceive()
-        if (t.kind === 'next') return this.#pressNext()
+        if (t.kind === 'card') return this.#pickOrder(t.order)
         if (t.kind === 'box' && t.onMat) return this.#openBox(t)
         if (t.kind === 'box' && this.#isCovered(t)) {
             this.haptics.play('wrong')
@@ -1199,11 +1189,15 @@ export class ShiftSystem extends createSystem({
     }
 
     /** Whoever is next comes up now. If someone had things in their kit, that is worth saying. */
-    #pressNext() {
+    /** Pointed at an order card and picked it: that family comes up; whoever was there goes back to the line. */
+    #pickOrder(order) {
+        if (!this.running) return
+        if (this.day.current === order) return this.#say('info', `Ya estás atendiendo a ${order.family}.`)
         const previous = this.day.current
         const hadItems = this.day.canDeliver
-        if (!this.day.callNext()) return
+        if (!this.day.call(order.id)) return
         this.sound.play('tap')
+        this.haptics.play('tap')
         if (hadItems) this.#say('warn', `${previous.family} volvió a la fila, y lo de su caja quedó en los estantes.`)
     }
 
@@ -1647,10 +1641,10 @@ export class ShiftSystem extends createSystem({
         this.#walkTo(leader, slot.x, slot.z, () => (leader.targetYaw = 0))
         if (order.urgent) {
             this.sound.play('alert')
-            this.#say('alert', `${order.family} necesita ${this.#wants(order)} ya. Pasa al entregar lo del mostrador, o con «Que pase el siguiente».`)
+            this.#say('alert', `${order.family} necesita ${this.#wants(order)} ya. Apunta a su tarjeta con el rayo y pellizca para atenderla ahora.`)
         } else if (this.day.current) {
             this.sound.play('radio')
-            this.#say('radio', `Llegó una orden de ${order.family}. La atiendes cuando termines, o con «Que pase el siguiente».`)
+            this.#say('radio', `Llegó una orden de ${order.family}. La atiendes cuando termines, o apuntando a su tarjeta con el rayo.`)
         }
     }
 
@@ -1662,8 +1656,8 @@ export class ShiftSystem extends createSystem({
         const k = 0.42 / (card.width * this.scale)
         card.base = k
         card.refresh(this.#cardData(order))
-        // an entity of its own, scaled once it is one
-        card.entity = this.world.createTransformEntity(card.mesh, { parent: this.root })
+        // pressable with the ray: pointing at it and pinching brings that family up
+        card.entity = this.#thing(card.mesh, { kind: 'card', order, baseScale: k }, { grab: false })
         card.mesh = card.entity.object3D
         card.mesh.scale.setScalar(k)
         f.card = card
@@ -1784,8 +1778,8 @@ export class ShiftSystem extends createSystem({
     #removeCard(f) {
         if (!f.card) return
         gsap.killTweensOf(f.card.mesh.scale)
-        if (f.card.entity) f.card.entity.destroy()
-        else f.card.mesh.removeFromParent()
+        this.things.delete(f.card.entity)
+        f.card.entity.destroy()
         f.card = null
         this.#followCards()
     }

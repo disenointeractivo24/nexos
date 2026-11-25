@@ -213,6 +213,26 @@ test('the next one can be brought forward: whoever was there goes back to the li
     assert.equal(day.callNext().id, 'pedido-1', 'and back again')
 })
 
+test('any order in the line can be picked: it comes up, and whoever was there goes back', () => {
+    const day = started()
+    day.orders.forEach((o) => (o.patience = 1e6))
+    untilAtCounter(day, 'pedido-1')
+    untilJoined(day, 'pedido-3')
+    assert.equal(day.call('pedido-1'), null, 'already at the counter, not in the line')
+    assert.equal(day.call('nadie'), null)
+    const first = day.current
+    day.addToKit('rice')
+    const events = []
+    day.on((e) => events.push(e))
+    // not the next in line (pedido-2), but the one picked
+    assert.equal(day.call('pedido-3').id, 'pedido-3')
+    assert.deepEqual(events, ['backToLine', 'order'])
+    assert.equal(first.state, 'waiting')
+    assert.deepEqual(first.packed, {})
+    assert.equal(day.available('rice'), SHIFT_STOCK.rice)
+    assert.ok(day.line.some((o) => o.id === 'pedido-2'))
+})
+
 test('who is next can be read beforehand, and is who comes up', () => {
     const day = started()
     assert.equal(day.nextInLine, null)

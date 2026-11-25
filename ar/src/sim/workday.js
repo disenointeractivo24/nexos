@@ -329,7 +329,10 @@ export class Workday {
 
     /** Nobody has to be called: whoever is next comes up as soon as there is room, what is urgent first. */
     #comeUp(except = null) {
-        const order = this.#nextOf(this.line.filter((o) => o !== except))
+        this.#bringUp(this.#nextOf(this.line.filter((o) => o !== except)))
+    }
+
+    #bringUp(order) {
         order.state = 'packing'
         // patience starts again only the first time: going back to the line does not refill it
         if (!order.attended) {
@@ -355,6 +358,25 @@ export class Workday {
      * at the counter goes back to the line. What was in their kit stays on the shelves.
      * @returns the order now at the counter, or null with nobody waiting
      */
+    /**
+     * The person picks who comes up, from the line: whoever was at the counter goes back to it,
+     * with an empty carton (what was in it is back on the shelves).
+     * @returns the order now at the counter, or null if that one is not waiting
+     */
+    call(id) {
+        const order = this.line.find((o) => o.id === id)
+        if (!order) return null
+        const previous = this.current
+        if (previous) {
+            previous.packed = {}
+            previous.state = 'waiting'
+            this.current = null
+            this.#emit('backToLine', previous)
+        }
+        this.#bringUp(order)
+        return this.current
+    }
+
     callNext() {
         if (!this.line.length) return null
         const previous = this.current
