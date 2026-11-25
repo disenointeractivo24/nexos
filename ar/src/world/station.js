@@ -62,7 +62,6 @@ function tentOf(loader, template) {
     tent.traverse((o) => {
         if (!o.isMesh) return
         if (/piso/i.test(materialName(o))) {
-            onRealSurface(o)
             for (const m of [o.material].flat()) {
                 m.transparent = true
                 m.opacity = FLOOR_OPACITY
@@ -77,36 +76,6 @@ function tentOf(loader, template) {
         if (!o.visible) o.userData.hidden = true
     })
     return { tent, desk: boxOf(/escritorio/i), shelf: boxOf(/estanteria/i) }
-}
-
-/** How much nearer (m) a surface that lies right on a real one counts for depth occlusion. */
-const SURFACE_BIAS = 0.05
-
-/** Marks what lies right on a real surface (the table, its mats, the floor): see surfaceBias. */
-export function onRealSurface(object) {
-    object.traverse((o) => o.isMesh && (o.userData.onRealSurface = true))
-}
-
-/**
- * Depth occlusion hides what is behind something real, but what lies right on a real surface
- * would flicker against it. Once occlusion is in their shaders, these count a few centimetres
- * nearer: the real table never hides its own cover, a hand over it always does.
- */
-export function surfaceBias(root) {
-    root.traverse((o) => {
-        if (!o.isMesh || !o.userData.onRealSurface) return
-        for (const m of [o.material].flat()) {
-            if (!m || m.userData.surfaceBias) continue
-            m.userData.surfaceBias = true
-            const occluding = m.onBeforeCompile?.bind(m)
-            m.onBeforeCompile = (shader, renderer) => {
-                occluding?.(shader, renderer)
-                shader.vertexShader = shader.vertexShader.replace('vOcclusionViewDepth = -occlusion_view_pos.z;', `vOcclusionViewDepth = -occlusion_view_pos.z - ${SURFACE_BIAS.toFixed(3)};`)
-            }
-            m.customProgramCacheKey = () => 'surface-bias'
-            m.needsUpdate = true
-        }
-    })
 }
 
 /** What one supply measures at its real size, and the factor that gives it. */
@@ -387,6 +356,8 @@ export function buildStation(root, loader, stand, { table = null, shelfSide = 1,
     const t = table ?? { width: modelDesk.max.x - modelDesk.min.x, depth: modelDesk.max.z - modelDesk.min.z, top: modelDesk.max.y }
     const { box: shelf, pivot } = shelfBeside(root, tent, nearEdge, shelfSide, worldScale)
     station.shelfSide = shelfSide
+    // its boards and posts, apart from the crates (station.shelf)
+    station.shelfFrame = pivot
     // the tent around the person: as much larger than the table as it was modelled, and always
     // tall enough to stand in. It grows from the middle of the table's near edge, so the table
     // stays where it is and the person stays inside, between the counter and the back.
@@ -414,7 +385,6 @@ export function buildStation(root, loader, stand, { table = null, shelfSide = 1,
     station.tentScale = real
     const desk = new THREE.Box3(new THREE.Vector3(WORKER.x - t.width / 2, 0, nearEdge - t.depth), new THREE.Vector3(WORKER.x + t.width / 2, t.top, nearEdge))
     station.desk = deskMesh(desk)
-    onRealSurface(station.desk)
     root.add(station.desk)
 
     const top = desk.max.y
@@ -432,7 +402,6 @@ export function buildStation(root, loader, stand, { table = null, shelfSide = 1,
 
     const pad = (x, label, color) => {
         const { mesh } = matPanel(label, color)
-        onRealSurface(mesh)
         mesh.rotation.x = -Math.PI / 2
         mesh.position.set(x, top + 0.003, matZ)
         root.add(mesh)
