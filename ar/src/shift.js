@@ -1,7 +1,8 @@
-import { createSystem, DepthOccludable, GrabSystem, Grabbed, Hovered, OcclusionShadersMode, OneHandGrabbable, Pressed, RayInteractable, VisibilityState, XRAnchor, XRMesh, XRPlane } from '@iwsdk/core'
+import { createSystem, GrabSystem, Grabbed, Hovered, OneHandGrabbable, Pressed, RayInteractable, VisibilityState, XRAnchor, XRMesh, XRPlane } from '@iwsdk/core'
 import { clearance, fitTent, toWorld } from './world/fit.js'
 import { takeThumbs } from './world/thumbs.js'
 import { areaBetween, areaMesh, HandRays, surfaceShadow } from './world/handRays.js'
+import { HandOutline } from './world/handOutline.js'
 import gsap from 'gsap'
 import * as THREE from 'three'
 import { AssetLoader } from '../../src/three/AssetLoader.js'
@@ -17,7 +18,7 @@ import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
 import { Glow } from './world/glow.js'
 import { bigBoard, buttonPanel, orderPhotoCard, fontsReady, messageBoard, receivePanel, speechBubble, taskList } from './world/panels.js'
-import { BOX_HEIGHT, buildStation, surfaceBias, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
+import { BOX_HEIGHT, buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
 import { Temper } from './world/temper.js'
 import { buildTruck } from './world/truck.js'
 
@@ -40,7 +41,7 @@ const ENTRY_Z = -7
 /** Over the heads, and above the signs that hang in front of them. */
 const CARD_Y = 2.02
 const WALK_SPEED = 1.5
-/** How much (m) the virtual table stands over the real one, so depth occlusion tells them apart. */
+/** How much (m) the virtual table stands over the real one: their tops level, the headset would mix them up. */
 const TABLE_LIFT = 0.02
 /** How far (m) from the person the truck stops, on the side opposite the shelf, just behind the panel that receives it. */
 const TRUCK_REACH = 1.2
@@ -170,6 +171,8 @@ export class ShiftSystem extends createSystem({
                 this.rects = this.#surfaceRects()
             }
             this.rays.update(this.world.renderer.xr.getFrame?.(), this.world.renderer.xr.getReferenceSpace?.(), this.world.player, this.rects)
+            // the hands' white outline: always in sight, fainter where something virtual is in front
+            ;(this.handOutline ??= new HandOutline(this.world.scene)).update(delta)
         }
         gsap.updateRoot(this.elapsed)
         this.view?.update(delta)
@@ -508,8 +511,6 @@ export class ShiftSystem extends createSystem({
             }
         }
         this.#boards()
-        // the table and its mats: the hands work right over them
-        for (const object of [this.station.desk, ...this.station.mats]) this.#occlude(this.world.createTransformEntity(object, { parent: this.root }))
         for (const zone of this.station.zones) this.#stockCrate(zone)
         this.#refreshShelf()
         this.#intro()
@@ -1012,43 +1013,11 @@ export class ShiftSystem extends createSystem({
 
     /* ---------------- objects ---------------- */
 
-    /**
-     * Hidden where something real is in front of it, so the person's hands show over it: only for
-     * what they work with by hand (cartons, supplies, the shelf and its crates, the order's carton,
-     * the buttons within reach, and the table and its mats under them). The rest (floor, tent,
-     * signs, bubbles, truck) is never see-through.
-     */
-    #occlude(entity) {
-        if (!entity || entity.hasComponent?.(DepthOccludable)) return entity
-        // materials of its own: the occlusion lives in each material's shader, registered to the
-        // entity that compiled it. Shared with another that goes away, it would go with it.
-        // The occlusion makes every material see-through-capable, so all are sorted by distance:
-        // what is printed on something (a decal that writes no depth, like the carton's mark)
-        // is drawn after it, or the board would cover it now and then as the head moves.
-        entity.object3D?.traverse((o) => {
-            if (!o.isMesh) return
-            o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone()
-            if ([o.material].flat().some((m) => m.depthWrite === false)) o.renderOrder = Math.max(o.renderOrder, 1)
-        })
-        try {
-            // MinMaxSoftOcclusion: edge-aware, so a hand's outline does not bleed into a halo, and
-            // one depth lookup per pixel (after a shared pass per frame) instead of thirteen
-            entity.addComponent(DepthOccludable, { mode: OcclusionShadersMode.MinMaxSoftOcclusion })
-            // what lies right on the real table counts a little nearer, so it does not flicker
-            surfaceBias(entity.object3D)
-        } catch (err) {
-            console.warn('[ar2] no depth occlusion for', entity.object3D?.name, err)
-        }
-        return entity
-    }
-
     /** An object the person works with: pressable, and grabbable in the headset unless told otherwise. */
     #thing(object, info, { grab = true, parent = null } = {}) {
         const entity = this.world.createTransformEntity(object, { parent: parent ?? this.root })
         entity.addComponent(Workable)
         entity.addComponent(RayInteractable)
-        // all but the order cards, up high and out of reach of the hands: never see-through
-        if (info.kind !== 'card') this.#occlude(entity)
         if (grab) this.#makeGrabbable(entity)
         this.things.set(entity, info)
         info.object = object
@@ -1081,12 +1050,7 @@ export class ShiftSystem extends createSystem({
 
     /** A crate on the shelf, with one of each of its supplies showing while there is any. */
     #stockCrate(zone) {
-        if (!this.shelfEntity) {
-            this.shelfEntity = this.#occlude(this.world.createTransformEntity(this.station.shelf, { parent: this.root }))
-            // its boards and posts too: the hands reach in between them
-            this.#occlude(this.world.createTransformEntity(this.station.shelfFrame, { parent: this.root }))
-        }
-        const shelfEntity = this.shelfEntity
+        const shelfEntity = (this.shelfEntity ??= this.world.createTransformEntity(this.station.shelf, { parent: this.root }))
         // only holds things: nothing to press, and no wall to stop a ray on its way to what is inside
         zone.entity = this.world.createTransformEntity(zone.crate, { parent: shelfEntity })
         zone.stock = new Map()
@@ -1575,8 +1539,7 @@ export class ShiftSystem extends createSystem({
         const { fit, position } = this.kit.layout[slot]
         const object = supplyObject(this.loader, this.supplies.get(itemId), itemId, fit)
         object.position.copy(position)
-        // its own entity in the kit, so a hand over it shows too
-        const entity = this.#occlude(this.world.createTransformEntity(object, { parent: this.kit.entity }))
+        const entity = this.world.createTransformEntity(object, { parent: this.kit.entity })
         this.kit.items.push(entity)
         if (!quiet) this.sound.play('item', this.#worldOf(this.kit.object))
     }
@@ -1865,7 +1828,7 @@ export class ShiftSystem extends createSystem({
         kitObject.userData.seal.visible = false
         for (const hinge of kitObject.userData.flaps) hinge.rotation.x = hinge.userData.side * 2.75
         kitObject.name = order.id
-        const entity = this.#occlude(this.world.createTransformEntity(kitObject, { parent: this.root }))
+        const entity = this.world.createTransformEntity(kitObject, { parent: this.root })
         // as large as every other carton, from the start: no growing in (a scale tween on a fresh
         // entity can be left behind by the entity's own scale, and the carton stays half size)
         entity.object3D.scale.setScalar(1)
@@ -1909,11 +1872,14 @@ export class ShiftSystem extends createSystem({
         const fading = []
         kit.object.traverse((o) => {
             if (!o.isMesh) return
-            // its materials are its own already (see #occlude): they fade, and keep the occlusion
-            for (const m of [o.material].flat()) {
-                m.transparent = true
-                fading.push(m)
-            }
+            // its own materials: the other cartons share theirs and must not fade with it
+            o.material = [o.material].flat().map((m) => {
+                const c = m.clone()
+                c.transparent = true
+                fading.push(c)
+                return c
+            })
+            if (o.material.length === 1) o.material = o.material[0]
         })
         gsap.delayedCall(0.55, () => {
             seal.visible = true
