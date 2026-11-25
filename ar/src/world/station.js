@@ -441,10 +441,10 @@ const rod = (radius, length) => new THREE.Mesh(new THREE.CylinderGeometry(radius
  * Two cords from a panel up to the tent's roof, so no sign floats on its own. Its top edge
  * stays at `topY`, and it grows downwards when its content does.
  */
-export function hangFromRoof(panel, topY) {
+export function hangFromRoof(panel, topY, roofY = ROOF_Y) {
     const { mesh } = panel
     const k = mesh.scale.y
-    const length = (ROOF_Y - topY) / k
+    const length = Math.max(0.05, (Math.max(roofY, topY) - topY) / k)
     const cords = [-1, 1].map((side) => {
         const cord = rod(0.004, length)
         cord.position.x = (side * panel.width) / 2.6

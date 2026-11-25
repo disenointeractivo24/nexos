@@ -17,7 +17,9 @@ Parte de `/ar/`, a escala de la mesa real:
 - **Se ve tu cuarto.** La carpa no se muestra, así no se pierde la profundidad del espacio. El camión es mucho más pequeño.
 - **El estante está a tu derecha**, de lado y de frente a ti, junto al borde cercano de la mesa y 15 cm más lejos que antes, con las cajas entre la rodilla y el pecho. Si a la derecha hay una pared o un mueble, se pone a la izquierda (y te avisa). El camión y su panel siempre van del lado contrario al estante.
 - **Órdenes, no personas.** Las familias no aparecen: llegan sus órdenes como burbujas arriba, sobre la mesa, cada una con la foto de la familia (con sus caras), fotos de lo que necesita con cuántos, y el tiempo que les queda. Primero la que estás atendiendo, que lleva la cuenta de lo que ya está en su caja; luego las urgentes. No hay otro resumen del pedido.
-- **El panel de recibir está a la altura de tus ojos**, a tu lado, del lado del camión.
+- **El panel de recibir está a la altura de tus ojos**, a 60 cm a tu lado, del lado del camión.
+- **Lo que falta flota sobre la caja del pedido**: cada insumo que aún falta, transparente, girando alrededor de la caja; desaparece al ponerlo.
+- **Los carteles se leen**: no se encogen con el punto (que se ajusta al ancho de tu mesa); tienen su tamaño real, un poco más grande.
 - **Los rayos de las manos solo aparecen cuando hacen falta**: al elegir la mesa, y después solo cuando apuntas a un botón o a algo que puedes tomar.
 - Sin mesa en el escaneo, usa una virtual del tamaño de una mesa común y la coloca donde no choque con paredes ni muebles. Conviene haber escaneado el cuarto en las gafas (Ajustes › Espacio físico).
 

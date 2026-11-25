@@ -17,7 +17,7 @@ import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
 import { Glow } from './world/glow.js'
 import { bigBoard, buttonPanel, orderPhotoCard, fontsReady, messageBoard, nextPanel, receivePanel, speechBubble, taskList } from './world/panels.js'
-import { buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
+import { BOX_HEIGHT, buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
 import { Temper } from './world/temper.js'
 import { buildTruck } from './world/truck.js'
 
@@ -47,8 +47,11 @@ const TRUCK_FROM_Z = -18
 const TRUCK_TO_Z = 18
 const TRUCK_IN_SECONDS = 4.5
 const TRUCK_OUT_SECONDS = 4
-/** How far from the person, to their left, the panel of the truck floats. */
-const RECEIVE_REACH = 1
+/** How far (m) from the person, to their side, the panel of the truck floats. */
+const RECEIVE_REACH = 0.6
+/** How large the signs over the table are in the room against how they were drawn, and the buttons on it. */
+const SIGN_SCALE = 1.15
+const BUTTON_SCALE = 0.8
 /** How far under the eyes (m) the panel's middle is: right in the view, without looking up. */
 const RECEIVE_BELOW_EYES = 0.05
 /** What someone being carried on a computer floats at, from the eyes. */
@@ -60,6 +63,11 @@ const RAY_NEAR = 0.24
 /** How far a hand's ray reaches (m), and how often what it points at is looked for (s). */
 const RAY_LENGTH = 3
 const RAY_LOOK = 0.12
+/** What the order still needs floats over its carton, see-through, going round: how high over it, how wide, how fast. */
+const GHOST_OVER = 0.16
+const GHOST_RADIUS = 0.2
+const GHOST_TURN = 0.7
+const GHOST_OPACITY = 0.45
 /** How long a message stays up before a lesser one can take its place, and how long an alert does. */
 const MESSAGE_HOLD = 2.5
 const ALERT_HOLD = 7
@@ -186,6 +194,7 @@ export class ShiftSystem extends createSystem({
         this.#followGuide()
         this.#pollButtons()
         this.#placeList(delta)
+        this.#turnGhosts(delta)
         // what is expected next breathes: it can be found without reading the whole table
         this.action.halo.material.opacity = 0.6 + 0.4 * Math.sin(this.elapsed * 3.2)
         this.signClock += delta
@@ -620,24 +629,32 @@ export class ShiftSystem extends createSystem({
         const top = this.station.deskTop
         const far = this.station.deskFar + 0.22
         const x = WORKER.x
+        // the signs are as large in the room as they were drawn (a little more), whatever the
+        // point's scale: shrunk with it, they could not be read. Laid out in metres, over the table.
+        const S = this.scale
+        const m = (metres) => metres / S
+        const sign = (panel, k) => panel.mesh.scale.setScalar(k / S)
         // leaving the middle free for whoever is at the counter
         this.message = messageBoard()
-        this.message.mesh.position.set(x - 0.76, 0, far)
+        sign(this.message, SIGN_SCALE)
+        this.message.mesh.position.set(x - m(0.42), 0, far)
         this.message.mesh.rotation.y = 0.26
-        hangFromRoof(this.message, top + 0.88)
+        hangFromRoof(this.message, top + m(0.68), top + m(0.74))
         root.add(this.message.mesh)
         this.big = bigBoard()
+        sign(this.big, SIGN_SCALE)
         this.big.mesh.position.set(x, 0, far)
         this.big.mesh.visible = false
-        hangFromRoof(this.big, top + 1.0)
+        hangFromRoof(this.big, top + m(0.8), top + m(0.86))
         root.add(this.big.mesh)
         // right at the person's left, with the truck behind it. It looks at the person.
         this.receive = receivePanel()
+        sign(this.receive, 1)
         this.#thing(this.receive.mesh, { kind: 'receive' }, { grab: false })
         // on the truck's side, which is always the side opposite the shelf
         const t = this.#truckSide()
         // at the height of the person's eyes, whatever the point's scale
-        this.receive.mesh.position.set(x + t * RECEIVE_REACH, (this.eyeHeight - RECEIVE_BELOW_EYES) / this.scale, WORKER.z)
+        this.receive.mesh.position.set(x + t * m(RECEIVE_REACH), (this.eyeHeight - RECEIVE_BELOW_EYES) / this.scale, WORKER.z)
         this.receive.mesh.rotation.y = (-t * Math.PI) / 2
         this.#setActive(this.receive.mesh, false)
         this.truck = buildTruck()
@@ -647,21 +664,24 @@ export class ShiftSystem extends createSystem({
         root.add(this.truck.object)
         // the buttons: the one that hands over, between the mats; the list, to one side
         this.action = buttonPanel('Empezar el turno', { width: 0.32, height: 0.095, halo: '#FFD34D' })
+        sign(this.action, BUTTON_SCALE)
         this.#thing(this.action.mesh, { kind: 'action' }, { grab: false })
         this.action.mesh.position.set(x, top + 0.05, this.station.matZ + 0.09)
         this.action.mesh.rotation.x = -0.9
         this.#setActive(this.action.mesh, false)
         // up in the middle, between the signs, while there is someone in line to bring forward
         this.nextButton = nextPanel()
+        sign(this.nextButton, SIGN_SCALE)
         this.#thing(this.nextButton.mesh, { kind: 'next' }, { grab: false })
-        this.nextButton.mesh.position.set(x, 0, far)
-        hangFromRoof(this.nextButton, top + 0.88)
+        this.nextButton.mesh.position.set(x + m(0.42), 0, far)
+        this.nextButton.mesh.rotation.y = -0.26
+        hangFromRoof(this.nextButton, top + m(0.68), top + m(0.74))
         this.#setActive(this.nextButton.mesh, false)
         this.glow = new Glow(this.world.scene)
         this.bubble = speechBubble()
         this.bubble.mesh.visible = false
         this.bubble.mesh.pointerEvents = 'none'
-        this.bubble.mesh.scale.setScalar(1.25)
+        sign(this.bubble, 0.9)
         root.add(this.bubble.mesh)
         this.complaintIn = 0
         this.complaintTurn = 0
@@ -670,6 +690,7 @@ export class ShiftSystem extends createSystem({
         this.matSpot.position.copy(this.station.mat)
         root.add(this.matSpot)
         this.listButton = buttonPanel('Por hacer', { width: 0.22, height: 0.085, fill: '#011E41' })
+        sign(this.listButton, BUTTON_SCALE)
         this.#thing(this.listButton.mesh, { kind: 'list' }, { grab: false })
         this.listButton.mesh.position.set(x, top + 0.05, this.station.matZ - 0.1)
         this.listButton.mesh.rotation.x = -0.9
@@ -1561,8 +1582,8 @@ export class ShiftSystem extends createSystem({
     #giveCard(f) {
         const { order, leader } = f
         const card = orderPhotoCard()
-        // about 34 cm wide where the person is, whatever the point's scale
-        const k = 0.34 / (card.width * this.scale)
+        // about 42 cm wide where the person is, whatever the point's scale
+        const k = 0.42 / (card.width * this.scale)
         card.base = k
         card.mesh.scale.setScalar(k)
         card.refresh(this.#cardData(order))
@@ -1593,9 +1614,9 @@ export class ShiftSystem extends createSystem({
     #followCards() {
         const rank = (f) => (f === this.familyAtCounter ? 2 : f.order.urgent ? 1 : 0)
         const waiting = [...this.families.values()].filter((f) => f.card).sort((a, b) => rank(b) - rank(a))
-        const step = 0.37 / this.scale
+        const step = 0.45 / this.scale
         // above the other signs, a little behind the table, with their bottom over the eyes
-        const y = this.station.deskTop + 0.92 / this.scale
+        const y = this.station.deskTop + 0.95 / this.scale
         const z = this.station.deskFar - 0.2 / this.scale
         waiting.forEach((f, i) => {
             const x = WORKER.x + (i - (waiting.length - 1) / 2) * step
@@ -1687,6 +1708,59 @@ export class ShiftSystem extends createSystem({
         const status = Object.fromEntries(Object.keys(order.items).map((id) => [id, day.available(id) > 0 ? 'shelf' : day.inOpenCartons(id) > 0 ? 'box' : 'out']))
         const card = this.familyAtCounter?.order === order ? this.familyAtCounter.card : null
         card?.refresh({ ...this.#cardData(order), attending: true, status })
+        if (card) this.#refreshGhosts(order)
+    }
+
+    /**
+     * Over the carton of the order being attended, what it still needs: each missing unit, as a
+     * see-through copy of itself, floating in a ring that goes round. Each one goes as it is packed.
+     */
+    #refreshGhosts(order) {
+        const missing = Object.entries(order.items).flatMap(([id, q]) => Array(Math.max(0, q - (order.packed[id] ?? 0))).fill(id))
+        const key = `${order.id}:${missing.join(',')}`
+        if (key === this.ghostKey) return
+        this.ghostKey = key
+        if (!this.ghosts) {
+            this.ghosts = new THREE.Group()
+            this.ghosts.name = 'lo-que-falta'
+            this.rootObject.add(this.ghosts)
+        }
+        const ring = this.ghosts
+        for (const child of [...ring.children]) ring.remove(child)
+        ring.position.copy(this.station.kitMat).setY(this.station.kitMat.y + BOX_HEIGHT + GHOST_OVER / this.scale)
+        const radius = (missing.length > 1 ? GHOST_RADIUS : 0) / this.scale
+        missing.forEach((id, i) => {
+            const ghost = supplyObject(this.loader, this.supplies.get(id), id, 1)
+            ghost.traverse((o) => {
+                if (!o.isMesh) return
+                o.material = [o.material].flat().map((m) => {
+                    const c = m.clone()
+                    c.transparent = true
+                    c.opacity = GHOST_OPACITY
+                    c.depthWrite = false
+                    return c
+                })
+                if (o.material.length === 1) o.material = o.material[0]
+                // seen, never pointed at or picked
+                o.raycast = () => {}
+            })
+            const a = (i / missing.length) * Math.PI * 2
+            ghost.position.set(Math.cos(a) * radius, 0, Math.sin(a) * radius)
+            ghost.userData.bob = a
+            ring.add(ghost)
+        })
+    }
+
+    #turnGhosts(dt) {
+        const ring = this.ghosts
+        if (!ring) return
+        ring.visible = !!this.kit && !!this.familyAtCounter && ring.children.length > 0
+        if (!ring.visible) return
+        ring.rotation.y += dt * GHOST_TURN
+        for (const ghost of ring.children) {
+            ghost.rotation.y -= dt * GHOST_TURN * 2.2
+            ghost.position.y = (Math.sin(this.elapsed * 2 + ghost.userData.bob) * 0.015) / this.scale
+        }
     }
 
     /** It is their turn: they come up, what they ask for appears, and a new carton opens on the kit mat. */
