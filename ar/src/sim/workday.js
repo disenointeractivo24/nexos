@@ -23,26 +23,43 @@ export const SHIFT_STOCK = { rice: 2, water: 2, cans: 1, milk: 0, medicine: 1, s
 
 /** Who comes to the point. `patience`: the seconds they can wait in line. */
 export const ORDERS = [
-    { id: 'pedido-1', family: 'Familia Rodríguez', people: 4, patience: 170, items: { rice: 2, water: 2, soap: 1 }, visitors: ['npc-mayor'] },
-    { id: 'pedido-2', family: 'Familia Mosquera', people: 3, patience: 170, items: { milk: 2, cans: 1, blanket: 1 }, visitors: ['npc-joven-1', 'npc-nino-1'] },
-    { id: 'pedido-3', family: 'Familia Valencia', people: 5, patience: 150, items: { medicine: 1, hygieneKit: 1, water: 2 }, visitors: ['npc-joven-2', 'npc-nino-2'] },
-    { id: 'urgente', family: 'Clínica móvil', people: 12, patience: 80, urgent: true, items: { medicine: 2, water: 2 }, visitors: ['npc-joven-1'] },
-    { id: 'pedido-4', family: 'Familia Caicedo', people: 6, patience: 130, items: { rice: 4, cans: 1 }, visitors: ['npc-mayor', 'npc-nino-1'] },
+    { id: 'pedido-1', family: 'Familia Rodríguez', people: 4, patience: 150, items: { rice: 2, water: 2, soap: 1 }, visitors: ['npc-mayor'] },
+    { id: 'pedido-2', family: 'Familia Mosquera', people: 3, patience: 140, items: { milk: 2, cans: 1, blanket: 1 }, visitors: ['npc-joven-1', 'npc-nino-1'] },
+    { id: 'pedido-3', family: 'Familia Valencia', people: 5, patience: 130, items: { medicine: 1, hygieneKit: 1, water: 2 }, visitors: ['npc-joven-2', 'npc-nino-2'] },
+    { id: 'urgente', family: 'Clínica móvil', people: 12, patience: 70, urgent: true, items: { medicine: 2, water: 2 }, visitors: ['npc-joven-1'] },
+    { id: 'pedido-5', family: 'Familia Rentería', people: 4, patience: 120, items: { rice: 1, milk: 1, soap: 1 }, visitors: ['npc-joven-2', 'npc-nino-1'] },
+    { id: 'pedido-4', family: 'Familia Caicedo', people: 6, patience: 120, items: { rice: 4, cans: 1 }, visitors: ['npc-mayor', 'npc-nino-1'] },
+    { id: 'urgente-2', family: 'Hogar de paso', people: 15, patience: 65, urgent: true, items: { blanket: 2, water: 2, cans: 1 }, visitors: ['npc-joven-2'] },
+    { id: 'pedido-6', family: 'Familia Ospina', people: 2, patience: 110, items: { water: 1, hygieneKit: 1 }, visitors: ['npc-mayor'] },
+    { id: 'pedido-7', family: 'Familia Angulo', people: 5, patience: 110, items: { cans: 2, rice: 1, milk: 1 }, visitors: ['npc-joven-1', 'npc-nino-2'] },
+    { id: 'pedido-8', family: 'Familia Cuero', people: 3, patience: 100, items: { soap: 1, water: 2 }, visitors: ['npc-joven-2', 'npc-nino-1'] },
+    { id: 'urgente-3', family: 'Albergue La Floresta', people: 20, patience: 60, urgent: true, items: { medicine: 1, blanket: 1, rice: 2 }, visitors: ['npc-mayor'] },
+    { id: 'pedido-9', family: 'Familia Giraldo', people: 4, patience: 100, items: { milk: 1, cans: 1, hygieneKit: 1 }, visitors: ['npc-joven-1', 'npc-nino-2'] },
 ]
 
-/** When each of them comes, in seconds since the shift began. */
+/**
+ * When each of them comes, in seconds since the shift began: more and more often, so the line
+ * grows faster than one person can serve it, as on a real day of an emergency.
+ */
 export const ARRIVALS = [
-    { at: 30, id: 'pedido-1' },
-    { at: 100, id: 'pedido-2' },
-    { at: 170, id: 'pedido-3' },
-    { at: 240, id: 'urgente' },
-    { at: 300, id: 'pedido-4' },
+    { at: 20, id: 'pedido-1' },
+    { at: 55, id: 'pedido-2' },
+    { at: 85, id: 'pedido-3' },
+    { at: 110, id: 'urgente' },
+    { at: 132, id: 'pedido-5' },
+    { at: 152, id: 'pedido-4' },
+    { at: 170, id: 'urgente-2' },
+    { at: 188, id: 'pedido-6' },
+    { at: 205, id: 'pedido-7' },
+    { at: 220, id: 'pedido-8' },
+    { at: 234, id: 'urgente-3' },
+    { at: 248, id: 'pedido-9' },
 ]
 
 /** What the counter holds. */
 const MAX_BOXES = 4
 /** Seconds from one truck leaving to the next one arriving, and how many cartons each brings. */
-export const TRUCK_GAP = 40
+export const TRUCK_GAP = 30
 const FIRST_TRUCK_CARTONS = 3
 /**
  * The first time: one carton and a small order with one thing from it and one from the shelves,
@@ -50,7 +67,7 @@ const FIRST_TRUCK_CARTONS = 3
  */
 export const GUIDED = { carton: { from: 'Barrio San Fernando', items: ['rice', 'soap', 'cans'] }, order: 'pedido-1', items: { rice: 1, water: 1 }, truckAfter: 12 }
 /** Seconds the counter stays free between one person leaving and the next coming up. */
-const COUNTER_GAP = 3
+const COUNTER_GAP = 2
 
 export const categoryOf = (itemId) => SUPPLIES[itemId].category
 const clamp01 = (n) => Math.min(1, Math.max(0, n))

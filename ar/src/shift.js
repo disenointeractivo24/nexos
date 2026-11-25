@@ -1643,9 +1643,13 @@ export class ShiftSystem extends createSystem({
         // above the other signs, a little behind the table, with their bottom over the eyes
         const y = this.station.deskTop + 0.95 / this.scale
         const z = this.station.deskFar - 0.2 / this.scale
+        // four to a row; when the line grows, the next row goes above, a little further back
+        const PER_ROW = 4
         waiting.forEach((f, i) => {
-            const x = WORKER.x + (i - (waiting.length - 1) / 2) * step
-            f.card.mesh.position.set(x, y, z)
+            const row = Math.floor(i / PER_ROW)
+            const inRow = Math.min(PER_ROW, waiting.length - row * PER_ROW)
+            const x = WORKER.x + ((i % PER_ROW) - (inRow - 1) / 2) * step
+            f.card.mesh.position.set(x, y + (row * 0.27) / this.scale, z - (row * 0.12) / this.scale)
             f.card.mesh.rotation.set(0, Math.atan2(WORKER.x - x, WORKER.z + 0.4 - z) * 0.6, 0)
         })
     }

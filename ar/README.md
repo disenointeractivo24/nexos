@@ -18,6 +18,7 @@ Parte de `/ar/`, a escala de la mesa real:
 - **El estante está a tu derecha**, de lado y de frente a ti, junto al borde cercano de la mesa y 15 cm más lejos que antes, con las cajas entre la rodilla y el pecho. Si a la derecha hay una pared o un mueble, se pone a la izquierda (y te avisa). El camión y su panel siempre van del lado contrario al estante.
 - **Órdenes, no personas.** Las familias no aparecen: llegan sus órdenes como burbujas arriba, sobre la mesa, cada una con la foto de la familia (con sus caras), fotos de lo que necesita con cuántos, y el tiempo que les queda. Primero la que estás atendiendo, que lleva la cuenta de lo que ya está en su caja; luego las urgentes. No hay otro resumen del pedido.
 - **El panel de recibir está a la altura de tus ojos**, a 60 cm a tu lado, del lado del camión.
+- **Un turno más abrumador.** Llegan 12 órdenes (3 urgentes), cada vez más seguido: de una cada 35 s al principio a una cada 15 s al final, con menos paciencia. El camión vuelve cada 30 s. Las burbujas van en filas de 4; si la fila se llena, la siguiente aparece encima.
 - **Lo que falta flota sobre la caja del pedido**: cada insumo que aún falta, transparente, girando alrededor de la caja; desaparece al ponerlo.
 - **Al entregar, la caja no se mueve**: se cierra, se le pone la cinta y hace un pop hasta desaparecer.
 - **Todas las cajas tienen el mismo tamaño**, también la del pedido del tutorial.
