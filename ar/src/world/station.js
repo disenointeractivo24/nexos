@@ -294,11 +294,18 @@ const CRATE_SPOTS = [
     ['refugio', 1, 0.34],
 ]
 
+/** How far (m, in the room) the shelf stands from the end of the table. */
+const SHELF_GAP = 0.15
+/** How much the shelf turns in towards the person, from being in line with the table. */
+const SHELF_TURN = (35 * Math.PI) / 180
+
 /**
- * The model's shelf stands behind the person: it is taken from there, turned a quarter and set at
- * their right hand, its front to them, clear of the counter. Returns its new box.
+ * The model's shelf stands behind the person: it is taken from there and set past the end of the
+ * table on their right: it starts where the table ends, its front in line with the table's near
+ * edge, and turns a little in towards the person, its front to them. Returns its new box.
+ * `deskEnd` is where the table ends on that side, in the root's units.
  */
-function shelfBeside(root, tent, nearZ, side = 1, worldScale = 1) {
+function shelfBeside(root, tent, nearZ, side = 1, worldScale = 1, deskEnd = 0.55) {
     root.updateMatrixWorld(true)
     const meshes = []
     tent.traverse((o) => {
@@ -316,18 +323,33 @@ function shelfBeside(root, tent, nearZ, side = 1, worldScale = 1) {
     for (const m of meshes) pivot.attach(m)
     const width = box.max.x - box.min.x
     const depth = box.max.z - box.min.z
-    // its front faced -Z (the person, in front of it); now it faces them from their side
-    pivot.rotation.y += (side * Math.PI) / 2
-    // shorter than modelled, so every crate is within arm's reach
     // as tall in the room as SHELF_SIZE says, whatever the point's scale
     const k = SHELF_SIZE / worldScale
     pivot.scale.setScalar(k)
-    // its front a step from the person, starting where the table ends
-    pivot.position.set(WORKER.x + side * (0.55 + (k * depth) / 2), 0, nearZ + 0.08 + (k * width) / 2)
+    // its front faced -Z: turned around to face the person, and a little in towards them
+    const gap = SHELF_GAP / worldScale
+    const a = SHELF_TURN
+    pivot.rotation.y = Math.PI - side * a
+    // from the end of the table outwards (and a little towards the person), its back away from them
+    const along = new THREE.Vector3(side * Math.cos(a), 0, Math.sin(a))
+    const back = new THREE.Vector3(side * Math.sin(a), 0, -Math.cos(a))
+    const start = new THREE.Vector3(deskEnd + side * gap, 0, nearZ)
+    pivot.position.copy(start).addScaledVector(along, (k * width) / 2).addScaledVector(back, (k * depth) / 2)
     pivot.updateMatrixWorld(true)
-    const moved = new THREE.Box3()
-    for (const m of meshes) moved.expandByObject(m)
-    return { box: moved.applyMatrix4(toRoot), pivot }
+    const boxOfMeshes = () => {
+        const b = new THREE.Box3()
+        for (const m of meshes) b.expandByObject(m)
+        return b.applyMatrix4(toRoot)
+    }
+    // turned, a corner may reach back over the table: it steps out until it starts where the table ends
+    let moved = boxOfMeshes()
+    const over = side > 0 ? deskEnd + gap - moved.min.x : moved.max.x - (deskEnd - gap)
+    if (over > 0) {
+        pivot.position.x += side * over
+        pivot.updateMatrixWorld(true)
+        moved = boxOfMeshes()
+    }
+    return { box: moved, pivot }
 }
 
 /**
@@ -342,12 +364,12 @@ export function buildStation(root, loader, stand, { table = null, shelfSide = 1,
     root.add(tent)
     station.tent = tent
     const nearEdge = modelDesk.max.z
-    const { box: shelf, pivot } = shelfBeside(root, tent, nearEdge, shelfSide, worldScale)
+    const t = table ?? { width: modelDesk.max.x - modelDesk.min.x, depth: modelDesk.max.z - modelDesk.min.z, top: modelDesk.max.y }
+    const { box: shelf, pivot } = shelfBeside(root, tent, nearEdge, shelfSide, worldScale, WORKER.x + (shelfSide * t.width) / 2)
     station.shelfSide = shelfSide
     // the tent itself is not shown: the real room is, so its depth is not lost. Only the shelf
     // (taken out of it) and a table of the real one's size and height remain.
     tent.visible = false
-    const t = table ?? { width: modelDesk.max.x - modelDesk.min.x, depth: modelDesk.max.z - modelDesk.min.z, top: modelDesk.max.y }
     const desk = new THREE.Box3(new THREE.Vector3(WORKER.x - t.width / 2, 0, nearEdge - t.depth), new THREE.Vector3(WORKER.x + t.width / 2, t.top, nearEdge))
     station.desk = deskMesh(desk)
     root.add(station.desk)

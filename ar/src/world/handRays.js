@@ -1,8 +1,9 @@
 import * as THREE from 'three'
 
 /**
- * A ray from each hand (or controller), always shown, not only over a button: a line to where it
- * points and a target where it meets a surface. Also whether each hand is pinching, and where.
+ * A ray from each hand (or controller): a line to where it points and a target where it meets a
+ * surface. With `only` set, a hand's ray shows only when it says so: it returns how long the line
+ * is (it points at something), or null (hidden). Also whether each hand is pinching, and where.
  * Everything in scene coordinates (the reference space through the player's matrix).
  *
  * Surfaces are rectangles: { center: Vector3, ax, az: Vector3 (unit, horizontal), ex, ez, top }.
@@ -49,6 +50,7 @@ export class HandRays {
         this.scene = scene
         this.hands = {}
         this.visible = true
+        this.only = null
     }
 
     #hand(side) {
@@ -101,14 +103,15 @@ export class HandRays {
                 if (hit && (!best || hit.t < best.t)) best = { ...hit, surface: r }
             }
             h.hit = best
-            const length = best ? best.t : MAX_LENGTH
+            const wanted = this.only ? this.only(side, h) : best ? best.t : MAX_LENGTH
+            const length = this.only ? wanted ?? 0 : wanted
             const pos = h.line.geometry.attributes.position
             pos.setXYZ(0, h.origin.x, h.origin.y, h.origin.z)
             pos.setXYZ(1, h.origin.x + h.dir.x * length, h.origin.y + h.dir.y * length, h.origin.z + h.dir.z * length)
             pos.needsUpdate = true
             h.line.geometry.computeBoundingSphere()
-            h.line.visible = this.visible
-            h.target.visible = this.visible && !!best
+            h.line.visible = this.visible && wanted != null
+            h.target.visible = this.visible && !!best && wanted === best.t
             if (best) h.target.position.copy(best.point).setY(best.point.y + 0.002)
         }
         for (const h of Object.values(this.hands)) {

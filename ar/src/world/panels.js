@@ -472,71 +472,6 @@ export function nextPanel() {
     })
 }
 
-/** A person's order at the counter: what they asked for, what is in the kit, what is left to take. */
-export function orderCard() {
-    const HEADER = 170
-    const ROW = 104
-    const FOOTER = 124
-    return new Panel(
-        0.44,
-        0.3,
-        (ctx, w, h, d) => {
-            if (!d) return
-            const { order, status } = d
-            fillRR(ctx, 2, 2, w - 4, h - 4, 48, '#FFFFFF')
-            rr(ctx, 2, 2, w - 4, HEADER, [48, 48, 0, 0])
-            ctx.fillStyle = order.urgent ? BRAND.redText : BRAND.navy
-            ctx.fill()
-            ctx.textBaseline = 'alphabetic'
-            ctx.fillStyle = 'rgba(255,255,255,0.78)'
-            ctx.font = `800 32px ${FONT}`
-            ctx.fillText(order.urgent ? 'PEDIDO URGENTE' : 'PEDIDO', 52, 62)
-            ctx.fillStyle = '#FFFFFF'
-            ctx.font = `800 58px ${FONT}`
-            ctx.fillText(order.family, 52, 128)
-            ctx.textAlign = 'right'
-            ctx.font = `700 38px ${FONT}`
-            ctx.fillStyle = 'rgba(255,255,255,0.85)'
-            ctx.fillText(`${order.people} personas`, w - 52, 128)
-            ctx.textAlign = 'start'
-            Object.entries(order.items).forEach(([id, qty], i) => {
-                const y = HEADER + 62 + i * ROW
-                const have = order.packed[id] ?? 0
-                const done = have >= qty
-                const out = !done && status[id] === 'out'
-                const inBox = !done && status[id] === 'box'
-                if (done) badge(ctx, 84, y, 30, 'check', BRAND.greenInk, '#FFFFFF')
-                else {
-                    ctx.beginPath()
-                    ctx.arc(84, y, 28, 0, Math.PI * 2)
-                    ctx.lineWidth = 6
-                    ctx.strokeStyle = out ? BRAND.redText : inBox ? BRAND.amber : 'rgba(1,30,65,0.28)'
-                    ctx.stroke()
-                }
-                ctx.textBaseline = 'middle'
-                ctx.fillStyle = done ? BRAND.greenInk : BRAND.navy
-                ctx.font = `700 48px ${FONT}`
-                ctx.fillText(SUPPLIES[id].label, 136, y + 2)
-                ctx.textAlign = 'right'
-                ctx.fillStyle = out ? BRAND.redText : inBox ? BRAND.amberInk : done ? BRAND.greenInk : BRAND.muted
-                ctx.font = `800 44px ${FONT}`
-                ctx.fillText(`${have} de ${qty}${out ? ' · agotado' : inBox ? ' · en la caja' : ''}`, w - 52, y + 2)
-                ctx.textAlign = 'start'
-            })
-            // the one thing to do about all this, and how long they can wait for it
-            const y = h - FOOTER
-            ctx.textBaseline = 'middle'
-            ctx.fillStyle = BRAND.navy
-            ctx.font = `800 46px ${FONT}`
-            ctx.fillText('Pon cada insumo en la caja de abajo', 52, y + 34)
-            const bar = w - 104
-            fillRR(ctx, 52, y + 72, bar, 20, 10, BRAND.line)
-            fillRR(ctx, 52, y + 72, Math.max(20, bar * d.left), 20, 10, d.left < 0.35 ? BRAND.redText : d.left < 0.65 ? BRAND.amber : BRAND.greenInk)
-        },
-        { measure: (ctx, w, d) => (d ? HEADER + 24 + Object.keys(d.order.items).length * ROW + FOOTER : 300) }
-    )
-}
-
 /** Over the heads of whoever is in line: who they are and how long they can still wait. They come up by themselves. */
 export function familyCard() {
     const p = new Panel(0.42, 0.17, (ctx, w, h, d) => {
@@ -563,49 +498,81 @@ export function familyCard() {
 }
 
 /**
- * An order as it arrives: the family's photo, their name, what they need as photos of the things
- * with how many, and the time left. Packed things get a check.
+ * An order, as a bubble up high: the family's photo in a circle, their name, what they need as
+ * photos of the things with how many, and the time left. The one being attended says so and keeps
+ * count of what is already in its carton, and of what is not to be had: it is the order's only sign.
  */
 export function orderPhotoCard() {
+    const TAIL = 70
     return new Panel(0.5, 0.3, (ctx, w, h, d) => {
         if (!d) return
+        const body = h - TAIL
+        const fill = d.attending ? '#FFFFFF' : d.urgent ? '#FFF1F1' : '#FFFFFF'
+        const edge = d.urgent ? BRAND.redText : d.attending ? '#1F8A4C' : BRAND.navy
+        // the bubble and its tail, pointing down to the table
+        ctx.beginPath()
+        ctx.moveTo(w / 2 - 54, body - 10)
+        ctx.lineTo(w / 2, h - 6)
+        ctx.lineTo(w / 2 + 54, body - 10)
+        ctx.closePath()
+        ctx.fillStyle = edge
+        ctx.fill()
+        fillRR(ctx, 4, 4, w - 8, body - 8, 90, edge)
+        fillRR(ctx, d.attending ? 18 : 12, d.attending ? 18 : 12, w - (d.attending ? 36 : 24), body - (d.attending ? 36 : 24), d.attending ? 76 : 82, fill)
+        // the photo, round
+        const r = 170
+        const cx = 50 + r
+        const cy = 50 + r
+        ctx.save()
+        ctx.beginPath()
+        ctx.arc(cx, cy, r, 0, Math.PI * 2)
+        ctx.fillStyle = '#E9EEF4'
+        ctx.fill()
+        ctx.clip()
         const photo = THUMBS.family.get(d.id)
-        fillRR(ctx, 2, 2, w - 4, h - 4, 44, d.urgent ? '#FFF1F1' : '#FFFFFF')
-        ctx.lineWidth = 8
-        ctx.strokeStyle = d.urgent ? BRAND.redText : BRAND.navy
-        rr(ctx, 6, 6, w - 12, h - 12, 40)
+        if (photo) ctx.drawImage(photo, cx - r, cy - r, r * 2, r * 2)
+        ctx.restore()
+        ctx.beginPath()
+        ctx.arc(cx, cy, r, 0, Math.PI * 2)
+        ctx.lineWidth = 6
+        ctx.strokeStyle = edge
         ctx.stroke()
-        const ph = h - 150
-        fillRR(ctx, 30, 30, ph, ph, 30, '#E9EEF4')
-        if (photo) ctx.drawImage(photo, 30, 30, ph, ph)
-        const x0 = ph + 60
-        ctx.fillStyle = d.urgent ? BRAND.redText : BRAND.navy
+        const x0 = cx + r + 34
+        ctx.fillStyle = d.urgent ? BRAND.redText : d.attending ? BRAND.greenInk : BRAND.navy
         ctx.textBaseline = 'alphabetic'
         ctx.font = `800 34px ${FONT}`
-        ctx.fillText(d.urgent ? 'ORDEN URGENTE' : 'ORDEN', x0, 74)
+        ctx.fillText(d.attending ? (d.urgent ? 'ATENDIENDO · URGENTE' : 'ATENDIENDO') : d.urgent ? 'ORDEN URGENTE' : 'ORDEN', x0, 82)
         let size = 60
         ctx.font = `800 ${size}px ${FONT}`
-        while (ctx.measureText(d.family).width > w - x0 - 30) ctx.font = `800 ${(size -= 2)}px ${FONT}`
-        ctx.fillText(d.family, x0, 140)
+        while (ctx.measureText(d.family).width > w - x0 - 50) ctx.font = `800 ${(size -= 2)}px ${FONT}`
+        ctx.fillStyle = BRAND.navy
+        ctx.fillText(d.family, x0, 148)
         const items = Object.entries(d.items)
-        const cell = Math.min(210, (w - x0 - 30) / Math.max(1, items.length))
+        const cell = Math.min(240, (w - x0 - 50) / Math.max(1, items.length))
         items.forEach(([id, qty], i) => {
             const x = x0 + i * cell
-            const y = 170
-            fillRR(ctx, x, y, cell - 16, cell - 16, 20, '#F2F4F7')
+            const y = 176
+            const have = d.packed?.[id] ?? 0
+            const done = have >= qty
+            const out = !done && d.status?.[id] === 'out'
+            fillRR(ctx, x, y, cell - 16, cell - 16, 20, done ? BRAND.greenSoft : out ? BRAND.redSoft : '#F2F4F7')
             const img = THUMBS.item.get(id)
             if (img) ctx.drawImage(img, x + 4, y + 4, cell - 24, cell - 24)
-            const have = d.packed?.[id] ?? 0
             ctx.font = `800 40px ${FONT}`
-            ctx.fillStyle = BRAND.navy
-            ctx.fillText(`×${qty}`, x + 6, y + cell + 30)
-            if (have >= qty) badge(ctx, x + cell - 36, y + 20, 22, 'check', BRAND.greenInk, '#FFFFFF')
+            ctx.fillStyle = out ? BRAND.redText : done ? BRAND.greenInk : BRAND.navy
+            ctx.fillText(d.attending ? `${have}/${qty}` : `×${qty}`, x + 6, y + cell + 30)
+            if (out) {
+                ctx.font = `800 28px ${FONT}`
+                ctx.fillText('agotado', x + 6, y + cell + 64)
+            }
+            if (done) badge(ctx, x + cell - 36, y + 20, 22, 'check', BRAND.greenInk, '#FFFFFF')
         })
-        const bx = 30
-        const by = h - 80
-        const bar = w - 60
-        fillRR(ctx, bx, by, bar, 40, 20, BRAND.line)
-        fillRR(ctx, bx, by, Math.max(40, bar * d.left), 40, 20, d.left < 0.35 ? BRAND.redText : d.left < 0.65 ? BRAND.amber : BRAND.greenInk)
+        // the time left, as a bar: its length says it, the colour only backs it up
+        const bx = 60
+        const by = body - 76
+        const bar = w - 120
+        fillRR(ctx, bx, by, bar, 34, 17, BRAND.line)
+        fillRR(ctx, bx, by, Math.max(34, bar * d.left), 34, 17, d.left < 0.35 ? BRAND.redText : d.left < 0.65 ? BRAND.amber : BRAND.greenInk)
     })
 }
 

@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { GuideFace } from '../../../src/three/guideFace.js'
 import { supplyObject } from './station.js'
 import { THUMBS } from './thumbStore.js'
 
@@ -63,6 +64,16 @@ export function takeThumbs({ loader, people, supplies, orders }) {
             for (const id of order.visitors) {
                 const t = people.get(id)
                 const o = loader.instanceSync(t)
+                // with the same face they have in the shift, looking at the camera
+                try {
+                    const face = GuideFace.attach(o, o.getObjectByName('head'))
+                    if (face) {
+                        face.setMood('happy')
+                        face.update(1)
+                    }
+                } catch (err) {
+                    console.warn('[ar2] no face for the photo of', id, err)
+                }
                 const k = id.includes('nino') ? 0.76 : 1
                 o.scale.multiplyScalar(k)
                 const w = (t.size?.x ?? 0.5) * k

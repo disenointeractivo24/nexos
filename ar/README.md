@@ -15,8 +15,10 @@ Parte de `/ar/`, a escala de la mesa real:
 
 - **Colocar la mesa, en dos gestos.** (1) Cada mano tiene siempre un rayo con una diana donde toca una superficie; apunta a tu mesa: la superficie que el visor detectó se marca con una sombra semitransparente; pellizca para elegirla. La sombra queda fija y anclada a la mesa y los rayos desaparecen. (2) Pellizca con las dos manos en el borde de la mesa y sepáralas: el área gris se dibuja mientras las mueves, tan ancha como la separación (mínimo 35 cm) y hacia atrás hasta donde llega la mesa. Al soltar, la mesa virtual del punto de acopio se crea dentro de esa área, a la altura de la superficie, y todo se escala a su ancho.
 - **Se ve tu cuarto.** La carpa no se muestra, así no se pierde la profundidad del espacio. El camión es mucho más pequeño.
-- **El estante está a tu derecha y a la mano**, pegado al extremo de la mesa, con las cajas entre la rodilla y el pecho. Si a la derecha hay una pared o un mueble, se pone a la izquierda (y te avisa). El camión y su panel siempre van del lado contrario al estante.
-- **Órdenes, no personas.** Las familias no aparecen: llegan sus órdenes, en fila sobre la mesa, cada una con una foto de la familia, fotos de lo que necesita con cuántos, y el tiempo que les queda (la urgente primero).
+- **El estante está a tu derecha**, empezando donde termina la mesa (a 15 cm de su borde), alineado con su borde cercano y girado un poco hacia ti, con las cajas entre la rodilla y el pecho. Si a la derecha hay una pared o un mueble, se pone a la izquierda (y te avisa). El camión y su panel siempre van del lado contrario al estante.
+- **Órdenes, no personas.** Las familias no aparecen: llegan sus órdenes como burbujas arriba, sobre la mesa, cada una con la foto de la familia (con sus caras), fotos de lo que necesita con cuántos, y el tiempo que les queda. Primero la que estás atendiendo, que lleva la cuenta de lo que ya está en su caja; luego las urgentes. No hay otro resumen del pedido.
+- **El panel de recibir está a la altura de tus ojos**, a tu lado, del lado del camión.
+- **Los rayos de las manos solo aparecen cuando hacen falta**: al elegir la mesa, y después solo cuando apuntas a un botón o a algo que puedes tomar.
 - Sin mesa en el escaneo, usa una virtual del tamaño de una mesa común y la coloca donde no choque con paredes ni muebles. Conviene haber escaneado el cuarto en las gafas (Ajustes › Espacio físico).
 
 ## Sin visor

@@ -16,7 +16,7 @@ import { Sound } from './sound.js'
 import { Atmosphere } from './world/atmosphere.js'
 import { DesktopView } from './world/desktopView.js'
 import { Glow } from './world/glow.js'
-import { bigBoard, buttonPanel, familyCard, orderPhotoCard, fontsReady, messageBoard, nextPanel, orderCard, receivePanel, speechBubble, taskList } from './world/panels.js'
+import { bigBoard, buttonPanel, orderPhotoCard, fontsReady, messageBoard, nextPanel, receivePanel, speechBubble, taskList } from './world/panels.js'
 import { buildStation, cardboardBox, cartonLayout, crateLayout, hangFromRoof, preloadSupplies, supplyObject, WORKER } from './world/station.js'
 import { Temper } from './world/temper.js'
 import { buildTruck } from './world/truck.js'
@@ -49,12 +49,17 @@ const TRUCK_IN_SECONDS = 4.5
 const TRUCK_OUT_SECONDS = 4
 /** How far from the person, to their left, the panel of the truck floats. */
 const RECEIVE_REACH = 1
+/** How far under the eyes (m) the panel's middle is: right in the view, without looking up. */
+const RECEIVE_BELOW_EYES = 0.05
 /** What someone being carried on a computer floats at, from the eyes. */
 const HOLD_DISTANCE = 0.72
 /** How close, on screen, the pointer must be to count as over something it was let go on. */
 const DROP_NEAR = 0.2
 /** The same, for a ray in the headset: how far from it, in metres. */
 const RAY_NEAR = 0.24
+/** How far a hand's ray reaches (m), and how often what it points at is looked for (s). */
+const RAY_LENGTH = 3
+const RAY_LOOK = 0.12
 /** How long a message stays up before a lesser one can take its place, and how long an alert does. */
 const MESSAGE_HOLD = 2.5
 const ALERT_HOLD = 7
@@ -144,9 +149,12 @@ export class ShiftSystem extends createSystem({
 
     update(delta) {
         this.elapsed += delta
-        // the hands' rays, always on in the headset (see handRays.js)
+        // the hands' rays (see handRays.js): while choosing the table, and then only towards what can be pressed or taken
         if (this.world.session) {
-            this.rays ??= new HandRays(this.world.scene)
+            if (!this.rays) {
+                this.rays = new HandRays(this.world.scene)
+                this.rays.only = (side, h) => this.#rayWanted(side, h)
+            }
             if (this.elapsed - (this.rectsAt ?? -9) > 0.5) {
                 this.rectsAt = this.elapsed
                 this.rects = this.#surfaceRects()
@@ -185,6 +193,34 @@ export class ShiftSystem extends createSystem({
             this.signClock = 0
             this.#refreshSigns()
         }
+    }
+
+    /**
+     * Once the point is up, a hand's ray shows only while it points at a button or at something it
+     * can take (or holds it), and only as long as that. Looked for a few times a second, not every frame.
+     */
+    #rayWanted(side, h) {
+        if (this.placing && !this.placed) return h.hit ? h.hit.t : RAY_LENGTH
+        if (!this.placed) return null
+        const seen = (this.rayLook ??= {})
+        const last = seen[side]
+        if (last && this.elapsed - last.at < RAY_LOOK) return last.length
+        let length = null
+        const targets = []
+        for (const t of this.things.values()) {
+            if (!t.object.visible || t.object.pointerEvents === 'none') continue
+            if (BUTTONS.has(t.kind) || t.kind === 'box' || t.kind === 'item' || t.kind === 'stock') targets.push(t.object)
+        }
+        this.raycaster.ray.origin.copy(h.origin)
+        this.raycaster.ray.direction.copy(h.dir)
+        this.raycaster.far = RAY_LENGTH
+        const hit = this.raycaster.intersectObjects(targets, true)[0]
+        this.raycaster.far = Infinity
+        if (hit) length = hit.distance
+        // while carrying, the ray stays, to aim where it lands
+        else if (this.queries.held.entities.size || this.queries.held.entities.length) length = h.pinching ? RAY_LENGTH * 0.4 : null
+        seen[side] = { at: this.elapsed, length }
+        return length
     }
 
     /** One group of signs at a time: all of them together would be a stumble, once a second. */
@@ -406,6 +442,8 @@ export class ShiftSystem extends createSystem({
     #place(at, yaw, head = null, gaze = null, area = null) {
         this.placed = true
         const floorY = head ? this.#floorY() : 0
+        // the person's eyes over the floor, for what has to be at their height
+        this.eyeHeight = head ? THREE.MathUtils.clamp(head.y - floorY, 1.1, 2.0) : 1.6
         const real = area ?? (head ? this.#realTable(head, gaze) : null)
         const width = real?.width ?? 1.2
         const depth = real?.depth ?? 0.6
@@ -588,12 +626,6 @@ export class ShiftSystem extends createSystem({
         this.message.mesh.rotation.y = 0.26
         hangFromRoof(this.message, top + 0.88)
         root.add(this.message.mesh)
-        this.order = orderCard()
-        this.order.mesh.position.set(x + 0.76, 0, far)
-        this.order.mesh.rotation.y = -0.26
-        hangFromRoof(this.order, top + 0.88)
-        this.order.mesh.visible = false
-        root.add(this.order.mesh)
         this.big = bigBoard()
         this.big.mesh.position.set(x, 0, far)
         this.big.mesh.visible = false
@@ -604,7 +636,8 @@ export class ShiftSystem extends createSystem({
         this.#thing(this.receive.mesh, { kind: 'receive' }, { grab: false })
         // on the truck's side, which is always the side opposite the shelf
         const t = this.#truckSide()
-        this.receive.mesh.position.set(x + t * RECEIVE_REACH, 1.3, WORKER.z)
+        // at the height of the person's eyes, whatever the point's scale
+        this.receive.mesh.position.set(x + t * RECEIVE_REACH, (this.eyeHeight - RECEIVE_BELOW_EYES) / this.scale, WORKER.z)
         this.receive.mesh.rotation.y = (-t * Math.PI) / 2
         this.#setActive(this.receive.mesh, false)
         this.truck = buildTruck()
@@ -881,7 +914,6 @@ export class ShiftSystem extends createSystem({
         this.marked = null
         this.sayQueue = []
         this.sayUntil = 0
-        this.order.mesh.visible = false
         this.ending = false
         this.day = new Workday({ store: this.store })
         this.day.on((event, detail) => this.#onDay(event, detail))
@@ -1547,18 +1579,23 @@ export class ShiftSystem extends createSystem({
         this.familyAtCounter = null
         this.kit.entity.destroy()
         this.kit = null
-        this.order.mesh.visible = false
         f.slot = this.#freeSlot()
-        this.#giveCard(f)
+        if (f.card) f.card.refresh(this.#cardData(f.order))
+        else this.#giveCard(f)
+        this.#followCards()
         this.#walkTo(f.leader, f.slot.x, f.slot.z, () => (f.leader.targetYaw = 0))
     }
 
-    /** The orders waiting, in a row over the far edge of the table, the urgent first; turned to the person. */
+    /**
+     * The orders, as bubbles in a row up high over the far edge of the table: the one being
+     * attended first, then the urgent; turned to the person.
+     */
     #followCards() {
-        const waiting = [...this.families.values()].filter((f) => f.card).sort((a, b) => (b.order.urgent ? 1 : 0) - (a.order.urgent ? 1 : 0))
+        const rank = (f) => (f === this.familyAtCounter ? 2 : f.order.urgent ? 1 : 0)
+        const waiting = [...this.families.values()].filter((f) => f.card).sort((a, b) => rank(b) - rank(a))
         const step = 0.37 / this.scale
-        // above the other signs, a little behind the table
-        const y = this.station.deskTop + 0.78 / this.scale
+        // above the other signs, a little behind the table, with their bottom over the eyes
+        const y = this.station.deskTop + 0.92 / this.scale
         const z = this.station.deskFar - 0.2 / this.scale
         waiting.forEach((f, i) => {
             const x = WORKER.x + (i - (waiting.length - 1) / 2) * step
@@ -1648,8 +1685,8 @@ export class ShiftSystem extends createSystem({
     #refreshOrder(order) {
         const { day } = this
         const status = Object.fromEntries(Object.keys(order.items).map((id) => [id, day.available(id) > 0 ? 'shelf' : day.inOpenCartons(id) > 0 ? 'box' : 'out']))
-        const { family, people, urgent, items, packed } = order
-        this.order.refresh({ order: { family, people, urgent, items, packed }, status, left: barStep(1 - order.waited / order.patience) })
+        const card = this.familyAtCounter?.order === order ? this.familyAtCounter.card : null
+        card?.refresh({ ...this.#cardData(order), attending: true, status })
     }
 
     /** It is their turn: they come up, what they ask for appears, and a new carton opens on the kit mat. */
@@ -1657,7 +1694,8 @@ export class ShiftSystem extends createSystem({
         const f = this.families.get(order.id)
         f.slot = null
         this.familyAtCounter = f
-        this.#removeCard(f)
+        if (!f.card) this.#giveCard(f)
+        this.#followCards()
         this.#walkTo(f.leader, WORKER.x, COUNTER_Z, () => (f.leader.targetYaw = 0))
 
         const kitObject = cardboardBox(KIT_TAPE)
@@ -1670,8 +1708,8 @@ export class ShiftSystem extends createSystem({
         const units = Object.entries(order.items).flatMap(([id, q]) => Array(q).fill(id))
         this.kit = { entity, object: kitObject, layout: cartonLayout(this.supplies, units), used: new Set() }
         this.#refreshOrder(order)
-        this.order.mesh.visible = true
-        gsap.fromTo(this.order.mesh.scale, { x: 0.86, y: 0.86 }, { x: 1, y: 1, duration: 0.4, ease: 'back.out(2.4)' })
+        const k = f.card.base
+        gsap.fromTo(f.card.mesh.scale, { x: k * 0.86, y: k * 0.86 }, { x: k, y: k, duration: 0.4, ease: 'back.out(2.4)' })
         this.sound.play('radio')
         this.#say(order.urgent ? 'alert' : 'radio', `Atiende la orden de ${order.family}: busca lo que pide en el estante o en las cajas que abras, y ponlo en la caja de «Arma el pedido».`)
         this.#refreshAction()
@@ -1706,7 +1744,7 @@ export class ShiftSystem extends createSystem({
             },
         })
         this.kit = null
-        this.order.mesh.visible = false
+        this.#removeCard(f)
         this.sound.play('done')
         const short = Object.entries(order.short ?? {})
         // how it went is how they leave: only someone who got it all goes away glad
@@ -1729,7 +1767,6 @@ export class ShiftSystem extends createSystem({
             this.familyAtCounter = null
             this.kit.entity.destroy()
             this.kit = null
-            this.order.mesh.visible = false
         }
         this.#sendAway(f, f.leader.position.x, ENTRY_Z)
         this.sound.play('wrong')
