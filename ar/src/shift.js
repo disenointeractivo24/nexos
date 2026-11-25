@@ -40,9 +40,8 @@ const ENTRY_Z = -7
 /** Over the heads, and above the signs that hang in front of them. */
 const CARD_Y = 2.02
 const WALK_SPEED = 1.5
-/** The truck stops just outside the tent, on the side opposite the shelf, and drives along that side: half the tent's width (m, as modelled) and this much more. */
-const TENT_HALF_WIDTH = 2.55
-const TRUCK_OUTSIDE = 0.35
+/** How far (m) from the person the truck stops, on the side opposite the shelf, just behind the panel that receives it. */
+const TRUCK_REACH = 1.2
 const TRUCK_PARK_Z = WORKER.z + 0.2
 const TRUCK_FROM_Z = -18
 const TRUCK_TO_Z = 18
@@ -1651,10 +1650,9 @@ export class ShiftSystem extends createSystem({
         })
     }
 
-    /** Where the truck drives, in the point's units: just outside the tent, whatever its size. */
+    /** Where the truck drives, in the point's units: close by, just behind the panel, whatever the point's scale. */
     #truckX() {
-        const half = (TENT_HALF_WIDTH * (this.station.tentScale ?? 1) + TRUCK_OUTSIDE) / this.scale
-        return WORKER.x + this.#truckSide() * half
+        return WORKER.x + (this.#truckSide() * TRUCK_REACH) / this.scale
     }
 
         /** -1 left, 1 right: the truck comes along the side the shelf is not on. */
