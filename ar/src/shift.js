@@ -1837,7 +1837,13 @@ export class ShiftSystem extends createSystem({
         const { kit } = this
         // handed over where it is: it does not move, it closes, is taped, and pops out
         const { flaps, seal } = kit.object.userData
-        for (const hinge of flaps) gsap.to(hinge.rotation, { x: 0, duration: 0.4, ease: 'power2.inOut' })
+        // what is in it settles down inside first, so nothing pokes through the flaps as they close
+        for (const item of kit.object.children) {
+            if (!item.name?.startsWith('insumo:')) continue
+            gsap.to(item.scale, { x: 0.01, y: 0.01, z: 0.01, duration: 0.3, ease: 'power2.in' })
+            gsap.to(item.position, { y: item.position.y - 0.08, duration: 0.3, ease: 'power2.in', onComplete: () => (item.visible = false) })
+        }
+        for (const hinge of flaps) gsap.to(hinge.rotation, { x: 0, delay: 0.15, duration: 0.4, ease: 'power2.inOut' })
         const fading = []
         kit.object.traverse((o) => {
             if (!o.isMesh) return
@@ -1850,18 +1856,18 @@ export class ShiftSystem extends createSystem({
             })
             if (o.material.length === 1) o.material = o.material[0]
         })
-        gsap.delayedCall(0.4, () => {
+        gsap.delayedCall(0.55, () => {
             seal.visible = true
             this.sound.play('tape', this.#worldOf(kit.object))
         })
         // then it pops out: a quick swell, and gone, shrinking as it fades
         const scale = kit.object.scale
-        gsap.to(scale, { x: 1.18, y: 1.18, z: 1.18, delay: 0.7, duration: 0.14, ease: 'power2.out' })
-        gsap.to(scale, { x: 0.01, y: 0.01, z: 0.01, delay: 0.84, duration: 0.26, ease: 'back.in(2)' })
+        gsap.to(scale, { x: 1.18, y: 1.18, z: 1.18, delay: 0.8, duration: 0.14, ease: 'power2.out' })
+        gsap.to(scale, { x: 0.01, y: 0.01, z: 0.01, delay: 0.94, duration: 0.26, ease: 'back.in(2)' })
         const fade = { k: 1 }
         gsap.to(fade, {
             k: 0,
-            delay: 0.84,
+            delay: 0.94,
             duration: 0.26,
             ease: 'power1.in',
             onUpdate: () => {
