@@ -32,6 +32,8 @@ const FLOOR_OPACITY = 0.42
 
 /** Underside of the tent's roof above its floor, measured. */
 const ROOF_Y = 2.65
+/** How much room (m) the tent's roof leaves over the person's eyes, at the least. */
+const TENT_HEADROOM = 0.55
 
 /** The person stands between the counter and the shelves, facing the counter (-Z). */
 export const WORKER = new THREE.Vector3(0.05, 0, -0.55)
@@ -67,6 +69,8 @@ function tentOf(loader, template) {
             }
         }
         if (/techo|bombilla/i.test(materialName(o))) o.userData.roof = true
+        // its own desk and stacked cartons: the person's table and the shelf take their place
+        if (/escritorio|cajas/i.test(materialName(o))) o.visible = false
     })
     return { tent, desk: boxOf(/escritorio/i), shelf: boxOf(/estanteria/i) }
 }
@@ -340,7 +344,7 @@ function shelfBeside(root, tent, nearZ, side = 1, worldScale = 1) {
  * (families on its far side): where the truck's cartons land on its left, then the mat where
  * a carton is opened, the button, and the mat where a kit is packed. The shelves are to the right.
  */
-export function buildStation(root, loader, stand, { table = null, shelfSide = 1, worldScale = 1 } = {}) {
+export function buildStation(root, loader, stand, { table = null, shelfSide = 1, worldScale = 1, eyeHeight = 1.6 } = {}) {
     const station = { root, zones: [] }
     const { tent, desk: modelDesk } = tentOf(loader, stand)
     root.add(tent)
@@ -349,9 +353,20 @@ export function buildStation(root, loader, stand, { table = null, shelfSide = 1,
     const t = table ?? { width: modelDesk.max.x - modelDesk.min.x, depth: modelDesk.max.z - modelDesk.min.z, top: modelDesk.max.y }
     const { box: shelf, pivot } = shelfBeside(root, tent, nearEdge, shelfSide, worldScale)
     station.shelfSide = shelfSide
-    // the tent itself is not shown: the real room is, so its depth is not lost. Only the shelf
-    // (taken out of it) and a table of the real one's size and height remain.
-    tent.visible = false
+    // the tent around the person: as much larger than the table as it was modelled, and always
+    // tall enough to stand in. It grows from the middle of the table's near edge, so the table
+    // stays where it is and the person stays inside, between the counter and the back.
+    const modelWidth = modelDesk.max.x - modelDesk.min.x
+    const real = Math.max((t.width * worldScale) / modelWidth, (eyeHeight + TENT_HEADROOM) / ROOF_Y)
+    const holder = new THREE.Group()
+    holder.name = 'carpa'
+    holder.position.set(WORKER.x, 0, nearEdge)
+    holder.scale.setScalar(real / worldScale)
+    tent.position.x -= WORKER.x
+    tent.position.z -= nearEdge
+    holder.add(tent)
+    root.add(holder)
+    station.tentScale = real
     const desk = new THREE.Box3(new THREE.Vector3(WORKER.x - t.width / 2, 0, nearEdge - t.depth), new THREE.Vector3(WORKER.x + t.width / 2, t.top, nearEdge))
     station.desk = deskMesh(desk)
     root.add(station.desk)

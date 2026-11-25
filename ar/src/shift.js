@@ -40,8 +40,9 @@ const ENTRY_Z = -7
 /** Over the heads, and above the signs that hang in front of them. */
 const CARD_Y = 2.02
 const WALK_SPEED = 1.5
-/** The truck stops just outside the tent, at the person's left, and drives along that side. */
-const TRUCK_X = -2.6
+/** The truck stops just outside the tent, on the side opposite the shelf, and drives along that side: half the tent's width (m, as modelled) and this much more. */
+const TENT_HALF_WIDTH = 2.55
+const TRUCK_OUTSIDE = 0.35
 const TRUCK_PARK_Z = WORKER.z + 0.2
 const TRUCK_FROM_Z = -18
 const TRUCK_TO_Z = 18
@@ -466,7 +467,7 @@ export class ShiftSystem extends createSystem({
         const build = (side) => {
             const rootObject = new THREE.Group()
             rootObject.scale.setScalar(S)
-            return { rootObject, station: buildStation(rootObject, this.loader, this.stand, { table, shelfSide: side, worldScale: S }) }
+            return { rootObject, station: buildStation(rootObject, this.loader, this.stand, { table, shelfSide: side, worldScale: S, eyeHeight: this.eyeHeight }) }
         }
         let { rootObject, station } = build(1)
         if (real) {
@@ -769,10 +770,10 @@ export class ShiftSystem extends createSystem({
     #driveTruck(fromZ, toZ, seconds, ease, then) {
         const { object, wheels, wheelRadius } = this.truck
         object.visible = true
-        object.position.set(TRUCK_X * -this.#truckSide(), 0, fromZ)
+        object.position.set(this.#truckX(), 0, fromZ)
         gsap.to(object.position, { z: toZ, duration: seconds, ease, onComplete: then })
         for (const wheel of wheels) gsap.to(wheel.rotation, { x: `+=${(toZ - fromZ) / wheelRadius}`, duration: seconds, ease })
-        this.sound.play('truck', this.rootObject.localToWorld(new THREE.Vector3(TRUCK_X * -this.#truckSide(), 1, TRUCK_PARK_Z)))
+        this.sound.play('truck', this.rootObject.localToWorld(new THREE.Vector3(this.#truckX(), 1, TRUCK_PARK_Z)))
     }
 
     /** A truck comes in and stops by the panel. It stays until all it brought has been received. */
@@ -1650,7 +1651,13 @@ export class ShiftSystem extends createSystem({
         })
     }
 
-    /** -1 left, 1 right: the truck comes along the side the shelf is not on. */
+    /** Where the truck drives, in the point's units: just outside the tent, whatever its size. */
+    #truckX() {
+        const half = (TENT_HALF_WIDTH * (this.station.tentScale ?? 1) + TRUCK_OUTSIDE) / this.scale
+        return WORKER.x + this.#truckSide() * half
+    }
+
+        /** -1 left, 1 right: the truck comes along the side the shelf is not on. */
     #truckSide() {
         return -(this.station?.shelfSide ?? 1)
     }
