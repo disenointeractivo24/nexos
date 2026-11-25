@@ -1198,7 +1198,7 @@ export class ShiftSystem extends createSystem({
         if (!this.day.call(order.id)) return
         this.sound.play('tap')
         this.haptics.play('tap')
-        if (hadItems) this.#say('warn', `${previous.family} volvió a la fila, y lo de su caja quedó en los estantes.`)
+        if (hadItems) this.#say('info', `${previous.family} volvió a la fila con lo que ya tenía en su caja: lo recupera cuando la vuelvas a atender.`)
     }
 
     #pressAction() {
@@ -1568,8 +1568,8 @@ export class ShiftSystem extends createSystem({
     }
 
     /** One more unit in the kit, in the place kept for it. */
-    #showInKit(itemId) {
-        this.haptics.play('right')
+    #showInKit(itemId, { quiet = false } = {}) {
+        if (!quiet) this.haptics.play('right')
         const slot = this.kit.layout.findIndex((s, i) => s.itemId === itemId && !this.kit.used.has(i))
         this.kit.used.add(slot)
         const { fit, position } = this.kit.layout[slot]
@@ -1578,7 +1578,7 @@ export class ShiftSystem extends createSystem({
         // its own entity in the kit, so a hand over it shows too
         const entity = this.#occlude(this.world.createTransformEntity(object, { parent: this.kit.entity }))
         this.kit.items.push(entity)
-        this.sound.play('item', this.#worldOf(this.kit.object))
+        if (!quiet) this.sound.play('item', this.#worldOf(this.kit.object))
     }
 
     /* ---------------- people ---------------- */
@@ -1871,6 +1871,8 @@ export class ShiftSystem extends createSystem({
         entity.object3D.scale.setScalar(1)
         const units = Object.entries(order.items).flatMap(([id, q]) => Array(q).fill(id))
         this.kit = { entity, object: kitObject, layout: cartonLayout(this.supplies, units), used: new Set(), items: [] }
+        // back at the counter after waiting: their carton comes back with what was already in it
+        for (const [id, n] of Object.entries(order.packed ?? {})) for (let i = 0; i < n; i++) this.#showInKit(id, { quiet: true })
         this.#refreshOrder(order)
         const k = f.card.base
         gsap.fromTo(f.card.mesh.scale, { x: k * 0.86, y: k * 0.86 }, { x: k, y: k, duration: 0.4, ease: 'back.out(2.4)' })

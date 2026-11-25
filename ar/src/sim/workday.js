@@ -240,6 +240,8 @@ export class Workday {
 
         for (const o of this.line) {
             if (this.#waits(o, dt)) {
+                // what was kept in their carton is free again: it never left the shelves
+                o.packed = {}
                 o.state = 'left'
                 this.#emit('left', o)
             }
@@ -353,39 +355,37 @@ export class Workday {
         return this.#nextOf(this.line)
     }
 
-    /**
-     * The person decides not to wait for the turn: the next one comes up now, and whoever was
-     * at the counter goes back to the line. What was in their kit stays on the shelves.
-     * @returns the order now at the counter, or null with nobody waiting
-     */
+    /** Whoever is at the counter goes back to the line, keeping what is already in their carton. */
+    #sendBack() {
+        const previous = this.current
+        if (!previous) return null
+        previous.state = 'waiting'
+        this.current = null
+        this.#emit('backToLine', previous)
+        return previous
+    }
+
     /**
      * The person picks who comes up, from the line: whoever was at the counter goes back to it,
-     * with an empty carton (what was in it is back on the shelves).
+     * and keeps what is in their carton for when they come up again.
      * @returns the order now at the counter, or null if that one is not waiting
      */
     call(id) {
         const order = this.line.find((o) => o.id === id)
         if (!order) return null
-        const previous = this.current
-        if (previous) {
-            previous.packed = {}
-            previous.state = 'waiting'
-            this.current = null
-            this.#emit('backToLine', previous)
-        }
+        this.#sendBack()
         this.#bringUp(order)
         return this.current
     }
 
+    /**
+     * The person decides not to wait for the turn: the next one comes up now, and whoever was at
+     * the counter goes back to the line, keeping what is in their carton.
+     * @returns the order now at the counter, or null with nobody waiting
+     */
     callNext() {
         if (!this.line.length) return null
-        const previous = this.current
-        if (previous) {
-            previous.packed = {}
-            previous.state = 'waiting'
-            this.current = null
-            this.#emit('backToLine', previous)
-        }
+        const previous = this.#sendBack()
         this.#comeUp(previous)
         return this.current
     }
@@ -404,8 +404,10 @@ export class Workday {
     }
 
     /** How many of an item are on the shelves, leaving out what is already in the kit. */
+    /** What is on the shelves and not already in someone's carton, at the counter or waiting to come back to it. */
     available(itemId) {
-        return Math.max(0, this.store.get(itemId) - (this.current?.packed[itemId] ?? 0))
+        const kept = this.orders.reduce((n, o) => n + (o.state === 'packing' || o.state === 'waiting' ? (o.packed?.[itemId] ?? 0) : 0), 0)
+        return Math.max(0, this.store.get(itemId) - kept)
     }
 
     /** How many of an item are out in the open, in the cartons that have been opened. */

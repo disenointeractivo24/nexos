@@ -193,7 +193,7 @@ test('what is urgent comes up before anyone who has been waiting longer', () => 
     untilAtCounter(day, 'urgente')
 })
 
-test('the next one can be brought forward: whoever was there goes back to the line, empty-handed', () => {
+test('the next one can be brought forward: whoever was there goes back to the line, keeping their carton', () => {
     const store = fakeStore()
     const day = started(store)
     assert.equal(day.callNext(), null, 'nobody waiting')
@@ -208,12 +208,13 @@ test('the next one can be brought forward: whoever was there goes back to the li
     assert.equal(day.callNext().id, 'pedido-2')
     assert.deepEqual(events, ['backToLine', 'order'])
     assert.equal(first.state, 'waiting')
-    assert.deepEqual(first.packed, {})
-    assert.equal(day.available('rice'), SHIFT_STOCK.rice)
+    assert.deepEqual(first.packed, { rice: 1 }, 'what was in their carton is kept')
+    assert.equal(day.available('rice'), SHIFT_STOCK.rice - 1, 'and nobody else can take it')
     assert.equal(day.callNext().id, 'pedido-1', 'and back again')
+    assert.deepEqual(day.current.packed, { rice: 1 }, 'with it')
 })
 
-test('any order in the line can be picked: it comes up, and whoever was there goes back', () => {
+test('any order in the line can be picked: it comes up, and whoever was there goes back with their carton', () => {
     const day = started()
     day.orders.forEach((o) => (o.patience = 1e6))
     untilAtCounter(day, 'pedido-1')
@@ -228,8 +229,8 @@ test('any order in the line can be picked: it comes up, and whoever was there go
     assert.equal(day.call('pedido-3').id, 'pedido-3')
     assert.deepEqual(events, ['backToLine', 'order'])
     assert.equal(first.state, 'waiting')
-    assert.deepEqual(first.packed, {})
-    assert.equal(day.available('rice'), SHIFT_STOCK.rice)
+    assert.deepEqual(first.packed, { rice: 1 })
+    assert.equal(day.available('rice'), SHIFT_STOCK.rice - 1)
     assert.ok(day.line.some((o) => o.id === 'pedido-2'))
 })
 
@@ -244,7 +245,7 @@ test('who is next can be read beforehand, and is who comes up', () => {
     assert.equal(day.nextInLine.id, 'pedido-2')
 })
 
-test('a carton taken straight to a kit stays in the inventory when that person goes back', () => {
+test('a carton taken straight to a kit stays in the inventory, kept for that person, when they go back', () => {
     const store = fakeStore({ ...SHIFT_STOCK, rice: 0 })
     const day = started(store)
     untilAtCounter(day, 'pedido-1')
@@ -254,7 +255,7 @@ test('a carton taken straight to a kit stays in the inventory when that person g
     day.addFromBox(b.id, 'rice')
     day.callNext()
     assert.equal(store.get('rice'), 1)
-    assert.equal(day.available('rice'), 1)
+    assert.equal(day.available('rice'), 0, 'kept in their carton for when they come back')
 })
 
 test('going back to the line does not refill anyone\'s patience', () => {
@@ -509,4 +510,19 @@ test('the whole shift ends in a review; pressure rises and falls', () => {
     assert.equal(finished.whole.length + finished.partial.length + finished.left.length, ORDERS.length)
     assert.ok(Object.values(store.stock).every((n) => n >= 0))
     assert.ok(ARRIVALS.length === ORDERS.length)
+})
+
+test('someone sent back who gives up waiting in the line frees what was kept for them', () => {
+    const day = started()
+    untilAtCounter(day, 'pedido-1')
+    day.orders.find((o) => o.id === 'pedido-1').patience = 1e6
+    untilJoined(day, 'pedido-2')
+    day.addToKit('rice')
+    const first = day.current
+    day.callNext()
+    assert.equal(day.available('rice'), SHIFT_STOCK.rice - 1)
+    first.patience = first.waited + 1
+    day.tick(2)
+    assert.equal(first.state, 'left')
+    assert.equal(day.available('rice'), SHIFT_STOCK.rice)
 })

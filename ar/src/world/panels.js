@@ -548,6 +548,8 @@ export function orderPhotoCard() {
         ctx.fillStyle = BRAND.navy
         ctx.fillText(d.family, x0, 148)
         const items = Object.entries(d.items)
+        // what is already in their carton counts, attended now or waiting to come back
+        const counting = d.attending || Object.values(d.packed ?? {}).some((n) => n > 0)
         const cell = Math.min(240, (w - x0 - 50) / Math.max(1, items.length))
         items.forEach(([id, qty], i) => {
             const x = x0 + i * cell
@@ -560,7 +562,7 @@ export function orderPhotoCard() {
             if (img) ctx.drawImage(img, x + 4, y + 4, cell - 24, cell - 24)
             ctx.font = `800 40px ${FONT}`
             ctx.fillStyle = out ? BRAND.redText : done ? BRAND.greenInk : BRAND.navy
-            ctx.fillText(d.attending ? `${have}/${qty}` : `×${qty}`, x + 6, y + cell + 30)
+            ctx.fillText(counting ? `${have}/${qty}` : `×${qty}`, x + 6, y + cell + 30)
             if (out) {
                 ctx.font = `800 28px ${FONT}`
                 ctx.fillText('agotado', x + 6, y + cell + 64)
