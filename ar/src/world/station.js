@@ -356,6 +356,17 @@ export function buildStation(root, loader, stand, { table = null, shelfSide = 1,
     // the tent around the person: as much larger than the table as it was modelled, and always
     // tall enough to stand in. It grows from the middle of the table's near edge, so the table
     // stays where it is and the person stays inside, between the counter and the back.
+    // turned around on its own middle, in the same place: its sign, at the front, hid the
+    // signs over the table; at the back it is out of the way, and the open side faces the person
+    root.updateMatrixWorld(true)
+    const toRoot = root.matrixWorld.clone().invert()
+    const centerOf = () => new THREE.Box3().setFromObject(tent).applyMatrix4(toRoot).getCenter(new THREE.Vector3())
+    const before = centerOf()
+    tent.rotation.y += Math.PI
+    tent.updateMatrixWorld(true)
+    const after = centerOf()
+    tent.position.x += before.x - after.x
+    tent.position.z += before.z - after.z
     const modelWidth = modelDesk.max.x - modelDesk.min.x
     const real = Math.max((t.width * worldScale) / modelWidth, (eyeHeight + TENT_HEADROOM) / ROOF_Y)
     const holder = new THREE.Group()
