@@ -40,6 +40,8 @@ const ENTRY_Z = -7
 /** Over the heads, and above the signs that hang in front of them. */
 const CARD_Y = 2.02
 const WALK_SPEED = 1.5
+/** How much (m) the virtual table stands over the real one, so depth occlusion tells them apart. */
+const TABLE_LIFT = 0.02
 /** How far (m) from the person the truck stops, on the side opposite the shelf, just behind the panel that receives it. */
 const TRUCK_REACH = 1.2
 const TRUCK_PARK_Z = WORKER.z + 0.2
@@ -456,7 +458,8 @@ export class ShiftSystem extends createSystem({
         const real = area ?? (head ? this.#realTable(head, gaze) : null)
         const width = real?.width ?? 1.2
         const depth = real?.depth ?? 0.6
-        const top = (real?.top ?? floorY + 0.75) - floorY
+        // a little over the real one: their tops level, the depth sensor would flicker between them
+        const top = (real?.top ?? floorY + 0.75) - floorY + TABLE_LIFT
         // the whole point at this scale: the table holds the mats, the button and the cartons
         const S = THREE.MathUtils.clamp(width / 2.3, 0.4, 0.65)
         this.scale = S
