@@ -1029,12 +1029,18 @@ export class ShiftSystem extends createSystem({
         if (!entity || entity.hasComponent?.(DepthOccludable)) return entity
         // materials of its own: the occlusion lives in each material's shader, registered to the
         // entity that compiled it. Shared with another that goes away, it would go with it.
+        // The occlusion makes every material see-through-capable, so all are sorted by distance:
+        // what is printed on something (a decal that writes no depth, like the carton's mark)
+        // is drawn after it, or the board would cover it now and then as the head moves.
         entity.object3D?.traverse((o) => {
             if (!o.isMesh) return
             o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone()
+            if ([o.material].flat().some((m) => m.depthWrite === false)) o.renderOrder = Math.max(o.renderOrder, 1)
         })
         try {
-            entity.addComponent(DepthOccludable, { mode: OcclusionShadersMode.SoftOcclusion })
+            // MinMaxSoftOcclusion: edge-aware, so a hand's outline does not bleed into a halo, and
+            // one depth lookup per pixel (after a shared pass per frame) instead of thirteen
+            entity.addComponent(DepthOccludable, { mode: OcclusionShadersMode.MinMaxSoftOcclusion })
             // what lies right on the real table counts a little nearer, so it does not flicker
             surfaceBias(entity.object3D)
         } catch (err) {

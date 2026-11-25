@@ -18,15 +18,19 @@ const world = await World.create(document.getElementById('scene-container'), {
             hitTest: true,
             planeDetection: true,
             meshDetection: true,
-            // the room's depth, so real hands (and anything real) cover what is behind them
-            depthSensing: { usage: 'gpu-optimized', format: 'float32' },
+            // the room's depth, so real hands cover what they work with. Optional: without it,
+            // everything still shows, only not hidden behind the hands. GPU-optimized on Quest:
+            // the depth stays on the GPU, with no copy per frame.
+            depthSensing: { required: false, usage: 'gpu-optimized', format: 'float32' },
         },
     },
     input: { canvasPointerEvents: true },
     render: { fov: 60, near: 0.01, far: 60 },
     features: { locomotion: false, grabbing: true, sceneUnderstanding: true, physics: false, spatialUI: false },
 })
-world.registerSystem(DepthSensingSystem)
+// before the shift: the depth of this frame is ready when the shift's things are drawn.
+// blurRadius only matters to SoftOcclusion; the shift uses MinMaxSoftOcclusion (see shift.js).
+world.registerSystem(DepthSensingSystem, { configData: { enableOcclusion: true, enableDepthTexture: true, useFloat32: true, blurRadius: 12 } })
 world.registerSystem(ShiftSystem)
 const shift = world.getSystem(ShiftSystem)
 window.nexosAR = { world, shift }
@@ -72,6 +76,18 @@ world.visibilityState.subscribe((state) => {
     enterDesktop.hidden = true
     enterAr.textContent = shift.placed ? 'Volver al turno' : 'Entrar con el visor'
     note.textContent = shift.placed ? 'Saliste de las gafas. Tu turno quedó en pausa, tal como lo dejaste.' : 'Saliste de las gafas antes de levantar la carpa.'
+})
+
+// sharp everywhere: no foveation (three's default draws the edges of the view at a lower
+// resolution, which shows as pixels when looking askance), and a little more resolution
+// than the headset's default. The scene is light enough for both. Set before any session.
+world.renderer.xr.setFoveation(0)
+world.renderer.xr.setFramebufferScaleFactor(1.2)
+
+// if the headset did not grant the room's depth, say so where it can be read (the shift goes on)
+world.renderer.xr.addEventListener('sessionstart', () => {
+    const granted = world.session?.enabledFeatures
+    if (granted && !granted.includes('depth-sensing')) console.warn('[ar2] el visor no dio la profundidad del cuarto: las manos no taparán lo virtual')
 })
 
 enterAr.addEventListener('click', () => {
