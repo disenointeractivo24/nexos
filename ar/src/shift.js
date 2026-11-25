@@ -1311,8 +1311,8 @@ export class ShiftSystem extends createSystem({
             return this.#show('info', `Mantén presionado y arrástralo hasta ${where}.`)
         }
         if (t.kind === 'box') {
-            if (target && !this.onMat) return this.#moveToMat(entity, t)
-            if (target) this.#say('warn', 'La mesa está ocupada: termina primero la caja abierta.')
+            if (target && !this.#matBusy()) return this.#moveToMat(entity, t)
+            if (target) this.#say('warn', this.#matBusyText())
             return this.#goHome(t)
         }
         if (t.kind === 'item') {
@@ -1355,9 +1355,9 @@ export class ShiftSystem extends createSystem({
         const m = this.station.mat
         temp.copy(t.object.position)
         if (pointedAt || Math.hypot(temp.x - m.x, temp.z - m.z) < MAT_REACH) {
-            if (!this.onMat) return this.#moveToMat(entity, t)
+            if (!this.#matBusy()) return this.#moveToMat(entity, t)
             this.haptics.play('wrong')
-            this.#say('warn', 'La mesa está ocupada: termina primero la caja abierta.')
+            this.#say('warn', this.#matBusyText())
         }
         this.#goHome(t)
     }
@@ -1395,6 +1395,31 @@ export class ShiftSystem extends createSystem({
     }
 
     /* ---------------- what happens to what is carried ---------------- */
+
+    /**
+     * Whether the mat has a carton to finish: one not yet opened, or open with something left in it.
+     * Read from the day, not from what was last put there, so an emptied mat is always free.
+     */
+    #matBusy() {
+        const t = this.onMat && this.things.get(this.onMat)
+        const b = t?.box && this.day.box(t.box.id)
+        if (!b || b.state === 'empty' || (b.state === 'open' && b.left <= 0)) {
+            if (this.onMat && !t?.moving) this.onMat = null
+            return !!this.onMat
+        }
+        return true
+    }
+
+    #matBusyText() {
+        const t = this.onMat && this.things.get(this.onMat)
+        const b = t?.box && this.day.box(t.box.id)
+        if (!b) return 'La mesa azul está ocupada: espera un momento.'
+        if (b.state === 'received') return 'La mesa azul está ocupada: presiona la caja que está ahí para abrirla.'
+        // what is left goes back in the carton, where it can be seen, wherever it was let go
+        for (const it of this.things.values()) if (it.kind === 'item' && it.box === t.box && !it.moving) this.#goHome(it)
+        const left = Object.entries(b.loose.reduce((n, id) => ({ ...n, [id]: (n[id] ?? 0) + 1 }), {}))
+        return `En la caja abierta todavía queda ${list(left.map(([id, q]) => `${q} de ${SUPPLIES[id].label.toLowerCase()}`))}: llévalo al estante o a un pedido.`
+    }
 
     #moveToMat(entity, t) {
         this.haptics.play('right')
@@ -1752,6 +1777,9 @@ export class ShiftSystem extends createSystem({
     }
 
     #turnGhosts(dt) {
+        // the order's carton keeps the size of every other carton; only swelling a touch when marked
+        const kit = this.kit?.object
+        if (kit && this.marked !== kit && kit.scale.x !== 1 && !gsap.isTweening(kit.scale)) kit.scale.setScalar(1)
         const ring = this.ghosts
         if (!ring) return
         ring.visible = !!this.kit && !!this.familyAtCounter && ring.children.length > 0
@@ -1774,11 +1802,13 @@ export class ShiftSystem extends createSystem({
 
         const kitObject = cardboardBox(KIT_TAPE)
         kitObject.position.copy(this.station.kitMat)
-        gsap.from(kitObject.scale, { x: 0.5, y: 0.5, z: 0.5, duration: 0.45, ease: 'back.out(2)' })
         kitObject.userData.seal.visible = false
         for (const hinge of kitObject.userData.flaps) hinge.rotation.x = hinge.userData.side * 2.75
         kitObject.name = order.id
         const entity = this.world.createTransformEntity(kitObject, { parent: this.root })
+        // as large as every other carton, from the start: no growing in (a scale tween on a fresh
+        // entity can be left behind by the entity's own scale, and the carton stays half size)
+        entity.object3D.scale.setScalar(1)
         const units = Object.entries(order.items).flatMap(([id, q]) => Array(q).fill(id))
         this.kit = { entity, object: kitObject, layout: cartonLayout(this.supplies, units), used: new Set() }
         this.#refreshOrder(order)
@@ -1805,13 +1835,38 @@ export class ShiftSystem extends createSystem({
         // cleared now, not when they are gone: the next one may already be coming up
         this.familyAtCounter = null
         const { kit } = this
-        // they take the kit with them
-        gsap.to(kit.object.position, {
-            x: WORKER.x,
-            z: COUNTER_Z + 0.5,
-            y: 0.72,
-            duration: 0.7,
-            ease: 'power2.inOut',
+        // handed over where it is: it does not move, it closes, is taped, and pops out
+        const { flaps, seal } = kit.object.userData
+        for (const hinge of flaps) gsap.to(hinge.rotation, { x: 0, duration: 0.4, ease: 'power2.inOut' })
+        const fading = []
+        kit.object.traverse((o) => {
+            if (!o.isMesh) return
+            // its own materials: the other cartons share theirs and must not fade with it
+            o.material = [o.material].flat().map((m) => {
+                const c = m.clone()
+                c.transparent = true
+                fading.push(c)
+                return c
+            })
+            if (o.material.length === 1) o.material = o.material[0]
+        })
+        gsap.delayedCall(0.4, () => {
+            seal.visible = true
+            this.sound.play('tape', this.#worldOf(kit.object))
+        })
+        // then it pops out: a quick swell, and gone, shrinking as it fades
+        const scale = kit.object.scale
+        gsap.to(scale, { x: 1.18, y: 1.18, z: 1.18, delay: 0.7, duration: 0.14, ease: 'power2.out' })
+        gsap.to(scale, { x: 0.01, y: 0.01, z: 0.01, delay: 0.84, duration: 0.26, ease: 'back.in(2)' })
+        const fade = { k: 1 }
+        gsap.to(fade, {
+            k: 0,
+            delay: 0.84,
+            duration: 0.26,
+            ease: 'power1.in',
+            onUpdate: () => {
+                for (const m of fading) m.opacity = fade.k
+            },
             onComplete: () => {
                 kit.entity.destroy()
                 this.#sendAway(f, WORKER.x + 3, ENTRY_Z)

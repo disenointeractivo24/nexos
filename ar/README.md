@@ -19,6 +19,9 @@ Parte de `/ar/`, a escala de la mesa real:
 - **Órdenes, no personas.** Las familias no aparecen: llegan sus órdenes como burbujas arriba, sobre la mesa, cada una con la foto de la familia (con sus caras), fotos de lo que necesita con cuántos, y el tiempo que les queda. Primero la que estás atendiendo, que lleva la cuenta de lo que ya está en su caja; luego las urgentes. No hay otro resumen del pedido.
 - **El panel de recibir está a la altura de tus ojos**, a 60 cm a tu lado, del lado del camión.
 - **Lo que falta flota sobre la caja del pedido**: cada insumo que aún falta, transparente, girando alrededor de la caja; desaparece al ponerlo.
+- **Al entregar, la caja no se mueve**: se cierra, se le pone la cinta y hace un pop hasta desaparecer.
+- **Todas las cajas tienen el mismo tamaño**, también la del pedido del tutorial.
+- **La mesa azul solo está ocupada si de verdad queda algo** en la caja abierta; si es así, el aviso dice qué queda y lo devuelve a la caja.
 - **Los carteles se leen**: no se encogen con el punto (que se ajusta al ancho de tu mesa); tienen su tamaño real, un poco más grande.
 - **Los rayos de las manos solo aparecen cuando hacen falta**: al elegir la mesa, y después solo cuando apuntas a un botón o a algo que puedes tomar.
 - Sin mesa en el escaneo, usa una virtual del tamaño de una mesa común y la coloca donde no choque con paredes ni muebles. Conviene haber escaneado el cuarto en las gafas (Ajustes › Espacio físico).
