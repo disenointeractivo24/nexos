@@ -21,9 +21,10 @@ Parte de `/ar/`, a escala de la mesa real:
 - **Un turno más abrumador.** Llegan 12 órdenes (3 urgentes), cada vez más seguido: de una cada 35 s al principio a una cada 15 s al final, con menos paciencia. El camión vuelve cada 30 s. Las burbujas van en filas de 4; si la fila se llena, la siguiente aparece encima.
 - **Tus manos, siempre a la vista.** Donde tu mano está delante de algo virtual, la malla de la mano rastreada lo recorta (una máscara) y se ve tu mano real a través de las gafas, opaca y nítida; donde algo virtual le queda delante, lo virtual la tapa. La silueta blanca se ve encima de todo: plena donde la mano está delante, tenue (como una radiografía) donde está detrás. Sin oclusión por profundidad del sensor, que pixelaba los bordes.
 - **Nítido.** Sin renderizado foveado y con un 20 % más de resolución que la de fábrica del visor.
-- **Eliges a quién atender con el rayo.** Apunta a la burbuja de una orden y pellizca (o aprieta el gatillo): esa familia pasa al mostrador, y quien estaba vuelve a la fila guardando lo que ya tenía en su caja (apartado para ella; al volver a atenderla, su caja reaparece con eso y su burbuja muestra la cuenta). El rayo solo aparece al apuntar a una burbuja; lo demás se toma con la mano. Ya no está el botón verde de «Que pase el siguiente».
+- **Eliges a quién atender con el rayo.** Apunta a la burbuja de una orden y pellizca: esa familia pasa al mostrador, y quien estaba vuelve a la fila guardando lo que ya tenía en su caja (apartado para ella; al volver a atenderla, su caja reaparece con eso y su burbuja muestra la cuenta). El rayo solo aparece al apuntar a una burbuja; lo demás se toma con la mano. Ya no está el botón verde de «Que pase el siguiente».
 - **Las burbujas de las órdenes, sobre la parte de atrás de la mesa**: en una fila de hasta cinco, a unos 30 cm sobre la mesa y frente a la persona, cada una mirando a sus ojos (la que se atiende primero, luego las urgentes).
-- **Lo que tomas con el rayo viene a tu mano, como un imán**: lo agarras de lejos con el rayo y vuela hasta tu palma; se queda ahí mientras sigas pellizcando (o con el gatillo) y al soltar cae donde está o donde apunte el rayo, como si lo hubieras traído tú.
+- **Todos los textos hablan solo de las manos**: agarrar con la mano, tocar con el dedo los botones y paneles, apuntar con la mano y pellizcar para elegir una orden. Ningún texto menciona botones del control ni el gatillo; el tapete donde se abren las cajas se nombra como dice: «Abre aquí». El lado del camión y del estante se dice según dónde quedaron.
+- **Lo que tomas con el rayo viene a tu mano, como un imán**: lo agarras de lejos con el rayo y vuela hasta tu palma; se queda ahí mientras sigas pellizcando y al soltar cae donde está o donde apunte el rayo, como si lo hubieras traído tú.
 - **Los botones «Por hacer» y «Entregar» se ajustan a la mesa**: ocupan el espacio entre los dos tapetes y crecen o se achican con la mesa, sin bajar de 15 cm de ancho para poder leerlos y pulsarlos.
 - **Lo que falta flota sobre la caja del pedido**: cada insumo que aún falta, transparente, girando alrededor de la caja; desaparece al ponerlo.
 - **Al entregar, la caja no se mueve**: se cierra, se le pone la cinta y hace un pop hasta desaparecer.
@@ -35,7 +36,7 @@ Parte de `/ar/`, a escala de la mesa real:
 
 ## Sin visor
 
-En el botón **Probar en el computador**: mantén presionado un insumo o una caja para llevarlo, arrastra el fondo para mirar, W A S D para caminar, Q y E para girar y T para ver la lista de tareas. En el visor, la lista sale con A o X. Los botones de abajo cambian entre la vista de la persona, desde arriba y desde afuera.
+En el botón **Probar en el computador**: mantén presionado un insumo o una caja para llevarlo, arrastra el fondo para mirar, W A S D para caminar, Q y E para girar y T para ver la lista de tareas. En el visor, la lista sale tocando «Por hacer», en la mesa. Los botones de abajo cambian entre la vista de la persona, desde arriba y desde afuera.
 
 ## Inventario
 

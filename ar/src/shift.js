@@ -351,7 +351,7 @@ export class ShiftSystem extends createSystem({
 
         const hint = messageBoard()
         const say = (kind, text) => hint.refresh({ kind, text })
-        say('info', 'Paso 1: apunta con el rayo de tu mano a la mesa y pellizca para elegirla.')
+        say('info', 'Paso 1: apunta con la mano a tu mesa (sale un rayo) y pellizca para elegirla.')
         this.world.scene.add(hint.mesh)
         const area = areaMesh()
         this.world.scene.add(area)
@@ -381,7 +381,7 @@ export class ShiftSystem extends createSystem({
             if (state.step !== 'surface') return
             const side = event.inputSource?.handedness
             const hit = this.rays?.get(side)?.hit
-            if (!hit) return say('warn', 'Ese rayo no toca ninguna mesa: apunta a su superficie y pellizca.')
+            if (!hit) return say('warn', 'Ese rayo no llega a ninguna mesa: apunta con la mano a su superficie y pellizca.')
             state.surface = hit.surface
             state.step = 'area'
             // the shadow stays on the chosen table, anchored to it, and the rays go: step 2 is with both hands
@@ -807,7 +807,7 @@ export class ShiftSystem extends createSystem({
             this.truckParked = true
             if (!this.running) return this.#truckLeaves()
             this.sound.play('radio')
-            this.#say('radio', `Llegó el camión. Recibe las donaciones en el panel de tu ${this.#truckSide() < 0 ? 'izquierda' : 'derecha'}.`)
+            this.#say('radio', `Llegó el camión. Toca el panel «Recibir donaciones», a tu ${this.#truckSideName()}.`)
             this.#refreshReceive()
         })
     }
@@ -858,7 +858,7 @@ export class ShiftSystem extends createSystem({
 
     #refreshList() {
         const { day } = this
-        const closeHint = this.world.session ? 'Con A o X la cierras' : 'Con T la cierras'
+        const closeHint = this.world.session ? 'Toca «Por hacer» para cerrarla' : 'Con T la cierras'
         this.list.refresh({ rows: day.todo, progress: day.progress, hint: closeHint })
     }
 
@@ -891,13 +891,14 @@ export class ShiftSystem extends createSystem({
         if (this.pendingSay) this.#say('info', this.pendingSay)
         this.pendingSay = null
         this.pendingStart = true
-        const button = this.world.session ? 'el botón A o X del control' : 'la tecla T'
         this.big.refresh({
             kicker: 'Un turno en el punto de acopio',
             title: 'Hoy este punto es tuyo',
             lines: [
                 { text: 'Eres responsable de este centro de acopio en Cali. Siempre habrá cajas por abrir y gente por atender.' },
-                { text: `Tú decides qué haces primero. Con ${button} ves lo que falta.` },
+                this.world.session
+                    ? { text: 'Todo se hace con las manos: agarra las cosas, toca los botones con el dedo y apunta a una orden para atenderla. «Por hacer», en la mesa, te dice lo que falta.' }
+                    : { text: 'Tú decides qué haces primero. Con la tecla T ves lo que falta.' },
             ],
             note: 'No alcanzará para todo.',
         })
@@ -924,7 +925,7 @@ export class ShiftSystem extends createSystem({
         this.big.mesh.visible = false
         this.message.mesh.visible = true
         this.guide = this.day.calm ? { phase: null } : null
-        this.#say('radio', 'Viene un camión con donaciones, por tu izquierda.')
+        this.#say('radio', `Viene un camión con donaciones, por tu ${this.#truckSideName()}.`)
         this.day.start()
         this.#refreshReceive()
         this.#refreshShelf()
@@ -975,18 +976,18 @@ export class ShiftSystem extends createSystem({
         const things = [...this.things.values()]
 
         if (day.calm && !day.boxes.length) {
-            if (!this.truckParked) return { phase: 'truck', targets: [], text: 'Viene un camión con donaciones, por tu izquierda.' }
-            return { phase: 'receive', targets: [this.receive.mesh], text: `Llegó el camión. Presiona el panel que brilla, a tu ${this.#truckSide() < 0 ? 'izquierda' : 'derecha'}, para recibir las donaciones.` }
+            if (!this.truckParked) return { phase: 'truck', targets: [], text: `Viene un camión con donaciones, por tu ${this.#truckSideName()}.` }
+            return { phase: 'receive', targets: [this.receive.mesh], text: hands ? `Llegó el camión. Toca con el dedo el panel que brilla, a tu ${this.#truckSideName()}, para recibir las donaciones.` : `Llegó el camión. Haz clic en el panel que brilla, a tu ${this.#truckSideName()}, para recibir las donaciones.` }
         }
         if (day.calm && !day.current) {
             const box = things.find((t) => t.kind === 'box' && t.box === day.boxes[0])
-            if (box?.onMat) return { phase: 'open', targets: [box.object], text: hands ? 'Presiona la caja para quitarle la cinta.' : 'Haz clic en la caja para quitarle la cinta.' }
+            if (box?.onMat) return { phase: 'open', targets: [box.object], text: hands ? 'Toca la caja con el dedo para quitarle la cinta.' : 'Haz clic en la caja para quitarle la cinta.' }
             const targets = held === box ? [this.matSpot] : box && !box.moving ? [box.object] : []
-            return { phase: 'box', targets, text: hands ? 'Lleva la caja que brilla a la mesa azul: agárrala o mantén el gatillo sobre ella.' : 'Mantén presionada la caja que brilla y llévala a la mesa azul.' }
+            return { phase: 'box', targets, text: hands ? 'Agarra con la mano la caja que brilla y suéltala sobre el tapete azul «Abre aquí».' : 'Mantén presionada la caja que brilla y llévala al tapete azul «Abre aquí».' }
         }
         if (day.calm) {
             const missing = Object.keys(day.missing)
-            if (!missing.length) return { phase: 'deliver', targets: [this.action.mesh], text: 'Pedido completo. Presiona «Entregar el pedido», en la mesa.' }
+            if (!missing.length) return { phase: 'deliver', targets: [this.action.mesh], text: hands ? 'Pedido completo. Toca con el dedo «Entregar el pedido», en la mesa.' : 'Pedido completo. Haz clic en «Entregar el pedido», en la mesa.' }
             const loose = (id) => things.filter((t) => t.kind === 'item' && t.itemId === id)
             const onShelf = missing.filter((id) => !loose(id).length)
             const wants = list(Object.entries(day.missing).map(([id, n]) => `${n} de ${SUPPLIES[id].label.toLowerCase()}`))
@@ -1001,8 +1002,8 @@ export class ShiftSystem extends createSystem({
                     return [this.things.get(zone.stock.get(id)).object]
                 })
             }
-            if (onShelf.length === missing.length) return { phase: 'shelf', targets, text: `Falta ${wants}: brilla en el estante, a tu ${this.#truckSide() < 0 ? 'derecha' : 'izquierda'}. Llévalo a su caja, en «Arma el pedido».` }
-            const where = onShelf.length ? `en la caja abierta y en el estante, a tu ${this.#truckSide() < 0 ? 'derecha' : 'izquierda'}` : 'en la caja abierta'
+            if (onShelf.length === missing.length) return { phase: 'shelf', targets, text: `Falta ${wants}: brilla en el estante, a tu ${this.#shelfSideName()}. Llévalo a su caja, en «Arma el pedido».${hands ? ' Si está lejos, apúntale con la mano y pellizca: llega solo a tu mano.' : ''}` }
+            const where = onShelf.length ? `en la caja abierta y en el estante, a tu ${this.#shelfSideName()}` : 'en la caja abierta'
             return { phase: 'order', targets, text: `${day.current.family} necesita ${wants}. Lo que brilla está ${where}: llévalo a su caja, en «Arma el pedido».` }
         }
         // handed over, time runs again: only what was left in the carton still gets a hand
@@ -1010,7 +1011,7 @@ export class ShiftSystem extends createSystem({
         if (!left.length || day.current) return null
         let targets = left.map((t) => t.object)
         if (held) targets = held.kind === 'item' ? [this.station.zones.find((z) => z.categoryId === SUPPLIES[held.itemId].category).crate] : []
-        return { phase: 'sort', targets, text: `Lo que quedó en la caja va a su lugar en el estante, a tu ${this.#truckSide() < 0 ? 'derecha' : 'izquierda'}. Desde ahora el tiempo corre.` }
+        return { phase: 'sort', targets, text: `Lo que quedó en la caja va a su lugar en el estante, a tu ${this.#shelfSideName()}: agarra cada cosa y suéltala en su caja. Desde ahora el tiempo corre.` }
     }
 
     #followGuide() {
@@ -1338,7 +1339,7 @@ export class ShiftSystem extends createSystem({
         this.marked = null
         if (!moved) {
             this.#goHome(t)
-            const where = { box: 'la mesa azul', item: 'su caja del estante', stock: 'el pedido' }[t.kind]
+            const where = { box: 'el tapete azul «Abre aquí»', item: 'su caja del estante', stock: 'el pedido' }[t.kind]
             return this.#show('info', `Mantén presionado y arrástralo hasta ${where}.`)
         }
         if (t.kind === 'box') {
@@ -1513,8 +1514,8 @@ export class ShiftSystem extends createSystem({
     #matBusyText() {
         const t = this.onMat && this.things.get(this.onMat)
         const b = t?.box && this.day.box(t.box.id)
-        if (!b) return 'La mesa azul está ocupada: espera un momento.'
-        if (b.state === 'received') return 'La mesa azul está ocupada: presiona la caja que está ahí para abrirla.'
+        if (!b) return 'El tapete «Abre aquí» está ocupado: espera un momento.'
+        if (b.state === 'received') return this.world.session ? 'El tapete «Abre aquí» está ocupado: toca con el dedo la caja que está ahí para abrirla.' : 'El tapete «Abre aquí» está ocupado: haz clic en la caja que está ahí para abrirla.'
         // what is left goes back in the carton, where it can be seen, wherever it was let go
         for (const it of this.things.values()) if (it.kind === 'item' && it.box === t.box && !it.moving) this.#goHome(it)
         const left = Object.entries(b.loose.reduce((n, id) => ({ ...n, [id]: (n[id] ?? 0) + 1 }), {}))
@@ -1542,7 +1543,7 @@ export class ShiftSystem extends createSystem({
         gsap.to(t.object.rotation, { x: 0, y: 0, z: 0, duration: 0.3, ease: 'power2.out' })
         gsap.to(t.object.position, { x: m.x, y: m.y, z: m.z, duration: 0.35, ease: 'power2.inOut', onComplete: settled })
         this.#offerTopBoxes()
-        this.#say('info', this.world.session ? 'Presiona la caja para quitarle la cinta.' : 'Haz clic en la caja para quitarle la cinta.')
+        this.#say('info', this.world.session ? 'Toca la caja con el dedo para quitarle la cinta.' : 'Haz clic en la caja para quitarle la cinta.')
     }
 
     #openBox(t) {
@@ -1561,7 +1562,7 @@ export class ShiftSystem extends createSystem({
             object.position.copy(home)
             this.#thing(object, { kind: 'item', itemId, box: t.box, home })
         }
-        this.#say('info', `Caja de ${t.box.from}. Lleva cada insumo a su caja del estante, a tu ${this.#truckSide() < 0 ? 'derecha' : 'izquierda'}, o directo a un pedido.`)
+        this.#say('info', `Caja de ${t.box.from}. Agarra cada insumo y llévalo a su caja del estante, a tu ${this.#shelfSideName()}, o directo a un pedido.`)
     }
 
     /** An item goes into its crate, or back to its carton with a word about where it goes. */
@@ -1704,10 +1705,10 @@ export class ShiftSystem extends createSystem({
         this.#walkTo(leader, slot.x, slot.z, () => (leader.targetYaw = 0))
         if (order.urgent) {
             this.sound.play('alert')
-            this.#say('alert', `${order.family} necesita ${this.#wants(order)} ya. Apunta a su tarjeta con el rayo y pellizca para atenderla ahora.`)
+            this.#say('alert', `${order.family} necesita ${this.#wants(order)} ya. ${this.world.session ? 'Apunta con la mano a su tarjeta y pellizca' : 'Haz clic en su tarjeta'} para atenderla ahora.`)
         } else if (this.day.current) {
             this.sound.play('radio')
-            this.#say('radio', `Llegó una orden de ${order.family}. La atiendes cuando termines, o apuntando a su tarjeta con el rayo.`)
+            this.#say('radio', `Llegó una orden de ${order.family}. La atiendes cuando termines, o ya mismo: ${this.world.session ? 'apunta con la mano a su tarjeta y pellizca' : 'haz clic en su tarjeta'}.`)
         }
     }
 
@@ -1775,7 +1776,16 @@ export class ShiftSystem extends createSystem({
         return WORKER.x + (this.#truckSide() * TRUCK_REACH) / this.scale
     }
 
-        /** -1 left, 1 right: the truck comes along the side the shelf is not on. */
+        /** Which side, in words, the truck and the receive panel are on, and the shelf. */
+    #truckSideName() {
+        return this.#truckSide() < 0 ? 'izquierda' : 'derecha'
+    }
+
+    #shelfSideName() {
+        return this.#truckSide() < 0 ? 'derecha' : 'izquierda'
+    }
+
+    /** -1 left, 1 right: the truck comes along the side the shelf is not on. */
     #truckSide() {
         return -(this.station?.shelfSide ?? 1)
     }
@@ -2046,7 +2056,7 @@ export class ShiftSystem extends createSystem({
         if (event === 'received') {
             this.sound.play('done')
             this.#dropBoxes(detail)
-            this.#say('info', this.world.session ? 'Lleva una caja a la mesa azul: agárrala o mantén el gatillo sobre ella.' : 'Mantén presionada una caja y llévala a la mesa azul.')
+            this.#say('info', this.world.session ? 'Agarra una caja con la mano y suéltala sobre el tapete azul «Abre aquí».' : 'Mantén presionada una caja y llévala al tapete azul «Abre aquí».')
         }
         if (event === 'emptied') this.#clearBox(detail)
         if (event === 'joined') this.#familyJoins(detail)
